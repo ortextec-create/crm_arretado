@@ -10,8 +10,12 @@ from .serializers import (
     EnderecoSerializer, TagSerializer
 )
 
+class CsrfExemptMixin:
+    """Remove SessionAuthentication — evita 403 em POSTs sem CSRF token."""
+    authentication_classes = []
 
-class ClienteViewSet(viewsets.ModelViewSet):
+#class ClienteViewSet(viewsets.ModelViewSet):
+class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     queryset = Cliente.objects.prefetch_related('enderecos', 'tags').all()
     permission_classes = [AllowAny]
     filter_backends = [filters.OrderingFilter]
@@ -122,8 +126,8 @@ class ClienteViewSet(viewsets.ModelViewSet):
             'com_anotaai': com_anotaai,
         })
 
-
-class TagViewSet(viewsets.ModelViewSet):
+class TagViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+#class TagViewSet(viewsets.ModelViewSet):
     queryset = TagCliente.objects.all()
     serializer_class = TagSerializer
     permission_classes = [AllowAny]

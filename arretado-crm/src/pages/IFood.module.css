@@ -1,0 +1,131 @@
+.page { display: flex; flex-direction: column; height: 100%; }
+.content { flex: 1; padding: 20px 26px; overflow-y: auto; }
+.center  { display: flex; align-items: center; justify-content: center; height: 200px; }
+.empty   { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 60px 20px; color: var(--muted); }
+.empty i { font-size: 32px; opacity: 0.35; }
+.empty p { font-size: 13px; }
+
+/* Polling indicator */
+.pollingBadge    { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--verde); padding: 6px 12px; background: var(--verde-dim); border: 0.5px solid rgba(143,188,139,0.25); border-radius: var(--radius-sm); }
+.pollingBadgeOff { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 6px 12px; background: var(--bege-dim); border: 0.5px solid var(--border); border-radius: var(--radius-sm); }
+.dot    { width: 7px; height: 7px; border-radius: 50%; background: var(--verde); animation: pulse 2s infinite; }
+.dotOff { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+@keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.4; } }
+
+/* Stats */
+.statsRow {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 12px; margin-bottom: 20px;
+}
+
+.statCard {
+  background: var(--bege-dim); border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm); padding: 16px 16px 14px;
+  position: relative; overflow: hidden; transition: border-color 0.2s;
+}
+.statCard:hover { border-color: var(--border-strong); }
+.statAccent { border-color: rgba(200,134,10,0.3) !important; }
+.statWarn   { border-color: rgba(245,158,11,0.4) !important; }
+
+.statIcon  { position: absolute; right: 12px; top: 12px; font-size: 22px; opacity: 0.1; }
+.statLabel { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.statValue { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: var(--bege); }
+
+/* Tabs */
+.tabsRow {
+  display: flex; gap: 4px; margin-bottom: 16px;
+  border-bottom: 0.5px solid var(--border); padding-bottom: 0;
+}
+.tab {
+  padding: 8px 18px; font-size: 12px; background: none;
+  border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); cursor: pointer; font-family: inherit;
+  transition: all 0.15s; margin-bottom: -1px;
+}
+.tab:hover { color: var(--bege); }
+.tabActive  { color: var(--caramelo); border-bottom-color: var(--caramelo); }
+
+/* Table */
+.table { border: 0.5px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+
+.thead {
+  display: grid;
+  grid-template-columns: 100px 1fr 80px 110px 90px 130px 90px;
+  gap: 10px; padding: 9px 18px;
+  border-bottom: 0.5px solid var(--border);
+  font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: rgba(154,143,126,0.45); background: rgba(0,0,0,0.12);
+}
+
+.trow {
+  display: grid;
+  grid-template-columns: 100px 1fr 80px 110px 90px 130px 90px;
+  gap: 10px; padding: 12px 18px;
+  align-items: center; border-bottom: 0.5px solid rgba(200,134,10,0.06);
+  cursor: pointer; transition: background 0.1s;
+}
+.trow:last-child { border-bottom: none; }
+.trow:hover { background: var(--bege-hover); }
+
+.orderId { font-size: 13px; color: var(--caramelo); font-weight: 500; }
+.sub     { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.name    { font-size: 13px; color: var(--bege); }
+.crm     { display: flex; align-items: center; gap: 3px; font-size: 10px; color: var(--verde); margin-top: 2px; }
+.crm i   { font-size: 11px; }
+.valor   { font-size: 13px; color: var(--bege); font-weight: 500; }
+
+.typeBadge { font-size: 11px; color: var(--muted); }
+
+.statusBadge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; font-size: 11px; border-radius: 2px;
+  border: 0.5px solid;
+}
+.statusBadge i { font-size: 12px; }
+
+.actions { display: flex; gap: 5px; }
+.actBtn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 16px;
+  cursor: pointer; transition: all 0.15s; font-family: inherit;
+}
+.actBtn:hover { border-color: currentColor; background: rgba(255,255,255,0.04); }
+.actBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Detail modal */
+.detail {}
+.detailHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.detailSection { margin-bottom: 18px; padding-bottom: 18px; border-bottom: 0.5px solid var(--border); }
+.detailSection:last-child { border-bottom: none; }
+.detailLabel { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+.itemRow { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 0.5px solid rgba(200,134,10,0.06); }
+.itemRow:last-child { border-bottom: none; }
+.itemQty { width: 24px; font-size: 12px; color: var(--caramelo); flex-shrink: 0; font-weight: 500; }
+
+.crmLink { font-size: 11px; color: var(--verde); cursor: pointer; display: flex; align-items: center; gap: 3px; margin-top: 3px; }
+.crmLink:hover { text-decoration: underline; }
+
+.detailTotais { background: var(--bege-dim); border: 0.5px solid var(--border); padding: 14px 16px; border-radius: var(--radius-sm); }
+.totaisRow { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); padding: 4px 0; }
+.totaisTotal { font-size: 14px; color: var(--bege); font-weight: 500; padding-top: 10px; margin-top: 6px; border-top: 0.5px solid var(--border); }
+
+/* Vincular */
+.clienteRow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: none;
+  border: 0.5px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; font-family: inherit; transition: all 0.15s; width: 100%;
+}
+.clienteRow:hover { background: var(--bege-hover); border-color: var(--border-strong); }
+
+/* Config */
+.select {
+  background: var(--bege-dim); border: 0.5px solid var(--border);
+  color: var(--bege); padding: 10px 12px; font-size: 13px;
+  outline: none; border-radius: var(--radius-sm); width: 100%;
+  font-family: inherit;
+}
+.select option { background: #1c1a17; }

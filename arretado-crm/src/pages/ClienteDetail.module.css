@@ -1,0 +1,104 @@
+.page { display: flex; flex-direction: column; height: 100%; }
+.content { flex: 1; padding: 22px 26px; overflow-y: auto; }
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 20px;
+}
+
+.headerCard {
+  display: flex; align-items: flex-start; gap: 18px;
+  background: var(--bege-dim);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 22px 22px;
+  margin-bottom: 16px;
+}
+
+.headerInfo h2 { font-size: 20px; font-weight: 700; color: var(--bege); margin-bottom: 10px; }
+.headerMeta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.headerTags { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.dataCard {
+  background: var(--bege-dim);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.cardTitle {
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 12px;
+}
+
+.dataGrid { }
+
+.obs {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding-top: 12px; margin-top: 8px;
+  border-top: 0.5px solid rgba(200,134,10,0.07);
+  font-size: 13px; color: var(--muted);
+}
+.obs i { font-size: 15px; margin-top: 1px; flex-shrink: 0; }
+
+/* Addresses */
+.addrHeader {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.addrHeader h3 { font-size: 14px; font-weight: 500; color: var(--bege); }
+
+.addrCard {
+  background: var(--bege-dim);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.addrTop {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px;
+}
+
+.addrTipo {
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--caramelo); background: var(--caramelo-dim);
+  padding: 2px 8px; border-radius: 2px;
+  border: 0.5px solid rgba(200,134,10,0.25);
+}
+
+.addrApelido { font-size: 12px; color: var(--bege); }
+
+.addrPrincipal {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 10px; color: var(--verde); background: var(--verde-dim);
+  padding: 2px 8px; border-radius: 2px;
+}
+.addrPrincipal i { font-size: 11px; }
+
+.addrText { font-size: 13px; color: var(--bege); margin-bottom: 3px; }
+.addrSub  { font-size: 11px; color: var(--muted); }
+
+.addrBtn {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0.5px solid var(--border);
+  color: var(--muted); border-radius: var(--radius-sm);
+  font-size: 13px; cursor: pointer; transition: all 0.15s;
+  font-family: inherit;
+}
+.addrBtn:hover { color: var(--caramelo); border-color: var(--border-strong); }
+.addrBtnDanger:hover { color: var(--danger) !important; border-color: rgba(192,90,58,0.4) !important; }
+
+.emptyAddr {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 12px; padding: 40px 20px;
+  border: 0.5px dashed rgba(200,134,10,0.2);
+  border-radius: var(--radius-sm);
+  color: var(--muted); margin-bottom: 16px;
+}
+.emptyAddr i { font-size: 28px; opacity: 0.4; }
+.emptyAddr p  { font-size: 12px; }
