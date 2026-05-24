@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     'ifood',
     'clientes',
     'pedidos',
+    'pdv',
 ]
 
 MIDDLEWARE = [

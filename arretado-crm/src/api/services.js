@@ -90,3 +90,32 @@ export const ifoodApi = {
 
 
 }
+export const pdvApi = {
+  // Categorias
+  listCategorias: (params = {}) => api.get('/pdv/categorias/', { params }),
+  criarCategoria: (data)        => api.post('/pdv/categorias/', data),
+  editarCategoria:(id, data)    => api.patch(`/pdv/categorias/${id}/`, data),
+  deletarCategoria:(id)         => api.delete(`/pdv/categorias/${id}/`),
+
+  // Produtos
+  listProdutos:   (params = {}) => api.get('/pdv/produtos/', { params }),
+  getProduto:     (id)          => api.get(`/pdv/produtos/${id}/`),
+  criarProduto:   (data)        => api.post('/pdv/produtos/', data),
+  editarProduto:  (id, data)    => api.patch(`/pdv/produtos/${id}/`, data),
+  deletarProduto: (id)          => api.delete(`/pdv/produtos/${id}/`),
+  ativarProduto:  (id)          => api.post(`/pdv/produtos/${id}/ativar/`),
+  desativarProduto:(id)         => api.post(`/pdv/produtos/${id}/desativar/`),
+
+  // Pedidos
+  listPedidos:    (params = {}) => api.get('/pdv/pedidos/', { params }),
+  getPedido:      (id)          => api.get(`/pdv/pedidos/${id}/`),
+  criarPedido:    (data)        => api.post('/pdv/pedidos/', data),
+  confirmar:      (id)          => api.post(`/pdv/pedidos/${id}/confirmar/`),
+  iniciarPreparo: (id)          => api.post(`/pdv/pedidos/${id}/iniciar-preparo/`),
+  marcarPronto:   (id)          => api.post(`/pdv/pedidos/${id}/marcar-pronto/`),
+  concluir:       (id)          => api.post(`/pdv/pedidos/${id}/concluir/`),
+  cancelar:       (id)          => api.post(`/pdv/pedidos/${id}/cancelar/`),
+  adicionarItem:  (id, data)    => api.post(`/pdv/pedidos/${id}/itens/`, data),
+  removerItem:    (id, itemId)  => api.delete(`/pdv/pedidos/${id}/itens/${itemId}/remover/`),
+  estatisticas:   ()            => api.get('/pdv/pedidos/estatisticas/'),
+}

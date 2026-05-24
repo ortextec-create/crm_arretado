@@ -180,9 +180,28 @@ class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         # pedidos_anotaai_qs = cliente.pedidos_anotaai.all().order_by('-criado_em')
         # ...
 
-        # ── PDV Próprio (placeholder fase futura) ──────────────────────────────
-        # pedidos_pdv_qs = cliente.pedidos_pdv.all().order_by('-criado_em')
-        # ...
+        from pdv.models import PedidoPDV
+        pedidos_pdv_qs = cliente.pedidos_pdv.all().order_by('-criado_em')
+        if canal and canal != 'pdv':
+            pedidos_pdv_qs = pedidos_pdv_qs.none()
+
+        for p in pedidos_pdv_qs:
+            historico.append({
+                'id':            p.id,
+                'canal':         'pdv',
+                'canal_label':   'PDV Próprio',
+                'numero':        p.numero,
+                'status':        p.status,
+                'status_label':  p.get_status_display(),
+                'tipo':          p.tipo,
+                'tipo_label':    p.get_tipo_display(),
+                'total':         float(p.total),
+                'pagamento':     p.get_pagamento_display(),
+                'data':          p.criado_em.isoformat() if p.criado_em else None,
+                'pode_confirmar': p.pode_confirmar,
+                'pode_cancelar':  p.pode_cancelar,
+                'origem_id':     p.id,
+            })
 
         # Ordena tudo por data decrescente
         historico.sort(key=lambda x: x['data'] or '', reverse=True)
@@ -198,6 +217,22 @@ class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
         ultimo = pedidos_ifood_qs.first()
 
+        agg_pdv = pedidos_pdv_qs.exclude(status='cancelado').aggregate(
+            total_gasto=Sum('total'),
+            total_pedidos=Count('id'),
+        )
+
+        total_pedidos = (agg_ifood['total_pedidos'] or 0) + (agg_pdv['total_pedidos'] or 0)
+        total_gasto   = float(agg_ifood['total_gasto'] or 0) + float(agg_pdv['total_gasto'] or 0)
+        ticket_medio  = (total_gasto / total_pedidos) if total_pedidos else 0
+        ultimo_pdv   = pedidos_pdv_qs.first()
+
+        datas_validas = [d for d in [
+            ultimo.ifood_criado_em if ultimo else None,
+            ultimo_pdv.criado_em   if ultimo_pdv else None,
+        ] if d]
+        ultimo_pedido_em = max(datas_validas).isoformat() if datas_validas else None
+
         metricas = {
             'total_pedidos':    agg_ifood['total_pedidos'] or 0,
             'total_gasto':      float(agg_ifood['total_gasto'] or 0),
@@ -206,7 +241,7 @@ class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             'por_canal': {
                 'ifood':   pedidos_ifood_qs.count(),
                 'anotaai': 0,
-                'pdv':     0,
+                'pdv':     pedidos_pdv_qs.count(),
             },
         }
 
@@ -221,3 +256,4 @@ class TagViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     queryset = TagCliente.objects.all()
     serializer_class = TagSerializer
     permission_classes = [AllowAny]
+

@@ -28,3 +28,5 @@ class PedidosConfig(AppConfig):
                     'Falha ao sincronizar PedidoUnificado para iFood #%s: %s',
                     instance.pk, e,
                 )
+
+        import pdv.signals  # noqa: F401  — registra on_pedido_pdv_save via @receiver

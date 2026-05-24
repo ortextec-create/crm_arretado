@@ -9,6 +9,8 @@ import ClienteDetail from './pages/ClienteDetail'
 import Tags from './pages/Tags'
 import Usuarios from './pages/Usuarios'
 import IFood from './pages/IFood'
+import PDV from './pages/PDV'
+
 
 function Placeholder({ title }) {
   return (
@@ -38,7 +40,7 @@ export default function App() {
             <Route path="usuarios" element={<Usuarios />} />
             <Route path="integracoes/ifood" element={<IFood />} />
             <Route path="integracoes/anotaai" element={<Placeholder title="Anota AI" />} />
-            <Route path="integracoes/pdv" element={<Placeholder title="PDV Próprio" />} />
+           <Route path="integracoes/pdv" element={<PDV />} />
             <Route path="configuracoes" element={<Placeholder title="Configurações" />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

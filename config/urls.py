@@ -6,5 +6,7 @@ urlpatterns = [
     path('api/v1/', include('clientes.urls')),
     path('api-auth/', include('rest_framework.urls')),
     path('api/v1/ifood/', include('ifood.urls')),
+    path('api/v1/pdv/',    include('pdv.urls')),   # ← ADICIONAR
+
 
 ]
