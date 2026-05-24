@@ -13,10 +13,10 @@ import IFood from './pages/IFood'
 function Placeholder({ title }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-      <div style={{ padding:'22px 26px', borderBottom:'0.5px solid var(--border)', fontFamily:"'Playfair Display',serif", fontSize:18, color:'var(--bege)' }}>
+      <div style={{ padding:'22px 26px', borderBottom:'1px solid var(--border)', fontFamily:"'Playfair Display',serif", fontSize:18, color:'var(--texto)' }}>
         {title}
       </div>
-      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12, color:'var(--muted)' }}>
+      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12, color:'var(--texto-muted)' }}>
         <i className="ti ti-clock" style={{ fontSize:32, opacity:0.3 }} />
         <p style={{ fontSize:13 }}>Em desenvolvimento — Fase 3</p>
       </div>

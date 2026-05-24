@@ -1,64 +1,81 @@
 .page {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
-  background: #080706;
+  background: var(--bg);
   position: relative;
+  overflow: hidden;
 }
 
-.bg {
+/* Decoração de fundo sutil */
+.page::before {
+  content: '';
   position: absolute; inset: 0;
   background:
-    radial-gradient(ellipse 55% 45% at 75% 20%, rgba(200,134,10,0.07) 0%, transparent 55%),
-    radial-gradient(ellipse 40% 40% at 25% 80%, rgba(143,188,139,0.05) 0%, transparent 50%);
+    radial-gradient(ellipse 60% 50% at 70% 15%, rgba(184,115,10,0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 40% at 20% 85%, rgba(74,124,89,0.05) 0%, transparent 50%);
   pointer-events: none;
 }
 
 .box {
   position: relative;
-  width: 400px;
-  padding: 44px 40px;
-  border: 0.5px solid rgba(200,134,10,0.28);
-  background: rgba(10,9,8,0.94);
-  border-radius: var(--radius-md);
+  width: 420px;
+  padding: 48px 44px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
 }
 
-.logo { text-align: center; margin-bottom: 32px; }
-.logo svg { display: block; margin: 0 auto 14px; }
-.logo h1 { font-size: 24px; font-weight: 700; color: var(--bege); }
-.logoSub { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+.logo          { text-align: center; margin-bottom: 36px; }
+.logo svg      { display: block; margin: 0 auto 14px; }
+.logo h1       { font-size: 26px; font-weight: 700; color: var(--texto); }
+.logoSub       { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--texto-muted); margin-top: 5px; }
 
-.subtitle { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 26px; }
+.subtitle      { font-size: 13px; color: var(--texto-muted); text-align: center; margin-bottom: 28px; }
 
-.field { margin-bottom: 16px; }
-.field label {
-  display: block; font-size: 10px; letter-spacing: 1.5px;
-  text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+.field         { margin-bottom: 18px; }
+.field label   {
+  display: block; font-size: 11px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--texto-sec); font-weight: 500;
+  margin-bottom: 7px;
 }
 .field input {
-  width: 100%; background: var(--bege-dim);
-  border: 0.5px solid var(--border); color: var(--bege);
-  padding: 11px 13px; font-size: 13px; font-family: inherit;
+  width: 100%; background: var(--bg-alt);
+  border: 1px solid var(--border); color: var(--texto);
+  padding: 11px 14px; font-size: 13px; font-family: inherit;
   outline: none; border-radius: var(--radius-sm);
-  transition: border-color 0.15s;
+  transition: all 0.15s;
 }
-.field input:focus { border-color: var(--caramelo); }
-.field input::placeholder { color: rgba(154,143,126,0.38); }
+.field input:focus {
+  border-color: var(--caramelo);
+  box-shadow: 0 0 0 3px var(--caramelo-dim);
+  background: var(--surface);
+}
+.field input::placeholder { color: var(--texto-faint); }
 
 .error {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--danger); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--danger);
+  background: var(--danger-pale); border: 1px solid rgba(192,57,43,0.15);
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  margin-bottom: 14px;
 }
 
 .btnLogin {
-  width: 100%; background: var(--caramelo); color: var(--preto);
+  width: 100%; background: var(--caramelo); color: #fff;
   border: none; padding: 13px;
-  font-size: 12px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.5px;
   cursor: pointer; border-radius: var(--radius-sm);
-  transition: background 0.15s;
+  transition: all 0.15s;
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  margin-top: 6px;
+  margin-top: 8px;
+  box-shadow: 0 2px 8px rgba(184,115,10,0.25);
 }
-.btnLogin:hover:not(:disabled) { background: var(--caramelo-light); }
-.btnLogin:disabled { opacity: 0.6; cursor: not-allowed; }
+.btnLogin:hover:not(:disabled) {
+  background: var(--caramelo-light);
+  box-shadow: 0 4px 14px rgba(184,115,10,0.35);
+  transform: translateY(-1px);
+}
+.btnLogin:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
-.hint { text-align: center; font-size: 11px; color: rgba(154,143,126,0.45); margin-top: 18px; }
+.hint { text-align: center; font-size: 11px; color: var(--texto-faint); margin-top: 20px; }

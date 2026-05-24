@@ -1,4 +1,6 @@
-.page { display: flex; flex-direction: column; height: 100%; }
+/* ClienteDetail.module.css — completo com Fase 3 */
+
+.page    { display: flex; flex-direction: column; height: 100%; }
 .content { flex: 1; padding: 22px 26px; overflow-y: auto; }
 
 .grid {
@@ -7,19 +9,21 @@
   gap: 20px;
 }
 
+/* ── Header card ─────────────────────────────────────────────────────────── */
 .headerCard {
   display: flex; align-items: flex-start; gap: 18px;
   background: var(--bege-dim);
   border: 0.5px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 22px 22px;
+  padding: 22px;
   margin-bottom: 16px;
 }
 
 .headerInfo h2 { font-size: 20px; font-weight: 700; color: var(--bege); margin-bottom: 10px; }
-.headerMeta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.headerTags { display: flex; gap: 6px; flex-wrap: wrap; }
+.headerMeta    { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.headerTags    { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* ── Data card ───────────────────────────────────────────────────────────── */
 .dataCard {
   background: var(--bege-dim);
   border: 0.5px solid var(--border);
@@ -43,7 +47,7 @@
 }
 .obs i { font-size: 15px; margin-top: 1px; flex-shrink: 0; }
 
-/* Addresses */
+/* ── Addresses ───────────────────────────────────────────────────────────── */
 .addrHeader {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 12px;
@@ -90,7 +94,7 @@
   font-size: 13px; cursor: pointer; transition: all 0.15s;
   font-family: inherit;
 }
-.addrBtn:hover { color: var(--caramelo); border-color: var(--border-strong); }
+.addrBtn:hover       { color: var(--caramelo); border-color: var(--border-strong); }
 .addrBtnDanger:hover { color: var(--danger) !important; border-color: rgba(192,90,58,0.4) !important; }
 
 .emptyAddr {
@@ -101,4 +105,30 @@
   color: var(--muted); margin-bottom: 16px;
 }
 .emptyAddr i { font-size: 28px; opacity: 0.4; }
-.emptyAddr p  { font-size: 12px; }
+.emptyAddr p { font-size: 12px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FASE 3 — Histórico de Pedidos Unificado
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.historicoSection {
+  margin-top: 28px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 0.5px solid var(--border);
+}
+
+.sectionTitle i {
+  font-size: 15px;
+  color: var(--caramelo);
+}

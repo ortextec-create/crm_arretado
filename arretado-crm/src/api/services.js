@@ -2,20 +2,29 @@ import api from './client'
 
 // ─── CLIENTES ───────────────────────────────────────────────────────────────
 
-export const clientesApi = {
-  list: (params = {}) => api.get('/clientes/', { params }),
-  get: (id) => api.get(`/clientes/${id}/`),
-  create: (data) => api.post('/clientes/', data),
-  update: (id, data) => api.patch(`/clientes/${id}/`, data),
-  delete: (id) => api.delete(`/clientes/${id}/`),
-  ativar: (id) => api.post(`/clientes/${id}/ativar/`),
-  bloquear: (id) => api.post(`/clientes/${id}/bloquear/`),
-  estatisticas: () => api.get('/clientes/estatisticas/'),
+  // ─── ADIÇÃO AO arretado-crm/src/api/services.js ─────────────────────────────
+// Adicione dentro de `clientesApi`, após `estatisticas`:
 
-  // Endereços
-  addEndereco: (id, data) => api.post(`/clientes/${id}/enderecos/`, data),
-  updateEndereco: (id, eid, data) => api.patch(`/clientes/${id}/enderecos/${eid}/`, data),
-  removeEndereco: (id, eid) => api.delete(`/clientes/${id}/enderecos/${eid}/remover/`),
+/*
+  historico: (id, params = {}) => api.get(`/clientes/${id}/historico/`, { params }),
+*/
+
+// Versão completa do clientesApi com o método novo:
+export const clientesApi = {
+  list:            (params = {}) => api.get('/clientes/', { params }),
+  get:             (id)          => api.get(`/clientes/${id}/`),
+  create:          (data)        => api.post('/clientes/', data),
+  update:          (id, data)    => api.patch(`/clientes/${id}/`, data),
+  delete:          (id)          => api.delete(`/clientes/${id}/`),
+  ativar:          (id)          => api.post(`/clientes/${id}/ativar/`),
+  bloquear:        (id)          => api.post(`/clientes/${id}/bloquear/`),
+  addEndereco:     (id, data)    => api.post(`/clientes/${id}/enderecos/`, data),
+  updateEndereco:  (id, eid, d)  => api.patch(`/clientes/${id}/enderecos/${eid}/`, d),
+  removeEndereco:  (id, eid)     => api.delete(`/clientes/${id}/enderecos/${eid}/remover/`),
+  estatisticas:    ()            => api.get('/clientes/estatisticas/'),
+
+  // ── FASE 3: Histórico unificado ──────────────────────────────────────────
+  historico: (id, params = {}) => api.get(`/clientes/${id}/historico/`, { params }),
 }
 
 // ─── TAGS ───────────────────────────────────────────────────────────────────
@@ -78,4 +87,6 @@ export const ifoodApi = {
   vincularCliente:(id,cid)=> api.post(`/ifood/pedidos/${id}/vincular-cliente/`, { cliente_id: cid }),
   motivosCancelamento:(id)=> api.get(`/ifood/pedidos/${id}/motivos-cancelamento/`),
   estatisticas: ()        => api.get('/ifood/pedidos/estatisticas/'),
+
+
 }

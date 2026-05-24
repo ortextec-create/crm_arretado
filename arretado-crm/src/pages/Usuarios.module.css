@@ -1,106 +1,80 @@
-.page { display: flex; flex-direction: column; height: 100%; }
-.content { flex: 1; padding: 22px 26px; overflow-y: auto; }
+.page    { display: flex; flex-direction: column; height: 100%; }
+.content { flex: 1; padding: 22px 26px; overflow-y: auto; background: var(--bg); }
 
-.grid {
-  display: grid;
-  grid-template-columns: 380px 1fr;
-  gap: 24px;
-  align-items: start;
-}
+.grid { display: grid; grid-template-columns: 380px 1fr; gap: 24px; align-items: start; }
 
 .sectionLabel {
-  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
-  color: rgba(154,143,126,0.5); margin-bottom: 12px;
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--texto-muted); margin-bottom: 12px; font-weight: 500;
 }
 
 .userCard {
   display: flex; align-items: center; gap: 12px;
-  background: var(--bege-dim);
-  border: 0.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
-  margin-bottom: 10px;
-  cursor: pointer; transition: border-color 0.15s;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px 16px;
+  margin-bottom: 10px; cursor: pointer;
+  transition: all 0.15s; box-shadow: var(--shadow-sm);
 }
-.userCard:hover { border-color: var(--border-strong); }
-.userCardActive { border-color: var(--caramelo) !important; background: var(--caramelo-dim); }
+.userCard:hover         { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+.userCardActive         { border-color: var(--caramelo) !important; background: var(--caramelo-pale); box-shadow: 0 0 0 3px var(--caramelo-dim); }
 
-.userInfo { flex: 1; min-width: 0; }
-.userName  { display: block; font-size: 13px; color: var(--bege); font-weight: 500; }
-.userEmail { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
-.userRole  { display: block; font-size: 10px; margin-top: 3px; font-weight: 500; }
+.userInfo  { flex: 1; min-width: 0; }
+.userName  { display: block; font-size: 13px; color: var(--texto); font-weight: 600; }
+.userEmail { display: block; font-size: 11px; color: var(--texto-muted); margin-top: 2px; }
+.userRole  { display: block; font-size: 11px; margin-top: 3px; font-weight: 600; }
 
-.userMeta { text-align: right; flex-shrink: 0; }
-.metaLabel { display: block; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: rgba(154,143,126,0.45); }
-.metaValue { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.userMeta      { text-align: right; flex-shrink: 0; }
+.metaLabel     { display: block; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--texto-faint); }
+.metaValue     { display: block; font-size: 11px; color: var(--texto-muted); margin-top: 2px; }
 
 .iconBtnDanger {
-  width: 26px; height: 26px;
+  width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
-  background: none; border: 0.5px solid rgba(192,90,58,0.2);
-  color: rgba(192,90,58,0.5); border-radius: var(--radius-sm);
-  font-size: 13px; cursor: pointer; transition: all 0.15s;
-  font-family: inherit; flex-shrink: 0;
+  background: var(--bg-alt); border: 1px solid var(--border);
+  color: var(--texto-faint); border-radius: var(--radius-sm);
+  font-size: 13px; cursor: pointer; transition: all 0.15s; font-family: inherit; flex-shrink: 0;
 }
-.iconBtnDanger:hover { color: var(--danger); border-color: rgba(192,90,58,0.4); }
+.iconBtnDanger:hover { color: var(--danger); border-color: rgba(192,57,43,0.3); background: var(--danger-pale); }
 
 /* Permissions panel */
 .permHeader {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 14px;
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
 }
-.permTitle { font-size: 14px; color: var(--bege); font-weight: 500; }
+.permTitle { font-size: 14px; color: var(--texto); font-weight: 600; }
 
 .permsPanel {
-  background: var(--bege-dim);
-  border: 0.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);
 }
 
 .permSection {
-  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
-  color: rgba(154,143,126,0.45);
-  padding: 14px 18px 8px;
-  border-bottom: 0.5px solid rgba(200,134,10,0.06);
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--texto-muted); padding: 12px 18px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt); font-weight: 500;
 }
 
 .permRow {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 18px;
-  border-bottom: 0.5px solid rgba(200,134,10,0.05);
-  gap: 12px;
+  padding: 13px 18px; border-bottom: 1px solid var(--border); gap: 12px;
 }
 .permRow:last-child { border-bottom: none; }
-
-.permLabel { font-size: 13px; color: var(--bege); }
-.permDesc  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.permLabel { font-size: 13px; color: var(--texto); font-weight: 500; }
+.permDesc  { font-size: 11px; color: var(--texto-muted); margin-top: 2px; }
 
 /* Toggle */
 .toggle {
-  width: 38px; height: 22px;
-  background: rgba(154,143,126,0.18);
-  border: 0.5px solid rgba(154,143,126,0.25);
-  border-radius: 11px;
-  position: relative;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-  flex-shrink: 0;
+  width: 40px; height: 22px;
+  background: var(--border-strong); border: none;
+  border-radius: 11px; position: relative; cursor: pointer;
+  transition: background 0.2s; flex-shrink: 0;
 }
 .toggle::after {
   content: '';
-  position: absolute;
-  width: 16px; height: 16px;
-  background: var(--muted);
-  border-radius: 50%;
-  top: 2px; left: 2px;
-  transition: left 0.2s, background 0.2s;
+  position: absolute; width: 16px; height: 16px;
+  background: #fff; border-radius: 50%;
+  top: 3px; left: 3px; transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
-.toggleOn {
-  background: rgba(200,134,10,0.35);
-  border-color: rgba(200,134,10,0.4);
-}
-.toggleOn::after {
-  left: 18px;
-  background: var(--caramelo);
-}
+.toggleOn { background: var(--caramelo); }
+.toggleOn::after { left: 21px; }

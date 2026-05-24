@@ -1,43 +1,36 @@
 .topbar {
-  height: 54px;
-  border-bottom: 0.5px solid var(--border);
-  display: flex; align-items: center; gap: 14px;
-  padding: 0 26px;
-  flex-shrink: 0;
-  background: rgba(10,9,8,0.7);
-  backdrop-filter: blur(6px);
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 26px; flex-shrink: 0;
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--border);
 }
 
-.title {
-  font-size: 18px; font-weight: 500;
-  color: var(--bege); white-space: nowrap;
-}
+.title { font-size: 18px; font-weight: 600; color: var(--texto); white-space: nowrap; }
 
 .searchWrap {
   display: flex; align-items: center; gap: 8px;
-  background: var(--bege-dim);
-  border: 0.5px solid var(--border);
-  padding: 7px 12px; border-radius: var(--radius-sm);
+  background: var(--bg-alt); border: 1px solid var(--border);
+  padding: 7px 13px; border-radius: var(--radius-sm);
   flex: 1; max-width: 300px;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-
-.searchWrap i { color: var(--muted); font-size: 14px; flex-shrink: 0; }
-
+.searchWrap:focus-within {
+  border-color: var(--caramelo);
+  box-shadow: 0 0 0 3px var(--caramelo-dim);
+  background: var(--surface);
+}
+.searchWrap i { color: var(--texto-muted); font-size: 14px; flex-shrink: 0; }
 .search {
   background: none; border: none; outline: none;
-  color: var(--bege); font-size: 13px; width: 100%;
+  color: var(--texto); font-size: 13px; width: 100%;
 }
-
-.search::placeholder { color: rgba(154,143,126,0.45); }
-
+.search::placeholder { color: var(--texto-faint); }
 .clearBtn {
   background: none; border: none;
-  color: var(--muted); font-size: 13px; padding: 0;
+  color: var(--texto-muted); font-size: 13px; padding: 0;
   line-height: 1; flex-shrink: 0;
 }
-.clearBtn:hover { color: var(--bege); }
-
-.actions {
-  display: flex; align-items: center; gap: 8px;
-  margin-left: auto; flex-shrink: 0;
-}
+.clearBtn:hover { color: var(--texto); }
+.actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
