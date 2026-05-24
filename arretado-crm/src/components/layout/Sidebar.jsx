@@ -18,6 +18,8 @@ const NAV = [
       { to: '/integracoes/ifood', icon: 'brand-firebase', label: 'iFood', dot: true },
       { to: '/integracoes/anotaai', icon: 'device-mobile', label: 'Anota AI', dot: true },
       { to: '/integracoes/pdv', icon: 'building-store', label: 'PDV Próprio' },
+      { to: '/integracoes/pdv/catalogo', icon: 'package', label: 'Catálogo', sub: true }
+
     ],
   },
   {
@@ -53,13 +55,14 @@ export default function Sidebar() {
         {NAV.map(({ section, items }) => (
           <div key={section} className={styles.navSection}>
             <span className={styles.sectionLabel}>{section}</span>
-            {items.map(({ to, icon, label, dot }) => (
+            {items.map(({ to, icon, label, dot, sub }) => (
               <NavLink
                 key={to}
                 to={to}
                 end={to === '/'}
                 className={({ isActive }) =>
-                  `${styles.navItem} ${isActive ? styles.active : ''}`
+                  `${styles.navItem} ${isActive ? styles.active : ''} ${sub ? styles.navItemSub : ''}`
+
                 }
               >
                 <i className={`ti ti-${icon}`} aria-hidden="true" />

@@ -256,7 +256,7 @@
 
 /* ── Modal Novo Pedido ───────────────────────────────────────────────────── */
 .modalNovo {
-  background: var(--surface-alt, var(--fundo));
+ background: var(--surface); 
   border: 1px solid var(--border);
   border-radius: 14px;
   width: 100%;
@@ -444,7 +444,7 @@
 
 /* ── Modal Detalhe ───────────────────────────────────────────────────────── */
 .modalDetalhe {
-  background: var(--surface-alt, var(--fundo));
+  background: var(--surface); 
   border: 1px solid var(--border);
   border-radius: 14px;
   width: 100%; max-width: 480px;
