@@ -7,6 +7,7 @@ urlpatterns = [
     path('api-auth/', include('rest_framework.urls')),
     path('api/v1/ifood/', include('ifood.urls')),
     path('api/v1/pdv/',    include('pdv.urls')),   # ← ADICIONAR
+    path('api/v1/', include('pedidos.urls')),   # ← FASE 4: adicionar esta linha
 
 
 ]

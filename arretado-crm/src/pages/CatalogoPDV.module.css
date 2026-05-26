@@ -454,13 +454,14 @@
 }
 
 .modalProduto {
-  background: var(--fundo);
+  background: var(--surface, #fff);
   border: 1px solid var(--border);
   border-radius: 14px;
   width: 100%; max-width: 480px;
   max-height: 90vh;
   display: flex; flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 
 .modalHeader {
@@ -502,7 +503,7 @@
 
 /* ── Modal confirmação ───────────────────────────────────────────────────── */
 .modalConfirm {
-  background: var(--fundo);
+  background: var(--surface, #fff);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 28px 24px;
@@ -511,6 +512,7 @@
   display: flex; flex-direction: column;
   align-items: center; gap: 16px;
   text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 
 .modalConfirm p {
