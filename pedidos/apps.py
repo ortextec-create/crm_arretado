@@ -25,4 +25,4 @@ class PedidosConfig(AppConfig):
                 )
 
         import pdv.signals      # noqa: F401
-        import eventos.signals  # noqa: F401  ← LINHA NOVA
+        #import eventos.signals  # noqa: F401  ← LINHA NOVA

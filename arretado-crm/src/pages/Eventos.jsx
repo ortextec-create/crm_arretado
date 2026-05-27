@@ -110,11 +110,11 @@ export default function Eventos() {
   const handleAcao = async (acao, eventoId) => {
     try {
       const fn = {
-        confirmar:       () => eventosApi.confirmar(eventoId),
-        iniciar_producao:() => eventosApi.iniciarProducao(eventoId),
-        marcar_pronto:   () => eventosApi.marcarPronto(eventoId),
-        entregar:        () => eventosApi.entregar(eventoId),
-        cancelar:        () => eventosApi.cancelar(eventoId),
+        confirmar:        () => eventosApi.confirmar(eventoId),
+        iniciar_producao: () => eventosApi.iniciarProducao(eventoId),
+        marcar_pronto:    () => eventosApi.marcarPronto(eventoId),
+        entregar:         () => eventosApi.entregar(eventoId),
+        cancelar:         () => eventosApi.cancelar(eventoId),
       }[acao]
       if (!fn) return
       const res = await fn()
@@ -168,9 +168,9 @@ export default function Eventos() {
       {/* ── Stats ───────────────────────────────────────────────────── */}
       {stats && (
         <div className={styles.statsRow}>
-          <StatCard icon="ti-calendar-event" label="Eventos este mês"    value={stats.eventos_mes} />
+          <StatCard icon="ti-calendar-event"  label="Eventos este mês"       value={stats.eventos_mes} />
           <StatCard icon="ti-currency-dollar" label="Faturamento (entregues)" value={fmt(stats.faturamento_mes)} />
-          <StatCard icon="ti-clock"           label="Próximos 7 dias"    value={stats.proximos_7_dias?.length ?? 0} />
+          <StatCard icon="ti-clock"           label="Próximos 7 dias"        value={stats.proximos_7_dias?.length ?? 0} />
           <StatCard
             icon="ti-alert-circle"
             label="Em produção"
@@ -238,9 +238,9 @@ export default function Eventos() {
           {loading ? (
             <div className={styles.center}><Spinner size={28} /></div>
           ) : eventos.length === 0 ? (
-            <div className={styles.empty}>
-              <i className="ti ti-calendar-off" />
-              <p>Nenhum evento encontrado.</p>
+            <div className={styles.center}>
+              <i className="ti ti-calendar-off" style={{ fontSize: 40, opacity: 0.3 }} />
+              <p style={{ opacity: 0.5 }}>Nenhum evento encontrado.</p>
             </div>
           ) : (
             <div className={styles.tableWrap}>
@@ -249,17 +249,17 @@ export default function Eventos() {
                   <tr>
                     <th>Número</th>
                     <th>Tipo</th>
-                    <th>Data do Evento</th>
+                    <th>Data</th>
                     <th>Cliente</th>
                     <th>Entrega</th>
-                    <th>Valor Total</th>
+                    <th>Total</th>
                     <th>Saldo</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {eventos.map(ev => (
-                    <tr key={ev.id} className={styles.row} onClick={() => abrirDetalhe(ev.id)}>
+                    <tr key={ev.id} className={styles.tableRow} onClick={() => abrirDetalhe(ev.id)}>
                       <td className={styles.numero}>{ev.numero}</td>
                       <td>
                         <span className={styles.tipoEvento}>
@@ -267,22 +267,10 @@ export default function Eventos() {
                           {ev.tipo_evento_display}
                         </span>
                       </td>
+                      <td>{fmtData(ev.data_evento)}</td>
+                      <td>{ev.nome_cliente_display}</td>
                       <td>
-                        <span className={styles.dataEvento}>{fmtData(ev.data_evento)}</span>
-                        {ev.hora_evento && (
-                          <span className={styles.horaEvento}> {ev.hora_evento.slice(0, 5)}</span>
-                        )}
-                      </td>
-                      <td>
-                        <div className={styles.clienteCell}>
-                          <span>{ev.nome_cliente_display}</span>
-                          {ev.telefone_display && (
-                            <span className={styles.tel}>{ev.telefone_display}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`${styles.tipoEntrega} ${ev.tipo_entrega === 'entrega_local' ? styles.entregaLocal : ''}`}>
+                        <span className={`${styles.entregaBadge} ${ev.tipo_entrega === 'entrega_local' ? styles.entregaLocal : ''}`}>
                           <i className={`ti ${ev.tipo_entrega === 'retirada_loja' ? 'ti-building-store' : 'ti-truck-delivery'}`} />
                           {ev.tipo_entrega_display}
                         </span>
@@ -315,7 +303,12 @@ export default function Eventos() {
       {showNovo && (
         <ModalNovoEvento
           onClose={() => setShowNovo(false)}
-          onSaved={() => { setShowNovo(false); loadEventos(); loadStats(); setToast({ message: 'Evento criado com sucesso!', type: 'success' }) }}
+          onSaved={() => {
+            setShowNovo(false)
+            loadEventos()
+            loadStats()
+            setToast({ message: 'Evento criado com sucesso!', type: 'success' })
+          }}
         />
       )}
 
@@ -324,7 +317,11 @@ export default function Eventos() {
           evento={eventoAtivo}
           onClose={() => { setShowDetalhe(false); setEventoAtivo(null) }}
           onAcao={handleAcao}
-          onItemAdded={async () => { const r = await eventosApi.detail(eventoAtivo.id); setEventoAtivo(r.data); loadEventos() }}
+          onItemAdded={async () => {
+            const r = await eventosApi.detail(eventoAtivo.id)
+            setEventoAtivo(r.data)
+            loadEventos()
+          }}
           onToast={setToast}
         />
       )}
@@ -368,15 +365,13 @@ function AgendaView({ mes, setMes, agenda, onClickEvento }) {
   }
 
   const diasNoMes = new Date(ano, m, 0).getDate()
-  const primeiroDia = new Date(ano, m - 1, 1).getDay() // 0=Dom
+  const primeiroDia = new Date(ano, m - 1, 1).getDay()
 
   const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                     'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
   const celulas = []
-  // Células vazias do início
   for (let i = 0; i < primeiroDia; i++) celulas.push(null)
-  // Dias do mês
   for (let d = 1; d <= diasNoMes; d++) celulas.push(d)
 
   return (
@@ -404,7 +399,10 @@ function AgendaView({ mes, setMes, agenda, onClickEvento }) {
           const hoje = new Date()
           const isHoje = hoje.getDate() === dia && hoje.getMonth() === m - 1 && hoje.getFullYear() === ano
           return (
-            <div key={key} className={`${styles.agendaCelula} ${evsDia.length > 0 ? styles.agendaCelulaCom : ''} ${isHoje ? styles.agendaHoje : ''}`}>
+            <div
+              key={key}
+              className={`${styles.agendaCelula} ${evsDia.length > 0 ? styles.agendaCelulaCom : ''} ${isHoje ? styles.agendaHoje : ''}`}
+            >
               <span className={styles.agendaDiaNum}>{dia}</span>
               <div className={styles.agendaEventosDia}>
                 {evsDia.map(ev => (
@@ -435,10 +433,10 @@ function ModalNovoEvento({ onClose, onSaved }) {
   const [step, setStep] = useState(0)
 
   // Dados do evento
-  const [tipoEvento,   setTipoEvento]   = useState('aniversario')
-  const [dataEvento,   setDataEvento]   = useState('')
-  const [horaEvento,   setHoraEvento]   = useState('')
-  const [observacoes,  setObservacoes]  = useState('')
+  const [tipoEvento,  setTipoEvento]  = useState('aniversario')
+  const [dataEvento,  setDataEvento]  = useState('')
+  const [horaEvento,  setHoraEvento]  = useState('')
+  const [observacoes, setObservacoes] = useState('')
 
   // Cliente
   const [buscaCliente,    setBuscaCliente]    = useState('')
@@ -449,30 +447,31 @@ function ModalNovoEvento({ onClose, onSaved }) {
   const [buscandoCliente, setBuscandoCliente] = useState(false)
 
   // Entrega
-  const [tipoEntrega,    setTipoEntrega]    = useState('retirada_loja')
-  const [locais,         setLocais]         = useState([])
-  const [localSel,       setLocalSel]       = useState('')
-  const [endAvulso,      setEndAvulso]      = useState('')
+  const [tipoEntrega, setTipoEntrega] = useState('retirada_loja')
+  const [locais,      setLocais]      = useState([])
+  const [localSel,    setLocalSel]    = useState('')
+  const [endAvulso,   setEndAvulso]   = useState('')
 
   // Itens
-  const [categorias,     setCategorias]     = useState([])
-  const [produtos,       setProdutos]       = useState([])
-  const [buscaProd,      setBuscaProd]      = useState('')
-  const [catSel,         setCatSel]         = useState('')
-  const [carrinho,       setCarrinho]       = useState([])
+  const [categorias, setCategorias] = useState([])
+  const [produtos,   setProdutos]   = useState([])
+  const [buscaProd,  setBuscaProd]  = useState('')
+  const [catSel,     setCatSel]     = useState('')
+  const [carrinho,   setCarrinho]   = useState([])
 
   // Financeiro
-  const [desconto,       setDesconto]       = useState('0')
-  const [sinal,          setSinal]          = useState('0')
+  const [desconto, setDesconto] = useState('0')
+  const [sinal,    setSinal]    = useState('0')
 
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
 
-  // Carrega locais e catálogo
+  // ── Carrega locais e catálogo ─────────────────────────────────────────────
+  // CORRIGIDO: usa pdvApi.listCategorias() e pdvApi.listProdutos()
   useEffect(() => {
     locaisEventoApi.list({ ativo: 'true' }).then(r => setLocais(r.data.results ?? r.data)).catch(() => {})
-    pdvApi.categorias.list().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
-    pdvApi.produtos.list({ ativo: 'true' }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
+    pdvApi.listCategorias().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
+    pdvApi.listProdutos({ ativo: 'true' }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
   }, [])
 
   // Busca de cliente
@@ -489,7 +488,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
   }, [buscaCliente])
 
   const produtosFiltrados = produtos.filter(p => {
-    const okCat  = catSel ? p.categoria === Number(catSel) : true
+    const okCat   = catSel ? p.categoria === Number(catSel) : true
     const okBusca = buscaProd ? p.nome.toLowerCase().includes(buscaProd.toLowerCase()) : true
     return okCat && okBusca
   })
@@ -542,7 +541,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
         })),
       })
       onSaved()
-    } catch (e) {
+    } catch {
       setError('Erro ao salvar evento. Verifique os dados e tente novamente.')
     } finally {
       setSaving(false)
@@ -594,27 +593,23 @@ function ModalNovoEvento({ onClose, onSaved }) {
               <label>Cliente (buscar no CRM)</label>
               {clienteSel ? (
                 <div className={styles.clienteSelecionado}>
-                  <i className="ti ti-user-check" />
                   <span>{clienteSel.nome}</span>
-                  <span className={styles.tel}>{clienteSel.telefone_principal}</span>
-                  <button onClick={() => { setClienteSel(null); setBuscaCliente('') }}>
-                    <i className="ti ti-x" />
-                  </button>
+                  <button onClick={() => setClienteSel(null)}><i className="ti ti-x" /></button>
                 </div>
               ) : (
-                <div className={styles.buscaWrap}>
+                <div className={styles.clienteBusca}>
                   <input
-                    placeholder="Digite nome, CPF ou telefone…"
+                    placeholder="Digite o nome ou telefone…"
                     value={buscaCliente}
                     onChange={e => setBuscaCliente(e.target.value)}
                   />
                   {buscandoCliente && <Spinner size={14} />}
                   {clienteOptions.length > 0 && (
-                    <div className={styles.dropdown}>
+                    <div className={styles.clienteDropdown}>
                       {clienteOptions.map(c => (
-                        <button key={c.id} onClick={() => { setClienteSel(c); setClienteOptions([]); setBuscaCliente('') }}>
-                          <span>{c.nome}</span>
-                          <span className={styles.tel}>{c.telefone_principal}</span>
+                        <button key={c.id} onClick={() => { setClienteSel(c); setClienteOptions([]) }}>
+                          <strong>{c.nome}</strong>
+                          <span>{c.telefone_principal}</span>
                         </button>
                       ))}
                     </div>
@@ -623,53 +618,40 @@ function ModalNovoEvento({ onClose, onSaved }) {
               )}
             </div>
 
-            {/* Cliente avulso (se não encontrou no CRM) */}
+            {/* Cliente avulso (se não selecionou do CRM) */}
             {!clienteSel && (
               <>
                 <div className={styles.formGroup}>
                   <label>Nome do cliente (avulso)</label>
-                  <input placeholder="Nome" value={clienteNome} onChange={e => setClienteNome(e.target.value)} />
+                  <input value={clienteNome} onChange={e => setClienteNome(e.target.value)} placeholder="Nome completo" />
                 </div>
                 <div className={styles.formGroup}>
                   <label>Telefone</label>
-                  <input placeholder="(86) 99999-0000" value={clienteTel} onChange={e => setClienteTel(e.target.value)} />
+                  <input value={clienteTel} onChange={e => setClienteTel(e.target.value)} placeholder="(86) 9 9999-9999" />
                 </div>
               </>
             )}
 
             <div className={`${styles.formGroup} ${styles.fullRow}`}>
               <label>Observações</label>
-              <textarea
-                rows={2}
-                placeholder="Informações adicionais sobre o evento…"
-                value={observacoes}
-                onChange={e => setObservacoes(e.target.value)}
-              />
+              <textarea value={observacoes} onChange={e => setObservacoes(e.target.value)} rows={3} placeholder="Observações gerais do evento…" />
             </div>
           </div>
         )}
 
-        {/* ── Step 1: Entrega ────────────────────────────────────────── */}
+        {/* ── Step 1: Entrega ─────────────────────────────────────────── */}
         {step === 1 && (
           <div className={styles.formGrid}>
             <div className={`${styles.formGroup} ${styles.fullRow}`}>
-              <label>Tipo de Entrega</label>
+              <label>Tipo de entrega</label>
               <div className={styles.radioGroup}>
-                <label className={`${styles.radioCard} ${tipoEntrega === 'retirada_loja' ? styles.radioCardAtivo : ''}`}>
+                <label className={`${styles.radioCard} ${tipoEntrega === 'retirada_loja' ? styles.radioCardActive : ''}`}>
                   <input type="radio" value="retirada_loja" checked={tipoEntrega === 'retirada_loja'} onChange={e => setTipoEntrega(e.target.value)} />
-                  <i className="ti ti-building-store" />
-                  <div>
-                    <strong>Retirada na loja</strong>
-                    <span>O cliente retira no estabelecimento</span>
-                  </div>
+                  <i className="ti ti-building-store" /> Retirada na loja
                 </label>
-                <label className={`${styles.radioCard} ${tipoEntrega === 'entrega_local' ? styles.radioCardAtivo : ''}`}>
+                <label className={`${styles.radioCard} ${tipoEntrega === 'entrega_local' ? styles.radioCardActive : ''}`}>
                   <input type="radio" value="entrega_local" checked={tipoEntrega === 'entrega_local'} onChange={e => setTipoEntrega(e.target.value)} />
-                  <i className="ti ti-truck-delivery" />
-                  <div>
-                    <strong>Entrega no local da festa</strong>
-                    <span>Levamos até o endereço do evento</span>
-                  </div>
+                  <i className="ti ti-truck-delivery" /> Entrega no local
                 </label>
               </div>
             </div>
@@ -679,7 +661,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
                 <div className={`${styles.formGroup} ${styles.fullRow}`}>
                   <label>Local cadastrado</label>
                   <select value={localSel} onChange={e => setLocalSel(e.target.value)}>
-                    <option value="">— Selecione um local salvo (opcional) —</option>
+                    <option value="">— Endereço avulso —</option>
                     {locais.map(l => (
                       <option key={l.id} value={l.id}>{l.nome} — {l.bairro}</option>
                     ))}
@@ -687,12 +669,8 @@ function ModalNovoEvento({ onClose, onSaved }) {
                 </div>
                 {!localSel && (
                   <div className={`${styles.formGroup} ${styles.fullRow}`}>
-                    <label>Endereço avulso</label>
-                    <input
-                      placeholder="Rua, número, bairro, referência…"
-                      value={endAvulso}
-                      onChange={e => setEndAvulso(e.target.value)}
-                    />
+                    <label>Endereço do local</label>
+                    <input value={endAvulso} onChange={e => setEndAvulso(e.target.value)} placeholder="Rua, número, bairro…" />
                   </div>
                 )}
               </>
@@ -700,31 +678,33 @@ function ModalNovoEvento({ onClose, onSaved }) {
           </div>
         )}
 
-        {/* ── Step 2: Itens ──────────────────────────────────────────── */}
+        {/* ── Step 2: Itens ───────────────────────────────────────────── */}
         {step === 2 && (
-          <div className={styles.itensLayout}>
-            <div className={styles.catalogo}>
-              <div className={styles.catalogoToolbar}>
-                <input
-                  className={styles.catalogoBusca}
-                  placeholder="Buscar produto…"
-                  value={buscaProd}
-                  onChange={e => setBuscaProd(e.target.value)}
-                />
-                <select value={catSel} onChange={e => setCatSel(e.target.value)}>
-                  <option value="">Todas as categorias</option>
-                  {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
-              </div>
-              <div className={styles.produtosList}>
-                {produtosFiltrados.map(p => {
+          <div className={styles.itensStep}>
+            <div className={styles.catalogoToolbar}>
+              <input
+                placeholder="Buscar produto…"
+                value={buscaProd}
+                onChange={e => setBuscaProd(e.target.value)}
+              />
+              <select value={catSel} onChange={e => setCatSel(e.target.value)}>
+                <option value="">Todas as categorias</option>
+                {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
+
+            <div className={styles.itensLayout}>
+              {/* Catálogo */}
+              <div className={styles.catalogo}>
+                {produtosFiltrados.length === 0 ? (
+                  <p className={styles.semItens}>Nenhum produto encontrado.</p>
+                ) : produtosFiltrados.map(p => {
                   const noCarrinho = carrinho.find(i => i.produto === p.id)
                   return (
                     <div key={p.id} className={styles.produtoCard}>
                       <div className={styles.produtoInfo}>
                         <span className={styles.produtoNome}>{p.nome}</span>
                         <span className={styles.produtoPreco}>{fmt(p.preco)}</span>
-                        {p.categoria_nome && <span className={styles.produtoCat}>{p.categoria_nome}</span>}
                       </div>
                       {noCarrinho ? (
                         <div className={styles.qtyControl}>
@@ -740,95 +720,95 @@ function ModalNovoEvento({ onClose, onSaved }) {
                     </div>
                   )
                 })}
-                {produtosFiltrados.length === 0 && (
-                  <p className={styles.semProdutos}>Nenhum produto encontrado.</p>
+              </div>
+
+              {/* Carrinho */}
+              <div className={styles.carrinho}>
+                <h4>Carrinho</h4>
+                {carrinho.length === 0 ? (
+                  <p className={styles.semItens}>Nenhum item adicionado.</p>
+                ) : carrinho.map(item => (
+                  <div key={item.produto} className={styles.carrinhoItem}>
+                    <div className={styles.carrinhoItemTop}>
+                      <span>{item.nome}</span>
+                      <button onClick={() => setQty(item.produto, 0)}><i className="ti ti-x" /></button>
+                    </div>
+                    <div className={styles.carrinhoItemBot}>
+                      <div className={styles.qtyControl}>
+                        <button onClick={() => setQty(item.produto, item.quantidade - 1)}>−</button>
+                        <span>{item.quantidade}</span>
+                        <button onClick={() => setQty(item.produto, item.quantidade + 1)}>+</button>
+                      </div>
+                      <span>{fmt(Number(item.preco_unit) * item.quantidade)}</span>
+                    </div>
+                    <input
+                      className={styles.obsInput}
+                      placeholder="Obs. (ex: sem nozes)"
+                      value={item.observacao}
+                      onChange={e => setObs(item.produto, e.target.value)}
+                    />
+                  </div>
+                ))}
+                {carrinho.length > 0 && (
+                  <div className={styles.carrinhoTotal}>
+                    <strong>Subtotal:</strong> {fmt(subtotal)}
+                  </div>
                 )}
               </div>
-            </div>
-
-            <div className={styles.carrinho}>
-              <h3 className={styles.carrinhoTitle}>
-                <i className="ti ti-shopping-cart" /> Pedido
-                <span className={styles.carrinhoCount}>{carrinho.length} itens</span>
-              </h3>
-              {carrinho.length === 0 ? (
-                <p className={styles.carrinhoVazio}>Adicione itens do catálogo.</p>
-              ) : (
-                <>
-                  <div className={styles.carrinhoItens}>
-                    {carrinho.map(item => (
-                      <div key={item.produto} className={styles.carrinhoItem}>
-                        <div className={styles.carrinhoItemTop}>
-                          <span className={styles.carrinhoItemNome}>{item.nome}</span>
-                          <span className={styles.carrinhoItemTotal}>
-                            {fmt(Number(item.preco_unit) * item.quantidade)}
-                          </span>
-                        </div>
-                        <div className={styles.carrinhoItemBottom}>
-                          <div className={styles.qtyControl}>
-                            <button onClick={() => setQty(item.produto, item.quantidade - 1)}>−</button>
-                            <span>{item.quantidade}</span>
-                            <button onClick={() => setQty(item.produto, item.quantidade + 1)}>+</button>
-                          </div>
-                          <input
-                            className={styles.obsInput}
-                            placeholder="Obs. deste item…"
-                            value={item.observacao}
-                            onChange={e => setObs(item.produto, e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className={styles.carrinhoTotal}>
-                    <span>Subtotal</span>
-                    <span>{fmt(subtotal)}</span>
-                  </div>
-                </>
-              )}
             </div>
           </div>
         )}
 
-        {/* ── Step 3: Financeiro ─────────────────────────────────────── */}
+        {/* ── Step 3: Financeiro ──────────────────────────────────────── */}
         {step === 3 && (
           <div className={styles.formGrid}>
-            <div className={styles.resumoFinanceiro}>
+            <div className={styles.formGroup}>
+              <label>Desconto (R$)</label>
+              <input type="number" min="0" step="0.01" value={desconto} onChange={e => setDesconto(e.target.value)} />
+            </div>
+            <div className={styles.formGroup}>
+              <label>Sinal pago (R$)</label>
+              <input type="number" min="0" step="0.01" value={sinal} onChange={e => setSinal(e.target.value)} />
+            </div>
+
+            <div className={`${styles.resumoFinanceiro} ${styles.fullRow}`}>
               <div className={styles.resumoLinha}>
-                <span>Subtotal</span>
-                <span>{fmt(subtotal)}</span>
+                <span>Subtotal</span><span>{fmt(subtotal)}</span>
               </div>
-              <div className={styles.formGroup}>
-                <label>Desconto (R$)</label>
-                <input type="number" min="0" step="0.01" value={desconto} onChange={e => setDesconto(e.target.value)} />
+              <div className={styles.resumoLinha}>
+                <span>Desconto</span><span>− {fmt(Number(desconto || 0))}</span>
               </div>
-              <div className={styles.resumoLinha + ' ' + styles.resumoTotal}>
-                <strong>Valor Total</strong>
-                <strong>{fmt(total)}</strong>
+              <div className={`${styles.resumoLinha} ${styles.resumoTotal}`}>
+                <span>Total</span><span>{fmt(total)}</span>
               </div>
-              <div className={styles.formGroup}>
-                <label>Sinal / Entrada paga (R$)</label>
-                <input type="number" min="0" step="0.01" value={sinal} onChange={e => setSinal(e.target.value)} />
+              <div className={styles.resumoLinha}>
+                <span>Sinal pago</span><span>{fmt(Number(sinal || 0))}</span>
               </div>
-              <div className={styles.resumoLinha + ' ' + styles.resumoSaldo}>
+              <div className={`${styles.resumoLinha} ${styles.resumoSaldo}`}>
                 <span>Saldo restante</span>
-                <span style={{ color: 'var(--caramelo)', fontWeight: 600 }}>
-                  {fmt(Math.max(total - Number(sinal || 0), 0))}
-                </span>
+                <span>{fmt(Math.max(total - Number(sinal || 0), 0))}</span>
               </div>
             </div>
 
             {/* Resumo do evento */}
-            <div className={styles.resumoEvento}>
-              <h4 className="serif">Resumo do evento</h4>
-              <p><i className={`ti ${TIPO_EVENTO_ICONS[tipoEvento]}`} /> {TIPO_EVENTO_LABELS[tipoEvento]}</p>
-              <p><i className="ti ti-calendar" /> {fmtData(dataEvento)}{horaEvento && ` às ${horaEvento}`}</p>
-              <p><i className="ti ti-user" /> {clienteSel?.nome || clienteNome || '—'}</p>
+            <div className={`${styles.resumoEvento} ${styles.fullRow}`}>
+              <p>
+                <i className={`ti ${TIPO_EVENTO_ICONS[tipoEvento] || 'ti-calendar'}`} />
+                {TIPO_EVENTO_LABELS[tipoEvento]} · {fmtData(dataEvento)}
+                {horaEvento && ` às ${horaEvento}`}
+              </p>
+              <p>
+                <i className="ti ti-user" />
+                {clienteSel ? clienteSel.nome : clienteNome || '—'}
+              </p>
               <p>
                 <i className={`ti ${tipoEntrega === 'retirada_loja' ? 'ti-building-store' : 'ti-truck-delivery'}`} />{' '}
                 {tipoEntrega === 'retirada_loja' ? 'Retirada na loja' : 'Entrega no local'}
               </p>
-              <p><i className="ti ti-shopping-cart" /> {carrinho.length} itens · {carrinho.reduce((s, i) => s + i.quantidade, 0)} unidades</p>
+              <p>
+                <i className="ti ti-shopping-cart" /> {carrinho.length} itens ·{' '}
+                {carrinho.reduce((s, i) => s + i.quantidade, 0)} unidades
+              </p>
             </div>
           </div>
         )}
@@ -862,18 +842,19 @@ function ModalNovoEvento({ onClose, onSaved }) {
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
 function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
-  const [addingItem,   setAddingItem]   = useState(false)
-  const [produtos,     setProdutos]     = useState([])
-  const [catSel,       setCatSel]       = useState('')
-  const [buscaProd,    setBuscaProd]    = useState('')
-  const [categorias,   setCategorias]   = useState([])
-  const [carrinho,     setCarrinho]     = useState([])
-  const [savingItems,  setSavingItems]  = useState(false)
+  const [addingItem,  setAddingItem]  = useState(false)
+  const [produtos,    setProdutos]    = useState([])
+  const [catSel,      setCatSel]      = useState('')
+  const [buscaProd,   setBuscaProd]   = useState('')
+  const [categorias,  setCategorias]  = useState([])
+  const [carrinho,    setCarrinho]    = useState([])
+  const [savingItems, setSavingItems] = useState(false)
 
+  // CORRIGIDO: usa pdvApi.listProdutos() e pdvApi.listCategorias()
   useEffect(() => {
     if (addingItem) {
-      pdvApi.produtos.list({ ativo: 'true' }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
-      pdvApi.categorias.list().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
+      pdvApi.listProdutos({ ativo: 'true' }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
+      pdvApi.listCategorias().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
     }
   }, [addingItem])
 
@@ -886,13 +867,13 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
   const addCarrinho = (prod) => {
     setCarrinho(c => {
       const idx = c.findIndex(i => i.produto === prod.id)
-      if (idx >= 0) { const n = [...c]; n[idx] = {...n[idx], quantidade: n[idx].quantidade+1}; return n }
+      if (idx >= 0) { const n = [...c]; n[idx] = { ...n[idx], quantidade: n[idx].quantidade + 1 }; return n }
       return [...c, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '' }]
     })
   }
   const setQty = (id, qty) => {
     if (qty <= 0) { setCarrinho(c => c.filter(i => i.produto !== id)); return }
-    setCarrinho(c => c.map(i => i.produto === id ? {...i, quantidade: qty} : i))
+    setCarrinho(c => c.map(i => i.produto === id ? { ...i, quantidade: qty } : i))
   }
 
   const salvarItens = async () => {
@@ -929,11 +910,11 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
   }
 
   const ACOES = [
-    { key: 'confirmar',        label: 'Confirmar',       icon: 'ti-check',          show: evento.pode_confirmar,        variant: 'primary' },
-    { key: 'iniciar_producao', label: 'Iniciar produção',icon: 'ti-chef-hat',       show: evento.pode_iniciar_producao, variant: 'primary' },
-    { key: 'marcar_pronto',    label: 'Marcar como pronto',icon:'ti-package',        show: evento.pode_marcar_pronto,    variant: 'primary' },
-    { key: 'entregar',         label: 'Entregar',        icon: 'ti-truck-delivery', show: evento.pode_entregar,         variant: 'primary' },
-    { key: 'cancelar',         label: 'Cancelar',        icon: 'ti-ban',            show: evento.pode_cancelar,         variant: 'danger'  },
+    { key: 'confirmar',        label: 'Confirmar',         icon: 'ti-check',          show: evento.pode_confirmar,        variant: 'primary' },
+    { key: 'iniciar_producao', label: 'Iniciar produção',  icon: 'ti-chef-hat',       show: evento.pode_iniciar_producao, variant: 'primary' },
+    { key: 'marcar_pronto',    label: 'Marcar como pronto',icon: 'ti-package',         show: evento.pode_marcar_pronto,    variant: 'primary' },
+    { key: 'entregar',         label: 'Entregar',          icon: 'ti-truck-delivery', show: evento.pode_entregar,         variant: 'primary' },
+    { key: 'cancelar',         label: 'Cancelar',          icon: 'ti-ban',            show: evento.pode_cancelar,         variant: 'danger'  },
   ]
 
   const cfg = STATUS_CONFIG[evento.status] || {}
@@ -953,59 +934,44 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
           </div>
 
           <div className={styles.infoGrid}>
-            <InfoRow icon="ti-calendar"       label="Data" value={fmtData(evento.data_evento)} />
+            <InfoRow icon="ti-calendar" label="Data"     value={fmtData(evento.data_evento)} />
             {evento.hora_evento && <InfoRow icon="ti-clock" label="Hora" value={evento.hora_evento.slice(0,5)} />}
-            <InfoRow icon="ti-user"           label="Cliente" value={evento.nome_cliente_display} />
+            <InfoRow icon="ti-user"    label="Cliente"  value={evento.nome_cliente_display} />
             {evento.telefone_display && <InfoRow icon="ti-phone" label="Telefone" value={evento.telefone_display} />}
             <InfoRow
               icon={evento.tipo_entrega === 'retirada_loja' ? 'ti-building-store' : 'ti-truck-delivery'}
               label="Entrega"
               value={evento.tipo_entrega_display}
             />
-            {evento.local_detalhe && (
-              <InfoRow icon="ti-map-pin" label="Local" value={`${evento.local_detalhe.nome} — ${evento.local_detalhe.bairro}`} />
-            )}
-            {evento.endereco_avulso && (
-              <InfoRow icon="ti-map-pin" label="Endereço" value={evento.endereco_avulso} />
-            )}
-            {evento.observacoes && (
-              <InfoRow icon="ti-notes" label="Obs." value={evento.observacoes} />
-            )}
+            {evento.local_nome && <InfoRow icon="ti-map-pin" label="Local" value={evento.local_nome} />}
+            {evento.endereco_avulso && <InfoRow icon="ti-map-pin" label="Endereço" value={evento.endereco_avulso} />}
+            {evento.observacoes && <InfoRow icon="ti-notes" label="Obs." value={evento.observacoes} />}
           </div>
 
           {/* Financeiro */}
-          <div className={styles.financeiroCard}>
-            <div className={styles.financeiroLinha}>
-              <span>Subtotal</span><span>{fmt(evento.subtotal)}</span>
-            </div>
+          <div className={styles.financeiroBox}>
+            <div className={styles.finLinha}><span>Subtotal</span><span>{fmt(evento.subtotal)}</span></div>
             {Number(evento.desconto) > 0 && (
-              <div className={styles.financeiroLinha}>
-                <span>Desconto</span><span>− {fmt(evento.desconto)}</span>
-              </div>
+              <div className={styles.finLinha}><span>Desconto</span><span>− {fmt(evento.desconto)}</span></div>
             )}
-            <div className={`${styles.financeiroLinha} ${styles.financeiroTotal}`}>
-              <strong>Total</strong><strong>{fmt(evento.valor_total)}</strong>
-            </div>
-            <div className={styles.financeiroLinha}>
-              <span>Sinal pago</span><span style={{color:'var(--verde)'}}>{fmt(evento.sinal_pago)}</span>
-            </div>
-            <div className={`${styles.financeiroLinha} ${Number(evento.saldo_restante) > 0 ? styles.saldoPendente : styles.saldoQuitado}`}>
+            <div className={`${styles.finLinha} ${styles.finTotal}`}><span>Total</span><span>{fmt(evento.valor_total)}</span></div>
+            <div className={styles.finLinha}><span>Sinal pago</span><span>{fmt(evento.sinal_pago)}</span></div>
+            <div className={`${styles.finLinha} ${Number(evento.saldo_restante) > 0 ? styles.finSaldoPendente : styles.finSaldoQuitado}`}>
               <span>Saldo restante</span>
               <span>{Number(evento.saldo_restante) > 0 ? fmt(evento.saldo_restante) : '✓ Quitado'}</span>
             </div>
           </div>
 
-          {/* Ações */}
-          <div className={styles.acoesWrap}>
+          {/* Ações de status */}
+          <div className={styles.acoesBox}>
             {ACOES.filter(a => a.show).map(a => (
               <Btn
                 key={a.key}
                 variant={a.variant === 'danger' ? 'ghost' : 'primary'}
-                icon={a.icon.replace('ti-','')}
                 onClick={() => onAcao(a.key, evento.id)}
                 style={a.variant === 'danger' ? { color: '#DC2626', borderColor: '#DC2626' } : {}}
               >
-                {a.label}
+                <i className={`ti ${a.icon}`} /> {a.label}
               </Btn>
             ))}
           </div>
@@ -1014,19 +980,19 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
         {/* Coluna direita: itens */}
         <div className={styles.detalheItens}>
           <div className={styles.itensHeader}>
-            <h3 className="serif">Itens do Pedido</h3>
-            {evento.status in { orcamento: 1, confirmado: 1 } && (
-              <Btn variant="ghost" size="sm" icon="plus" onClick={() => setAddingItem(v => !v)}>
-                Adicionar
+            <h4>Itens do evento</h4>
+            {evento.status in { orcamento: 1, confirmado: 1 } && !addingItem && (
+              <Btn variant="ghost" onClick={() => setAddingItem(true)}>
+                <i className="ti ti-plus" /> Adicionar itens
               </Btn>
             )}
           </div>
 
-          {evento.itens?.length === 0 ? (
+          {(!evento.itens || evento.itens.length === 0) ? (
             <p className={styles.semItens}>Nenhum item adicionado.</p>
           ) : (
             <div className={styles.itensList}>
-              {evento.itens?.map(item => (
+              {evento.itens.map(item => (
                 <div key={item.id} className={styles.itemRow}>
                   <div className={styles.itemInfo}>
                     <span className={styles.itemNome}>{item.nome}</span>
@@ -1047,7 +1013,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
             </div>
           )}
 
-          {/* Adicionar itens inline */}
+          {/* Painel de adicionar itens inline */}
           {addingItem && (
             <div className={styles.addItemsPanel}>
               <div className={styles.catalogoToolbar}>
@@ -1079,10 +1045,13 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
               </div>
               {carrinho.length > 0 && (
                 <Btn onClick={salvarItens} disabled={savingItems}>
-                  {savingItems ? <Spinner size={14} /> : null}
-                  Adicionar {carrinho.reduce((s,i) => s+i.quantidade, 0)} itens
+                  {savingItems ? <Spinner size={14} /> : <i className="ti ti-check" />}
+                  {savingItems ? 'Salvando…' : `Salvar ${carrinho.length} item(s)`}
                 </Btn>
               )}
+              <Btn variant="ghost" onClick={() => { setAddingItem(false); setCarrinho([]) }}>
+                Cancelar
+              </Btn>
             </div>
           )}
         </div>
@@ -1091,10 +1060,12 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
   )
 }
 
+// ─── InfoRow helper ───────────────────────────────────────────────────────────
+
 function InfoRow({ icon, label, value }) {
   return (
     <div className={styles.infoRow}>
-      <i className={`ti ${icon}`} />
+      <i className={`ti ${icon} ${styles.infoIcon}`} />
       <span className={styles.infoLabel}>{label}</span>
       <span className={styles.infoValue}>{value}</span>
     </div>
