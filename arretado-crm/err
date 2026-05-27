@@ -1,0 +1,253 @@
+npm ERR! code 1
+npm ERR! path /home/fobs/arretado/arretado-crm/node_modules/inotify
+npm ERR! command failed
+npm ERR! command sh -c node-gyp rebuild
+npm ERR! make: Entering directory '/home/fobs/arretado/arretado-crm/node_modules/inotify/build'
+npm ERR!   CXX(target) Release/obj.target/inotify/src/bindings.o
+npm ERR! make: Leaving directory '/home/fobs/arretado/arretado-crm/node_modules/inotify/build'
+npm ERR! gyp info it worked if it ends with ok
+npm ERR! gyp info using node-gyp@9.3.0
+npm ERR! gyp info using node@18.19.1 | linux | x64
+npm ERR! gyp info find Python using Python version 3.12.3 found at "/usr/bin/python3"
+npm ERR! gyp info spawn /usr/bin/python3
+npm ERR! gyp info spawn args [
+npm ERR! gyp info spawn args   '/usr/share/nodejs/node-gyp/gyp/gyp_main.py',
+npm ERR! gyp info spawn args   'binding.gyp',
+npm ERR! gyp info spawn args   '-f',
+npm ERR! gyp info spawn args   'make',
+npm ERR! gyp info spawn args   '-I',
+npm ERR! gyp info spawn args   '/home/fobs/arretado/arretado-crm/node_modules/inotify/build/config.gypi',
+npm ERR! gyp info spawn args   '-I',
+npm ERR! gyp info spawn args   '/usr/share/nodejs/node-gyp/addon.gypi',
+npm ERR! gyp info spawn args   '-I',
+npm ERR! gyp info spawn args   '/usr/include/nodejs/common.gypi',
+npm ERR! gyp info spawn args   '-Dlibrary=shared_library',
+npm ERR! gyp info spawn args   '-Dvisibility=default',
+npm ERR! gyp info spawn args   '-Dnode_root_dir=/usr/include/nodejs',
+npm ERR! gyp info spawn args   '-Dnode_gyp_dir=/usr/share/nodejs/node-gyp',
+npm ERR! gyp info spawn args   '-Dnode_lib_file=/usr/include/nodejs/<(target_arch)/node.lib',
+npm ERR! gyp info spawn args   '-Dmodule_root_dir=/home/fobs/arretado/arretado-crm/node_modules/inotify',
+npm ERR! gyp info spawn args   '-Dnode_engine=v8',
+npm ERR! gyp info spawn args   '--depth=.',
+npm ERR! gyp info spawn args   '--no-parallel',
+npm ERR! gyp info spawn args   '--generator-output',
+npm ERR! gyp info spawn args   'build',
+npm ERR! gyp info spawn args   '-Goutput_dir=.'
+npm ERR! gyp info spawn args ]
+npm ERR! gyp info spawn make
+npm ERR! gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+npm ERR! In file included from ../src/bindings.cc:2:
+npm ERR! ../src/bindings.h:10:48: error: ‘Handle’ has not been declared
+npm ERR!    10 |                         static void Initialize(Handle<Object> target);
+npm ERR!       |                                                ^~~~~~
+npm ERR! ../src/bindings.h:10:54: error: expected ‘,’ or ‘...’ before ‘<’ token
+npm ERR!    10 |                         static void Initialize(Handle<Object> target);
+npm ERR!       |                                                      ^
+npm ERR! ../src/bindings.cc:11:14: error: variable or field ‘Initialize’ declared void
+npm ERR!    11 |         void Inotify::Initialize(Handle<Object> exports) {
+npm ERR!       |              ^~~~~~~
+npm ERR! ../src/bindings.cc:11:34: error: ‘Handle’ was not declared in this scope
+npm ERR!    11 |         void Inotify::Initialize(Handle<Object> exports) {
+npm ERR!       |                                  ^~~~~~
+npm ERR! ../src/bindings.cc:11:47: error: expected primary-expression before ‘>’ token
+npm ERR!    11 |         void Inotify::Initialize(Handle<Object> exports) {
+npm ERR!       |                                               ^
+npm ERR! ../src/bindings.cc:11:49: error: ‘exports’ was not declared in this scope
+npm ERR!    11 |         void Inotify::Initialize(Handle<Object> exports) {
+npm ERR!       |                                                 ^~~~~~~
+npm ERR! ../src/bindings.cc: In static member function ‘static Nan::NAN_METHOD_RETURN_TYPE NodeInotify::Inotify::AddWatch(Nan::NAN_METHOD_ARGS_TYPE)’:
+npm ERR! ../src/bindings.cc:146:56: error: no matching function for call to ‘v8::Value::ToObject()’
+npm ERR!   146 |                 Local<Object> args_ = info[0]->ToObject();
+npm ERR!       |                                       ~~~~~~~~~~~~~~~~~^~
+npm ERR! In file included from /usr/include/nodejs/deps/v8/include/v8-primitive.h:11,
+npm ERR!                  from /usr/include/nodejs/deps/v8/include/v8-object.h:11,
+npm ERR!                  from /usr/include/nodejs/deps/v8/include/v8-array-buffer.h:13,
+npm ERR!                  from /usr/include/nodejs/deps/v8/include/v8.h:24,
+npm ERR!                  from /usr/include/nodejs/src/node.h:73,
+npm ERR!                  from ../src/node_inotify.h:5,
+npm ERR!                  from ../src/bindings.h:4:
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-value.h:372:44: note: candidate: ‘v8::MaybeLocal<v8::Object> v8::Value::ToObject(v8::Local<v8::Context>) const’
+npm ERR!   372 |   V8_WARN_UNUSED_RESULT MaybeLocal<Object> ToObject(
+npm ERR!       |                                            ^~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-value.h:372:44: note:   candidate expects 1 argument, 0 provided
+npm ERR! ../src/bindings.cc:149:32: error: no matching function for call to ‘v8::Object::Has(v8::Local<v8::String>&)’
+npm ERR!   149 |                 if (!args_->Has(path_sym)) {
+npm ERR!       |                      ~~~~~~~~~~^~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:325:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Has(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   325 |   V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:325:37: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:331:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Has(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   331 |   V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context, uint32_t index);
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:331:37: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:154:32: error: no matching function for call to ‘v8::Object::Has(v8::Local<v8::String>&)’
+npm ERR!   154 |                 if (!args_->Has(callback_sym) ||
+npm ERR!       |                      ~~~~~~~~~~^~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:325:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Has(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   325 |   V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:325:37: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:331:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Has(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   331 |   V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context, uint32_t index);
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:331:37: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:155:36: error: no matching function for call to ‘v8::Object::Get(v8::Local<v8::String>&)’
+npm ERR!   155 |                         !args_->Get(callback_sym)->IsFunction()) {
+npm ERR!       |                          ~~~~~~~~~~^~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   290 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   293 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:160:32: error: no matching function for call to ‘v8::Object::Has(v8::Local<v8::String>&)’
+npm ERR!   160 |                 if (!args_->Has(watch_for_sym)) {
+npm ERR!       |                      ~~~~~~~~~~^~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:325:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Has(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   325 |   V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:325:37: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:331:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Has(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   331 |   V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context, uint32_t index);
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:331:37: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:163:40: error: no matching function for call to ‘v8::Object::Get(v8::Local<v8::String>&)’
+npm ERR!   163 |                         if (!args_->Get(watch_for_sym)->IsInt32()) {
+npm ERR!       |                              ~~~~~~~~~~^~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   290 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   293 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:166:43: error: no matching function for call to ‘v8::Object::Get(v8::Local<v8::String>&)’
+npm ERR!   166 |                         mask |= args_->Get(watch_for_sym)->Int32Value();
+npm ERR!       |                                 ~~~~~~~~~~^~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   290 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   293 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:172:50: error: no matching function for call to ‘v8::Object::Get(v8::Local<v8::String>&)’
+npm ERR!   172 |                 String::Utf8Value path(args_->Get(path_sym));
+npm ERR!       |                                        ~~~~~~~~~~^~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   290 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   293 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:182:62: error: no matching function for call to ‘v8::Object::Get(v8::Local<v8::String>&)’
+npm ERR!   182 |                 inotify->handle()->Set(descriptor, args_->Get(callback_sym));
+npm ERR!       |                                                    ~~~~~~~~~~^~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   290 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   293 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc: In static member function ‘static Nan::NAN_METHOD_RETURN_TYPE NodeInotify::Inotify::RemoveWatch(Nan::NAN_METHOD_ARGS_TYPE)’:
+npm ERR! ../src/bindings.cc:195:44: error: no matching function for call to ‘v8::Value::Int32Value()’
+npm ERR!   195 |                 watch = info[0]->Int32Value();
+npm ERR!       |                         ~~~~~~~~~~~~~~~~~~~^~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-value.h:419:40: note: candidate: ‘v8::Maybe<int> v8::Value::Int32Value(v8::Local<v8::Context>) const’
+npm ERR!   419 |   V8_WARN_UNUSED_RESULT Maybe<int32_t> Int32Value(Local<Context> context) const;
+npm ERR!       |                                        ^~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-value.h:419:40: note:   candidate expects 1 argument, 0 provided
+npm ERR! ../src/bindings.cc: In static member function ‘static void NodeInotify::Inotify::Callback(uv_poll_t*, int, int)’:
+npm ERR! ../src/bindings.cc:262:41: error: no matching function for call to ‘v8::Object::Set(v8::Local<v8::String>, Nan::imp::IntegerFactory<v8::Integer>::return_t)’
+npm ERR!   262 |                                 obj->Set(Nan::New<String>("watch").ToLocalChecked(), Nan::New<Integer>(event->wd));
+npm ERR!       |                                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, v8::Local<v8::Value>, v8::Local<v8::Value>)’
+npm ERR!   244 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, uint32_t, v8::Local<v8::Value>)’
+npm ERR!   247 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context, uint32_t index,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! ../src/bindings.cc:263:41: error: no matching function for call to ‘v8::Object::Set(v8::Local<v8::String>, Nan::imp::IntegerFactory<v8::Integer>::return_t)’
+npm ERR!   263 |                                 obj->Set(Nan::New<String>("mask").ToLocalChecked(), Nan::New<Integer>(event->mask));
+npm ERR!       |                                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, v8::Local<v8::Value>, v8::Local<v8::Value>)’
+npm ERR!   244 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, uint32_t, v8::Local<v8::Value>)’
+npm ERR!   247 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context, uint32_t index,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! ../src/bindings.cc:264:41: error: no matching function for call to ‘v8::Object::Set(v8::Local<v8::String>, Nan::imp::IntegerFactory<v8::Integer>::return_t)’
+npm ERR!   264 |                                 obj->Set(Nan::New<String>("cookie").ToLocalChecked(), Nan::New<Integer>(event->cookie));
+npm ERR!       |                                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, v8::Local<v8::Value>, v8::Local<v8::Value>)’
+npm ERR!   244 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, uint32_t, v8::Local<v8::Value>)’
+npm ERR!   247 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context, uint32_t index,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! ../src/bindings.cc:267:49: error: no matching function for call to ‘v8::Object::Set(v8::Local<v8::String>, v8::Local<v8::String>)’
+npm ERR!   267 |                                         obj->Set(Nan::New<String>("name").ToLocalChecked(), Nan::New<String>(event->name).ToLocalChecked());
+npm ERR!       |                                         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, v8::Local<v8::Value>, v8::Local<v8::Value>)’
+npm ERR!   244 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:244:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note: candidate: ‘v8::Maybe<bool> v8::Object::Set(v8::Local<v8::Context>, uint32_t, v8::Local<v8::Value>)’
+npm ERR!   247 |   V8_WARN_UNUSED_RESULT Maybe<bool> Set(Local<Context> context, uint32_t index,
+npm ERR!       |                                     ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:247:37: note:   candidate expects 3 arguments, 2 provided
+npm ERR! ../src/bindings.cc:275:65: error: no matching function for call to ‘v8::Object::Get(Nan::imp::IntegerFactory<v8::Integer>::return_t)’
+npm ERR!   275 |                                 Local<Value> value = handle->Get(Nan::New<Integer>(event->wd));
+npm ERR!       |                                                      ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, v8::Local<v8::Value>)’
+npm ERR!   290 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:290:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note: candidate: ‘v8::MaybeLocal<v8::Value> v8::Object::Get(v8::Local<v8::Context>, uint32_t)’
+npm ERR!   293 |   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+npm ERR!       |                                           ^~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-object.h:293:43: note:   candidate expects 2 arguments, 1 provided
+npm ERR! ../src/bindings.cc:279:46: warning: ‘v8::Local<v8::Value> Nan::Callback::Call(v8::Local<v8::Object>, int, v8::Local<v8::Value>*) const’ is deprecated [-Wdeprecated-declarations]
+npm ERR!   279 |                                 callback.Call(handle, 1, argv);
+npm ERR!       |                                 ~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+npm ERR! In file included from ../src/node_inotify.h:14:
+npm ERR! ../../nan/nan.h:1823:3: note: declared here
+npm ERR!  1823 |   Call(v8::Local<v8::Object> target
+npm ERR!       |   ^~~~
+npm ERR! ../src/bindings.cc:285:68: error: no matching function for call to ‘v8::Value::ToString()’
+npm ERR!   285 |                                         handle->Delete(wd->ToString());
+npm ERR!       |                                                        ~~~~~~~~~~~~^~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-value.h:360:44: note: candidate: ‘v8::MaybeLocal<v8::String> v8::Value::ToString(v8::Local<v8::Context>) const’
+npm ERR!   360 |   V8_WARN_UNUSED_RESULT MaybeLocal<String> ToString(
+npm ERR!       |                                            ^~~~~~~~
+npm ERR! /usr/include/nodejs/deps/v8/include/v8-value.h:360:44: note:   candidate expects 1 argument, 0 provided
+npm ERR! make: *** [inotify.target.mk:112: Release/obj.target/inotify/src/bindings.o] Error 1
+npm ERR! gyp ERR! build error 
+npm ERR! gyp ERR! stack Error: `make` failed with exit code: 2
+npm ERR! gyp ERR! stack     at ChildProcess.onExit (/usr/share/nodejs/node-gyp/lib/build.js:203:23)
+npm ERR! gyp ERR! stack     at ChildProcess.emit (node:events:517:28)
+npm ERR! gyp ERR! stack     at ChildProcess._handle.onexit (node:internal/child_process:292:12)
+npm ERR! gyp ERR! System Linux 6.6.114.1-microsoft-standard-WSL2
+npm ERR! gyp ERR! command "/usr/bin/node" "/usr/share/nodejs/node-gyp/bin/node-gyp.js" "rebuild"
+npm ERR! gyp ERR! cwd /home/fobs/arretado/arretado-crm/node_modules/inotify
+npm ERR! gyp ERR! node -v v18.19.1
+npm ERR! gyp ERR! node-gyp -v v9.3.0
+npm ERR! gyp ERR! not ok
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /home/fobs/.npm/_logs/2026-05-27T23_36_05_180Z-debug-0.log

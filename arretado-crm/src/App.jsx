@@ -12,6 +12,7 @@ import IFood from './pages/IFood'
 import PDV from './pages/PDV'
 import CatalogoPDV from './pages/CatalogoPDV'
 import Vinculacoes from './pages/Vinculacoes'
+import Eventos from './pages/Eventos'
 
 
 
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="configuracoes" element={<Placeholder title="Configurações" />} />
             <Route path="integracoes/pdv/catalogo" element={<CatalogoPDV />} />
             <Route path="/vinculacoes" element={<Vinculacoes />} />
+            <Route path="eventos" element={<Eventos />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

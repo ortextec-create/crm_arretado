@@ -29,6 +29,7 @@ class PedidoUnificado(models.Model):
         ('ifood',   'iFood'),
         ('anotaai', 'Anota AI'),
         ('pdv',     'PDV Próprio'),
+        ('eventos', 'Eventos'),
     ]
 
     canal = models.CharField(

@@ -128,3 +128,32 @@ export const authApi = {
     return user ? JSON.parse(user) : null
   },
 }
+
+export const locaisEventoApi = {
+  list:   (params) => api.get('/eventos/locais/', { params }),
+  create: (data)   => api.post('/eventos/locais/', data),
+  update: (id, d)  => api.patch(`/eventos/locais/${id}/`, d),
+  remove: (id)     => api.delete(`/eventos/locais/${id}/`),
+}
+
+export const eventosApi = {
+  list:           (params) => api.get('/eventos/', { params }),
+  detail:         (id)     => api.get(`/eventos/${id}/`),
+  create:         (data)   => api.post('/eventos/', data),
+  update:         (id, d)  => api.patch(`/eventos/${id}/`, d),
+
+  // Ações de status
+  confirmar:      (id) => api.post(`/eventos/${id}/confirmar/`),
+  iniciarProducao:(id) => api.post(`/eventos/${id}/iniciar-producao/`),
+  marcarPronto:   (id) => api.post(`/eventos/${id}/marcar-pronto/`),
+  entregar:       (id) => api.post(`/eventos/${id}/entregar/`),
+  cancelar:       (id) => api.post(`/eventos/${id}/cancelar/`),
+
+  // Itens
+  adicionarItem:  (id, data)       => api.post(`/eventos/${id}/itens/`, data),
+  removerItem:    (id, itemId)     => api.delete(`/eventos/${id}/itens/${itemId}/remover/`),
+
+  // Views especiais
+  agenda:         (mes)   => api.get('/eventos/agenda/', { params: { mes } }),
+  estatisticas:   ()      => api.get('/eventos/estatisticas/'),
+}

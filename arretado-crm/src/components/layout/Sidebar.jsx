@@ -1,34 +1,40 @@
-import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { Avatar } from '../ui'
-import { pedidosApi } from '../../api/services'
 import styles from './Sidebar.module.css'
+import { pedidosApi } from '../../api/services'
+import { useState, useEffect } from 'react'
 
 const NAV = [
   {
     section: 'Principal',
     items: [
-      { to: '/',             icon: 'layout-dashboard', label: 'Dashboard' },
-      { to: '/clientes',     icon: 'users',            label: 'Clientes' },
-      { to: '/tags',         icon: 'tag',              label: 'Tags' },
-      { to: '/vinculacoes',  icon: 'link',             label: 'Associações', badge: true },
+      { to: '/', icon: 'layout-dashboard', label: 'Dashboard' },
+      { to: '/clientes', icon: 'users', label: 'Clientes' },
+      { to: '/tags', icon: 'tag', label: 'Tags' },
+      { path: '/vinculacoes',
+        icon: 'ti-link',
+        label: 'Associações',
+      },
+      { to: '/eventos',      icon: 'calendar-event',   label: 'Eventos' },   // ← ADICIONAR
+
     ],
   },
   {
     section: 'Integrações',
     items: [
-      { to: '/integracoes/ifood',       icon: 'brand-firebase',  label: 'iFood',       dot: true },
-      { to: '/integracoes/anotaai',     icon: 'device-mobile',   label: 'Anota AI',    dot: true },
-      { to: '/integracoes/pdv',         icon: 'building-store',  label: 'PDV Próprio' },
-      { to: '/integracoes/pdv/catalogo',icon: 'package',         label: 'Catálogo',    sub: true },
+      { to: '/integracoes/ifood', icon: 'brand-firebase', label: 'iFood', dot: true },
+      { to: '/integracoes/anotaai', icon: 'device-mobile', label: 'Anota AI', dot: true },
+      { to: '/integracoes/pdv', icon: 'building-store', label: 'PDV Próprio' },
+      { to: '/integracoes/pdv/catalogo', icon: 'package', label: 'Catálogo', sub: true }
+
     ],
   },
   {
     section: 'Administração',
     items: [
-      { to: '/usuarios',      icon: 'shield-lock', label: 'Usuários' },
-      { to: '/configuracoes', icon: 'settings',    label: 'Configurações' },
+      { to: '/usuarios', icon: 'shield-lock', label: 'Usuários' },
+      { to: '/configuracoes', icon: 'settings', label: 'Configurações' },
     ],
   },
 ]
@@ -39,22 +45,6 @@ export default function Sidebar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  // ── Badge: pedidos sem cliente vinculado (Fase 4) ──────────────────────
-  const [semVinculo, setSemVinculo] = useState(0)
-
-  useEffect(() => {
-    function atualizar() {
-      pedidosApi.semCliente()
-        .then(res => setSemVinculo(res.data.total ?? 0))
-        .catch(() => {})
-    }
-
-    atualizar()
-    const interval = setInterval(atualizar, 60_000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // ── Handlers ────────────────────────────────────────────────────────────
   const handleLogout = () => {
     logout()
     navigate('/login')
@@ -73,21 +63,19 @@ export default function Sidebar() {
         {NAV.map(({ section, items }) => (
           <div key={section} className={styles.navSection}>
             <span className={styles.sectionLabel}>{section}</span>
-            {items.map(({ to, icon, label, dot, sub, badge }) => (
+            {items.map(({ to, icon, label, dot, sub }) => (
               <NavLink
                 key={to}
                 to={to}
                 end={to === '/'}
                 className={({ isActive }) =>
                   `${styles.navItem} ${isActive ? styles.active : ''} ${sub ? styles.navItemSub : ''}`
+
                 }
               >
                 <i className={`ti ti-${icon}`} aria-hidden="true" />
                 {label}
                 {dot && <span className={styles.dot} />}
-                {badge && semVinculo > 0 && (
-                  <span className={styles.badge}>{semVinculo > 99 ? '99+' : semVinculo}</span>
-                )}
               </NavLink>
             ))}
           </div>
@@ -107,22 +95,3 @@ export default function Sidebar() {
     </aside>
   )
 }
-
-/*
-  ─────────────────────────────────────────────────────────────────────────────
-  PATCH necessário em Sidebar.module.css — adicione a regra abaixo:
-
-  .badge {
-    margin-left: auto;
-    background: var(--caramelo);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 10px;
-    min-width: 18px;
-    text-align: center;
-    line-height: 1.6;
-  }
-  ─────────────────────────────────────────────────────────────────────────────
-*/

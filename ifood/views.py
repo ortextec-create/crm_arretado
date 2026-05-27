@@ -270,3 +270,93 @@ class EventoPollingViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
     serializer_class   = EventoPollingSerializer
     permission_classes = [AllowAny]
     ordering           = ['-ifood_criado_em']
+# ifood/views.py — adicionar dentro de PedidoIFoodViewSet
+
+@action(detail=True, methods=['post'], url_path='criar-cliente')
+def criar_cliente(self, request, pk=None):
+    """
+    POST /api/v1/ifood/pedidos/{id}/criar-cliente/
+
+    Cria um Cliente CRM com os dados do pedido iFood e vincula ao pedido.
+    Retorna erro 400 se já houver cliente vinculado.
+    Retorna erro 409 se já existir cliente com mesmo telefone.
+    """
+    from clientes.models import Cliente, Endereco
+    from clientes.serializers import ClienteDetailSerializer
+
+    pedido = self.get_object()
+
+    if pedido.cliente:
+        return Response(
+            {'detail': 'Este pedido já possui um cliente vinculado. Use "Vincular Cliente" para trocar.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Monta dados do cliente a partir do payload do pedido
+    nome     = pedido.cliente_nome or ''
+    telefone = pedido.cliente_telefone or ''
+    addr     = pedido.endereco_entrega or {}
+
+    if not nome:
+        return Response(
+            {'detail': 'O pedido não possui nome do cliente para criar cadastro.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Verifica duplicata por telefone
+    if telefone:
+        sufixo = telefone[-8:] if len(telefone) >= 8 else telefone
+        existente = Cliente.objects.filter(telefone_principal__endswith=sufixo).first()
+        if existente:
+            return Response(
+                {
+                    'detail': f'Já existe um cliente com este telefone: {existente.nome} (ID {existente.id}). Use "Vincular Cliente" para associar.',
+                    'cliente_existente': ClienteListSerializer(existente).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+    # Cria cliente
+    cliente = Cliente.objects.create(
+        nome               = nome,
+        telefone_principal = telefone,
+        ifood_customer_id  = pedido.cliente_ifood_id or '',
+        status             = 'ativo',
+    )
+
+    # Cria endereço se tiver dados suficientes
+    logradouro = addr.get('streetName', '') or addr.get('formattedAddress', '')
+    if logradouro:
+        Endereco.objects.create(
+            cliente      = cliente,
+            logradouro   = logradouro,
+            numero       = addr.get('streetNumber', '') or addr.get('number', ''),
+            complemento  = addr.get('complement', ''),
+            bairro       = addr.get('neighborhood', ''),
+            cidade       = addr.get('city', ''),
+            estado       = addr.get('state', ''),
+            cep          = addr.get('postalCode', ''),
+            principal    = True,
+        )
+
+    # Vincula ao pedido iFood
+    pedido.cliente = cliente
+    pedido.save(update_fields=['cliente'])
+
+    # Propaga ao PedidoUnificado
+    try:
+        from pedidos.models import PedidoUnificado
+        PedidoUnificado.objects.filter(
+            canal='ifood', origem_id=pedido.pk
+        ).update(cliente=cliente)
+    except Exception as e:
+        logger.warning('criar_cliente: falha ao propagar para PedidoUnificado: %s', e)
+
+    serializer = ClienteDetailSerializer(cliente)
+    return Response(
+        {
+            'detail': f'Cliente "{cliente.nome}" criado e vinculado com sucesso.',
+            'cliente': serializer.data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
