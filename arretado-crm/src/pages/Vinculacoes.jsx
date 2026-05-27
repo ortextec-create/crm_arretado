@@ -92,7 +92,9 @@ export default function Vinculacoes() {
     debounceRef.current = setTimeout(async () => {
       setBuscandoClientes(true)
       try {
-        const res = await clientesApi.listar({ search: buscaCliente, status: 'ativo' })
+
+        const res = await clientesApi.list({ search: buscaCliente, status: 'ativo' })
+
         setClientes(res.data.results ?? res.data)
       } catch {
         setClientes([])

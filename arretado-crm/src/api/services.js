@@ -51,6 +51,8 @@ export const ifoodApi = {
   vincularCliente:     (id, cid)     => api.post(`/ifood/pedidos/${id}/vincular-cliente/`, { cliente_id: cid }),
   motivosCancelamento: (id)          => api.get(`/ifood/pedidos/${id}/motivos-cancelamento/`),
   estatisticas:        ()            => api.get('/ifood/pedidos/estatisticas/'),
+
+  criarCliente: (pedidoId)           => api.post(`/ifood/pedidos/${pedidoId}/criar-cliente/`),
 }
 
 // ─── PDV ────────────────────────────────────────────────────────────────────

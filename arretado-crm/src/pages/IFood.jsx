@@ -1,3 +1,13 @@
+/**
+ * ARQUIVO COMPLETO: arretado-crm/src/pages/IFood.jsx
+ * Substitui o arquivo existente.
+ *
+ * Novidade (criar-cliente):
+ *  - Botão "Criar Cliente" no modal de detalhe quando pedido não tem cliente vinculado
+ *  - Chama POST /api/v1/ifood/pedidos/{id}/criar-cliente/
+ *  - Em caso de 409 (telefone já existe), oferece vincular ao cliente existente
+ *  - Lógica encapsulada em handleCriarCliente()
+ */
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ifoodApi, clientesApi } from '../api/services'
@@ -5,16 +15,16 @@ import Topbar from '../components/layout/Topbar'
 import { Btn, Avatar, Spinner, Toast, Modal, Field, Input } from '../components/ui'
 import styles from './IFood.module.css'
 
-// ─── STATUS config ───────────────────────────────────────────────────────────
+// ─── STATUS config ────────────────────────────────────────────────────────────
 const STATUS_CFG = {
-  PLACED:                 { label: 'Aguardando',  color: '#F59E0B', icon: 'clock' },
-  CONFIRMED:              { label: 'Confirmado',  color: '#3B82F6', icon: 'circle-check' },
-  PREPARATION_STARTED:    { label: 'Preparando',  color: '#8B5CF6', icon: 'chef-hat' },
-  READY_TO_PICKUP:        { label: 'Pronto',      color: '#06B6D4', icon: 'package' },
-  DISPATCHED:             { label: 'A caminho',   color: '#6366F1', icon: 'motorbike' },
-  CONCLUDED:              { label: 'Concluído',   color: '#22C55E', icon: 'circle-check-filled' },
+  PLACED:                 { label: 'Aguardando',     color: '#F59E0B', icon: 'clock' },
+  CONFIRMED:              { label: 'Confirmado',     color: '#3B82F6', icon: 'circle-check' },
+  PREPARATION_STARTED:    { label: 'Preparando',     color: '#8B5CF6', icon: 'chef-hat' },
+  READY_TO_PICKUP:        { label: 'Pronto',         color: '#06B6D4', icon: 'package' },
+  DISPATCHED:             { label: 'A caminho',      color: '#6366F1', icon: 'motorbike' },
+  CONCLUDED:              { label: 'Concluído',      color: '#22C55E', icon: 'circle-check-filled' },
   CANCELLATION_REQUESTED: { label: 'Canc. solicit.', color: '#F97316', icon: 'alert-triangle' },
-  CANCELLED:              { label: 'Cancelado',   color: '#EF4444', icon: 'circle-x' },
+  CANCELLED:              { label: 'Cancelado',      color: '#EF4444', icon: 'circle-x' },
 }
 
 const TABS = ['Todos', 'Aguardando', 'Em andamento', 'Concluídos', 'Cancelados']
@@ -26,9 +36,10 @@ const TAB_FILTERS = {
   'Cancelados':    ['CANCELLED', 'CANCELLATION_REQUESTED'],
 }
 
+// ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export default function IFood() {
-  const navigate    = useNavigate()
-  const pollRef     = useRef(null)
+  const navigate = useNavigate()
+  const pollRef  = useRef(null)
 
   const [tab, setTab]           = useState('Todos')
   const [search, setSearch]     = useState('')
@@ -40,19 +51,23 @@ export default function IFood() {
   const [config, setConfig]     = useState(null)
 
   // Modals
-  const [showConfig, setShowConfig]   = useState(false)
-  const [showDetail, setShowDetail]   = useState(false)
-  const [showCancel, setShowCancel]   = useState(false)
+  const [showConfig,   setShowConfig]   = useState(false)
+  const [showDetail,   setShowDetail]   = useState(false)
+  const [showCancel,   setShowCancel]   = useState(false)
   const [showVincular, setShowVincular] = useState(false)
 
-  const [actionLoading, setActionLoading] = useState(null)
-  const [toast, setToast] = useState(null)
-  const [cancelReasons, setCancelReasons] = useState([])
-  const [cancelCode, setCancelCode]       = useState('')
-  const [clientes, setClientes]           = useState([])
-  const [clienteSearch, setClienteSearch] = useState('')
+  const [actionLoading,        setActionLoading]        = useState(null)
+  const [toast,                setToast]                = useState(null)
+  const [cancelReasons,        setCancelReasons]        = useState([])
+  const [cancelCode,           setCancelCode]           = useState('')
+  const [clientes,             setClientes]             = useState([])
+  const [clienteSearch,        setClienteSearch]        = useState('')
   const [pollingManualLoading, setPollingManualLoading] = useState(false)
 
+  // ── NOVO: estado para criar cliente ──
+  const [criandoCliente, setCriandoCliente] = useState(false)
+
+  // ── Carregamento de dados ─────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     try {
       const params = {}
@@ -66,7 +81,9 @@ export default function IFood() {
         ifoodApi.statusGeral(),
       ])
 
-      let lista = pedRes.status === 'fulfilled' ? (pedRes.value.data.results ?? pedRes.value.data) : []
+      let lista = pedRes.status === 'fulfilled'
+        ? (pedRes.value.data.results ?? pedRes.value.data)
+        : []
 
       // Filtro client-side para arrays de status
       if (Array.isArray(statusFilter)) {
@@ -86,11 +103,9 @@ export default function IFood() {
     }
   }, [tab, search])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useEffect(() => { loadData() }, [loadData])
 
-  // Auto-refresh a cada 30s (espelha o polling do backend)
+  // Auto-refresh a cada 30s
   useEffect(() => {
     pollRef.current = setInterval(loadData, 30_000)
     return () => clearInterval(pollRef.current)
@@ -112,10 +127,10 @@ export default function IFood() {
 
   useEffect(() => { loadConfig() }, [])
 
+  // ── Ações ──────────────────────────────────────────────────────────────────
   const openDetail = async (pedido) => {
     setSelected(pedido)
     setShowDetail(true)
-    // Busca detalhe completo
     try {
       const r = await ifoodApi.getPedido(pedido.id)
       setSelected(r.data)
@@ -127,10 +142,10 @@ export default function IFood() {
     try {
       let r
       switch (action) {
-        case 'confirmar':    r = await ifoodApi.confirmar(pedidoId); break
-        case 'despachar':    r = await ifoodApi.despachar(pedidoId); break
-        case 'pronto':       r = await ifoodApi.prontoRetirada(pedidoId); break
-        case 'cancelar':     r = await ifoodApi.cancelar(pedidoId, extra); break
+        case 'confirmar': r = await ifoodApi.confirmar(pedidoId);           break
+        case 'despachar': r = await ifoodApi.despachar(pedidoId);           break
+        case 'pronto':    r = await ifoodApi.prontoRetirada(pedidoId);      break
+        case 'cancelar':  r = await ifoodApi.cancelar(pedidoId, extra);     break
         default: return
       }
       setToast({ message: `Pedido atualizado: ${r.data.status}`, type: 'success' })
@@ -157,6 +172,7 @@ export default function IFood() {
   const openVincular = async (pedido) => {
     setSelected(pedido)
     setShowVincular(true)
+    setClienteSearch('')
     try {
       const r = await clientesApi.list({ search: pedido.cliente_nome?.split(' ')[0] || '' })
       setClientes(r.data.results ?? r.data)
@@ -169,8 +185,48 @@ export default function IFood() {
       setToast({ message: 'Cliente vinculado com sucesso!', type: 'success' })
       setShowVincular(false)
       loadData()
-    } catch (e) {
+    } catch {
       setToast({ message: 'Erro ao vincular.', type: 'error' })
+    }
+  }
+
+  // ── NOVO: Criar cliente a partir dos dados do pedido iFood ────────────────
+  const handleCriarCliente = async (pedido) => {
+    if (!window.confirm(
+      `Criar cliente "${pedido.cliente_nome}" no CRM com os dados do iFood?\n` +
+      `Telefone: ${pedido.cliente_telefone || '(não informado)'}`
+    )) return
+
+    setCriandoCliente(true)
+    try {
+      const res = await ifoodApi.criarCliente(pedido.id)
+      setToast({ message: res.data.detail, type: 'success' })
+      setShowDetail(false)
+      loadData()
+    } catch (err) {
+      const data     = err.response?.data
+      const httpCode = err.response?.status
+
+      if (httpCode === 409 && data?.cliente_existente) {
+        // Telefone já existe no CRM — oferece vincular ao existente
+        const confirma = window.confirm(
+          `${data.detail}\n\nDeseja vincular este pedido ao cliente existente?`
+        )
+        if (confirma) {
+          try {
+            await ifoodApi.vincularCliente(pedido.id, data.cliente_existente.id)
+            setToast({ message: 'Cliente existente vinculado com sucesso!', type: 'success' })
+            setShowDetail(false)
+            loadData()
+          } catch {
+            setToast({ message: 'Erro ao vincular o cliente existente.', type: 'error' })
+          }
+        }
+      } else {
+        setToast({ message: data?.detail || 'Erro ao criar cliente.', type: 'error' })
+      }
+    } finally {
+      setCriandoCliente(false)
     }
   }
 
@@ -190,6 +246,7 @@ export default function IFood() {
 
   const statusCfg = (s) => STATUS_CFG[s] || { label: s, color: '#9CA3AF', icon: 'circle' }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className={styles.page}>
       <Topbar
@@ -213,27 +270,32 @@ export default function IFood() {
       />
 
       <div className={styles.content}>
-        {/* Stats */}
+
+        {/* ─── Stats ─── */}
         {stats && (
           <div className={styles.statsRow}>
-            <StatCard label="Pedidos hoje"      value={stats.hoje?.pedidos ?? 0}  icon="shopping-bag" />
-            <StatCard label="Receita hoje"       value={`R$ ${(stats.hoje?.receita ?? 0).toFixed(2)}`} icon="currency-dollar" accent />
-            <StatCard label="Aguardando"         value={stats.pendentes ?? 0}      icon="clock"   warn={stats.pendentes > 0} />
-            <StatCard label="Pedidos no mês"     value={stats.mes?.pedidos ?? 0}   icon="calendar" />
-            <StatCard label="Receita no mês"     value={`R$ ${(stats.mes?.receita ?? 0).toFixed(2)}`} icon="chart-bar" />
+            <StatCard label="Pedidos hoje"  value={stats.hoje?.pedidos ?? 0}                          icon="shopping-bag" />
+            <StatCard label="Receita hoje"  value={`R$ ${(stats.hoje?.receita ?? 0).toFixed(2)}`}    icon="currency-dollar" accent />
+            <StatCard label="Aguardando"    value={stats.pendentes ?? 0}                               icon="clock"  warn={stats.pendentes > 0} />
+            <StatCard label="Pedidos no mês" value={stats.mes?.pedidos ?? 0}                          icon="calendar" />
+            <StatCard label="Receita no mês" value={`R$ ${(stats.mes?.receita ?? 0).toFixed(2)}`}    icon="chart-bar" />
           </div>
         )}
 
-        {/* Tabs */}
+        {/* ─── Tabs ─── */}
         <div className={styles.tabsRow}>
           {TABS.map(t => (
-            <button key={t} className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`} onClick={() => setTab(t)}>
+            <button
+              key={t}
+              className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`}
+              onClick={() => setTab(t)}
+            >
               {t}
             </button>
           ))}
         </div>
 
-        {/* Table */}
+        {/* ─── Tabela ─── */}
         {loading ? (
           <div className={styles.center}><Spinner size={26} /></div>
         ) : pedidos.length === 0 ? (
@@ -255,6 +317,7 @@ export default function IFood() {
               <span>Status</span>
               <span>Ações</span>
             </div>
+
             {pedidos.map(p => {
               const sc = statusCfg(p.status)
               return (
@@ -270,12 +333,15 @@ export default function IFood() {
                   <div className={styles.sub}>— itens</div>
                   <div>
                     <span className={styles.typeBadge}>
-                      {p.order_type === 'DELIVERY' ? '🛵 Delivery' : p.order_type === 'TAKEOUT' ? '🏠 Retirada' : '🪑 Mesa'}
+                      {p.order_type === 'DELIVERY' ? '🛵 Delivery'
+                        : p.order_type === 'TAKEOUT' ? '🏠 Retirada'
+                        : '🪑 Mesa'}
                     </span>
                   </div>
                   <div className={styles.valor}>R$ {Number(p.total_valor).toFixed(2)}</div>
                   <div>
-                    <span className={styles.statusBadge} style={{ background: sc.color + '22', color: sc.color, borderColor: sc.color + '44' }}>
+                    <span className={styles.statusBadge}
+                      style={{ background: sc.color + '22', color: sc.color, borderColor: sc.color + '44' }}>
                       <i className={`ti ti-${sc.icon}`} />{sc.label}
                     </span>
                   </div>
@@ -284,7 +350,9 @@ export default function IFood() {
                       <button className={styles.actBtn} style={{ color: '#3B82F6' }}
                         onClick={() => doAction('confirmar', p.id)}
                         disabled={actionLoading === 'confirmar' + p.id}>
-                        {actionLoading === 'confirmar' + p.id ? <i className="ti ti-loader spin" /> : <i className="ti ti-circle-check" />}
+                        {actionLoading === 'confirmar' + p.id
+                          ? <i className="ti ti-loader spin" />
+                          : <i className="ti ti-circle-check" />}
                       </button>
                     )}
                     {p.pode_cancelar && (
@@ -308,12 +376,17 @@ export default function IFood() {
       </div>
 
       {/* ─── MODAL DETALHE ─── */}
-      <Modal open={showDetail} onClose={() => setShowDetail(false)} title={`Pedido #${selected?.display_id || ''}`} width={560}
+      <Modal
+        open={showDetail}
+        onClose={() => setShowDetail(false)}
+        title={`Pedido #${selected?.display_id || ''}`}
+        width={560}
         footer={
           selected && (
-            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+            <div style={{ display: 'flex', gap: 8, width: '100%', flexWrap: 'wrap' }}>
               {selected.pode_confirmar && (
-                <Btn icon="circle-check" loading={actionLoading === 'confirmar' + selected.id}
+                <Btn icon="circle-check"
+                  loading={actionLoading === 'confirmar' + selected.id}
                   onClick={() => doAction('confirmar', selected.id)}>
                   Confirmar
                 </Btn>
@@ -325,12 +398,14 @@ export default function IFood() {
                 </Btn>
               )}
               {selected.status === 'PREPARATION_STARTED' && (
-                <Btn variant="ghost" icon="package" onClick={() => doAction('pronto', selected.id)}>
+                <Btn variant="ghost" icon="package"
+                  onClick={() => doAction('pronto', selected.id)}>
                   Pronto p/ Retirada
                 </Btn>
               )}
               {selected.status === 'READY_TO_PICKUP' && (
-                <Btn variant="ghost" icon="motorbike" onClick={() => doAction('despachar', selected.id)}>
+                <Btn variant="ghost" icon="motorbike"
+                  onClick={() => doAction('despachar', selected.id)}>
                   Despachar
                 </Btn>
               )}
@@ -340,21 +415,45 @@ export default function IFood() {
                   Cancelar
                 </Btn>
               )}
+
+              {/* Botões de cliente — só aparecem se não há cliente vinculado */}
               {!selected.cliente_nome_crm && (
-                <Btn variant="ghost" icon="user-plus" style={{ marginLeft: 'auto' }}
-                  onClick={() => { setShowDetail(false); openVincular(selected) }}>
-                  Vincular CRM
-                </Btn>
+                <>
+                  <Btn variant="ghost" icon="link" style={{ marginLeft: selected.pode_cancelar ? 0 : 'auto' }}
+                    onClick={() => { setShowDetail(false); openVincular(selected) }}>
+                    Vincular CRM
+                  </Btn>
+                  {selected.cliente_nome && (
+                    <Btn variant="ghost" icon="user-plus"
+                      loading={criandoCliente}
+                      onClick={() => handleCriarCliente(selected)}>
+                      Criar Cliente
+                    </Btn>
+                  )}
+                </>
               )}
             </div>
           )
         }
       >
-        {selected && <PedidoDetail pedido={selected} statusCfg={statusCfg} navigate={navigate} />}
+        {selected && (
+          <PedidoDetail
+            pedido={selected}
+            statusCfg={statusCfg}
+            navigate={navigate}
+            onCriarCliente={handleCriarCliente}
+            criandoCliente={criandoCliente}
+            onVincular={() => { setShowDetail(false); openVincular(selected) }}
+          />
+        )}
       </Modal>
 
       {/* ─── MODAL CANCELAMENTO ─── */}
-      <Modal open={showCancel} onClose={() => setShowCancel(false)} title="Cancelar Pedido" width={420}
+      <Modal
+        open={showCancel}
+        onClose={() => setShowCancel(false)}
+        title="Cancelar Pedido"
+        width={420}
         footer={
           <>
             <Btn variant="ghost" onClick={() => setShowCancel(false)}>Voltar</Btn>
@@ -387,19 +486,27 @@ export default function IFood() {
       </Modal>
 
       {/* ─── MODAL VINCULAR CLIENTE ─── */}
-      <Modal open={showVincular} onClose={() => setShowVincular(false)} title="Vincular ao CRM" width={460}
+      <Modal
+        open={showVincular}
+        onClose={() => setShowVincular(false)}
+        title="Vincular ao CRM"
+        width={460}
         footer={<Btn variant="ghost" onClick={() => setShowVincular(false)}>Fechar</Btn>}
       >
         <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
-          Selecione o cliente CRM para vincular ao pedido <strong style={{ color: 'var(--bege)' }}>#{selected?.display_id}</strong>
+          Selecione o cliente CRM para vincular ao pedido{' '}
+          <strong style={{ color: 'var(--bege)' }}>#{selected?.display_id}</strong>
         </p>
         <Field label="Buscar cliente">
-          <Input placeholder="Nome ou telefone..."
+          <Input
+            placeholder="Nome ou telefone..."
             value={clienteSearch}
             onChange={async e => {
               setClienteSearch(e.target.value)
-              const r = await clientesApi.list({ search: e.target.value })
-              setClientes(r.data.results ?? r.data)
+              try {
+                const r = await clientesApi.list({ search: e.target.value })
+                setClientes(r.data.results ?? r.data)
+              } catch {}
             }}
           />
         </Field>
@@ -414,6 +521,11 @@ export default function IFood() {
               <i className="ti ti-link" style={{ marginLeft: 'auto', color: 'var(--muted)' }} />
             </button>
           ))}
+          {clientes.length === 0 && clienteSearch.length > 1 && (
+            <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '12px 0' }}>
+              Nenhum cliente encontrado.
+            </p>
+          )}
         </div>
       </Modal>
 
@@ -431,104 +543,185 @@ export default function IFood() {
   )
 }
 
-// ─── PEDIDO DETAIL COMPONENT ─────────────────────────────────────────────────
+// ─── PEDIDO DETAIL COMPONENT ──────────────────────────────────────────────────
 
-function PedidoDetail({ pedido, statusCfg, navigate }) {
+function PedidoDetail({ pedido, statusCfg, navigate, onCriarCliente, criandoCliente, onVincular }) {
   const sc  = statusCfg(pedido.status)
   const end = pedido.endereco_entrega || {}
 
   return (
     <div className={styles.detail}>
+
+      {/* Cabeçalho status + data */}
       <div className={styles.detailHeader}>
-        <span className={styles.statusBadge} style={{ background: sc.color + '22', color: sc.color, borderColor: sc.color + '44', fontSize: 12 }}>
+        <span className={styles.statusBadge}
+          style={{ background: sc.color + '22', color: sc.color, borderColor: sc.color + '44', fontSize: 12 }}>
           <i className={`ti ti-${sc.icon}`} />{sc.label}
         </span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtDateTime(pedido.ifood_criado_em)}</span>
       </div>
 
+      {/* ── Seção cliente ── */}
       <div className={styles.detailSection}>
         <div className={styles.detailLabel}>Cliente</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Avatar name={pedido.cliente_nome || '?'} size="sm" />
-          <div>
-            <div style={{ fontSize: 13, color: 'var(--bege)' }}>{pedido.cliente_nome || 'Desconhecido'}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{pedido.cliente_telefone || '—'}</div>
-            {pedido.cliente_nome_crm && (
-              <div className={styles.crmLink} onClick={() => navigate(`/clientes/${pedido.cliente_crm_id}`)}>
-                <i className="ti ti-external-link" /> Ver no CRM: {pedido.cliente_nome_crm}
+
+        {pedido.cliente_nome_crm ? (
+          /* Cliente já vinculado ao CRM */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Avatar name={pedido.cliente_nome_crm} />
+            <div>
+              <div
+                style={{ fontSize: 14, fontWeight: 600, color: 'var(--bege)', cursor: 'pointer' }}
+                onClick={() => pedido.cliente_id && navigate(`/clientes/${pedido.cliente_id}`)}
+              >
+                {pedido.cliente_nome_crm}
+                <i className="ti ti-external-link" style={{ fontSize: 11, marginLeft: 4, color: 'var(--muted)' }} />
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                <i className="ti ti-link" style={{ fontSize: 11 }} /> Vinculado ao CRM
+              </div>
+              {pedido.cliente_telefone && (
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  <i className="ti ti-phone" style={{ fontSize: 11 }} /> {pedido.cliente_telefone}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Sem cliente CRM — exibe dados do iFood + botões de ação */
+          <div className={styles.semClienteBox}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Avatar name={pedido.cliente_nome || '?'} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--texto)' }}>
+                  {pedido.cliente_nome || 'Desconhecido'}
+                </div>
+                {pedido.cliente_telefone && (
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    <i className="ti ti-phone" style={{ fontSize: 11 }} /> {pedido.cliente_telefone}
+                  </div>
+                )}
+                <div className={styles.semClienteTag}>
+                  <i className="ti ti-unlink" />Sem cadastro no CRM
+                </div>
+              </div>
+            </div>
+
+            {/* Botões inline de Vincular / Criar — complementam os do footer */}
+            <div className={styles.clienteAcoesMini}>
+              <button className={styles.btnAcaoMini} onClick={onVincular} title="Buscar cliente existente">
+                <i className="ti ti-link" /> Vincular existente
+              </button>
+              {pedido.cliente_nome && (
+                <button
+                  className={`${styles.btnAcaoMini} ${styles.btnAcaoMiniPrimary}`}
+                  onClick={() => onCriarCliente(pedido)}
+                  disabled={criandoCliente}
+                  title="Criar novo cliente com dados do iFood"
+                >
+                  <i className="ti ti-user-plus" />
+                  {criandoCliente ? 'Criando...' : 'Criar novo cliente'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Endereço de entrega ── */}
+      {pedido.order_type === 'DELIVERY' && (end.streetName || end.formattedAddress) && (
+        <div className={styles.detailSection}>
+          <div className={styles.detailLabel}>Endereço de entrega</div>
+          <div style={{ fontSize: 13, color: 'var(--texto)', lineHeight: 1.5 }}>
+            {end.streetName
+              ? `${end.streetName}, ${end.streetNumber || 'S/N'}${end.complement ? ` — ${end.complement}` : ''}`
+              : end.formattedAddress}
+            {end.neighborhood && <span style={{ color: 'var(--muted)' }}> · {end.neighborhood}</span>}
+            {end.city && (
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                {end.city}{end.state ? `/${end.state}` : ''}{end.postalCode ? ` — CEP ${end.postalCode}` : ''}
               </div>
             )}
           </div>
         </div>
-      </div>
-
-      {(end.formattedAddress || end.streetName) && (
-        <div className={styles.detailSection}>
-          <div className={styles.detailLabel}>Endereço de entrega</div>
-          <p style={{ fontSize: 13, color: 'var(--bege)' }}>
-            {end.formattedAddress || `${end.streetName}, ${end.streetNumber} — ${end.neighborhood}, ${end.city}`}
-          </p>
-        </div>
       )}
 
-      {pedido.itens && pedido.itens.length > 0 && (
+      {/* ── Itens ── */}
+      {pedido.itens?.length > 0 && (
         <div className={styles.detailSection}>
           <div className={styles.detailLabel}>Itens do pedido</div>
-          {pedido.itens.map(item => (
-            <div key={item.id} className={styles.itemRow}>
-              <span className={styles.itemQty}>{item.quantidade}x</span>
-              <div style={{ flex: 1 }}>
-                <span style={{ fontSize: 13, color: 'var(--bege)' }}>{item.nome}</span>
-                {item.observacao && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.observacao}</div>}
-                {item.complementos?.map((c, i) => (
-                  <div key={i} style={{ fontSize: 11, color: 'var(--muted)', paddingLeft: 8 }}>
-                    + {c.quantidade}x {c.nome}
-                  </div>
-                ))}
+          <div className={styles.itensList}>
+            {pedido.itens.map((item, i) => (
+              <div key={item.id || i} className={styles.itemRow}>
+                <span className={styles.itemQtd}>{item.quantidade}×</span>
+                <div className={styles.itemInfo}>
+                  <span className={styles.itemNome}>{item.nome}</span>
+                  {item.observacao && (
+                    <span className={styles.itemObs}>{item.observacao}</span>
+                  )}
+                  {item.complementos?.length > 0 && (
+                    <div className={styles.complementos}>
+                      {item.complementos.map((c, ci) => (
+                        <span key={ci} className={styles.complementoTag}>
+                          {c.quantidade > 1 ? `${c.quantidade}× ` : ''}{c.nome}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <span className={styles.itemPreco}>R$ {Number(item.preco_total).toFixed(2)}</span>
               </div>
-              <span style={{ fontSize: 13, color: 'var(--bege)' }}>R$ {Number(item.preco_total).toFixed(2)}</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
-      <div className={styles.detailTotais}>
-        <div className={styles.totaisRow}><span>Subtotal</span><span>R$ {Number(pedido.subtotal || 0).toFixed(2)}</span></div>
-        <div className={styles.totaisRow}><span>Taxa de entrega</span><span>R$ {Number(pedido.taxa_entrega || 0).toFixed(2)}</span></div>
-        {Number(pedido.desconto) > 0 && (
-          <div className={styles.totaisRow} style={{ color: 'var(--verde)' }}><span>Desconto</span><span>- R$ {Number(pedido.desconto).toFixed(2)}</span></div>
-        )}
-        <div className={`${styles.totaisRow} ${styles.totaisTotal}`}>
-          <span>Total</span><span>R$ {Number(pedido.total_valor).toFixed(2)}</span>
+      {/* ── Totais ── */}
+      <div className={styles.detailSection}>
+        <div className={styles.detailLabel}>Totais</div>
+        <div className={styles.totaisGrid}>
+          {Number(pedido.subtotal) > 0 && (
+            <><span style={{ color: 'var(--muted)' }}>Subtotal</span><span>R$ {Number(pedido.subtotal).toFixed(2)}</span></>
+          )}
+          {Number(pedido.taxa_entrega) > 0 && (
+            <><span style={{ color: 'var(--muted)' }}>Taxa de entrega</span><span>R$ {Number(pedido.taxa_entrega).toFixed(2)}</span></>
+          )}
+          {Number(pedido.desconto) > 0 && (
+            <><span style={{ color: 'var(--verde)' }}>Desconto</span><span style={{ color: 'var(--verde)' }}>− R$ {Number(pedido.desconto).toFixed(2)}</span></>
+          )}
+          <><span style={{ fontWeight: 600, color: 'var(--bege)' }}>Total</span><span style={{ fontWeight: 700, color: 'var(--caramelo)', fontSize: 15 }}>R$ {Number(pedido.total_valor).toFixed(2)}</span></>
         </div>
         {pedido.payment_method && (
-          <div className={styles.totaisRow} style={{ color: 'var(--muted)' }}>
-            <span>Pagamento</span><span>{pedido.payment_method}</span>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
+            <i className="ti ti-credit-card" style={{ fontSize: 12, marginRight: 4 }} />
+            {pedido.payment_method}
           </div>
         )}
       </div>
+
     </div>
   )
 }
 
-// ─── CONFIG MODAL ─────────────────────────────────────────────────────────────
+// ─── CONFIG MODAL ──────────────────────────────────────────────────────────────
 
 function ConfigModal({ open, onClose, config, onSaved, setToast }) {
-  const [form, setForm]     = useState({ client_id: '', client_secret: '', merchant_id: '', polling_intervalo: 30 })
-  const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
+  const [form, setForm]             = useState({ client_id: '', client_secret: '', merchant_id: '', polling_intervalo: 30 })
+  const [saving, setSaving]         = useState(false)
+  const [testing, setTesting]       = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [pollingLoading, setPollingLoading] = useState(false)
 
   useEffect(() => {
     if (config) {
       setForm({
-        client_id:          config.client_id || '',
-        client_secret:      '',  // nunca pré-preenche por segurança
-        merchant_id:        config.merchant_id || '',
-        polling_intervalo:  config.polling_intervalo || 30,
+        client_id:         config.client_id || '',
+        client_secret:     '',   // nunca pré-preenche por segurança
+        merchant_id:       config.merchant_id || '',
+        polling_intervalo: config.polling_intervalo || 30,
       })
     }
+    setTestResult(null)
   }, [config, open])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -542,7 +735,7 @@ function ConfigModal({ open, onClose, config, onSaved, setToast }) {
       else        await ifoodApi.createConfig(payload)
       setToast({ message: 'Configuração salva!', type: 'success' })
       onSaved()
-    } catch (e) {
+    } catch {
       setToast({ message: 'Erro ao salvar configuração.', type: 'error' })
     } finally {
       setSaving(false)
@@ -588,32 +781,39 @@ function ConfigModal({ open, onClose, config, onSaved, setToast }) {
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
         <div style={{ background: 'rgba(234,88,12,0.08)', border: '0.5px solid rgba(234,88,12,0.2)', padding: '12px 14px', borderRadius: 2, fontSize: 12, color: '#EA580C' }}>
           <i className="ti ti-info-circle" /> As credenciais são obtidas no{' '}
-          <a href="https://developer.ifood.com.br" target="_blank" rel="noreferrer" style={{ color: '#EA580C', textDecoration: 'underline' }}>
+          <a href="https://developer.ifood.com.br" target="_blank" rel="noreferrer"
+            style={{ color: '#EA580C', textDecoration: 'underline' }}>
             Portal do Desenvolvedor iFood
           </a>.
         </div>
 
         <Field label="Client ID *">
-          <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={form.client_id} onChange={e => set('client_id', e.target.value)} />
+          <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            value={form.client_id} onChange={e => set('client_id', e.target.value)} />
         </Field>
         <Field label="Client Secret *">
-          <Input type="password" placeholder={config ? '(mantém o atual se deixar em branco)' : 'Seu client secret'} value={form.client_secret} onChange={e => set('client_secret', e.target.value)} />
+          <Input type="password"
+            placeholder={config ? '(mantém o atual se deixar em branco)' : 'Seu client secret'}
+            value={form.client_secret} onChange={e => set('client_secret', e.target.value)} />
         </Field>
         <Field label="Merchant ID *">
-          <Input placeholder="ID do restaurante no iFood" value={form.merchant_id} onChange={e => set('merchant_id', e.target.value)} />
+          <Input placeholder="ID do restaurante no iFood"
+            value={form.merchant_id} onChange={e => set('merchant_id', e.target.value)} />
         </Field>
         <Field label="Intervalo de polling (segundos)">
-          <Input type="number" min={15} max={120} value={form.polling_intervalo} onChange={e => set('polling_intervalo', e.target.value)} />
+          <Input type="number" min={15} max={120}
+            value={form.polling_intervalo} onChange={e => set('polling_intervalo', e.target.value)} />
         </Field>
 
         {testResult && (
           <div style={{
             padding: '10px 14px', borderRadius: 2, fontSize: 12,
             background: testResult.ok ? 'rgba(143,188,139,0.1)' : 'rgba(192,90,58,0.1)',
-            color: testResult.ok ? 'var(--verde)' : 'var(--danger)',
-            border: `0.5px solid ${testResult.ok ? 'rgba(143,188,139,0.3)' : 'rgba(192,90,58,0.3)'}`,
+            color:      testResult.ok ? 'var(--verde)'          : 'var(--danger)',
+            border:     `0.5px solid ${testResult.ok ? 'rgba(143,188,139,0.3)' : 'rgba(192,90,58,0.3)'}`,
           }}>
             {testResult.ok
               ? <><i className="ti ti-circle-check" /> Conexão bem-sucedida! Token válido até {new Date(testResult.expira_em).toLocaleString('pt-BR')}</>
@@ -627,21 +827,29 @@ function ConfigModal({ open, onClose, config, onSaved, setToast }) {
             <div>
               <div style={{ fontSize: 13, color: 'var(--bege)' }}>Polling automático</div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {config.polling_ativo ? `Ativo — último: ${config.ultimo_polling ? new Date(config.ultimo_polling).toLocaleTimeString('pt-BR') : 'nunca'}` : 'Pausado'}
+                {config.polling_ativo
+                  ? `Ativo — último: ${config.ultimo_polling ? new Date(config.ultimo_polling).toLocaleTimeString('pt-BR') : 'nunca'}`
+                  : 'Pausado'}
               </div>
             </div>
-            <Btn variant={config.polling_ativo ? 'danger-btn' : 'ghost'} size="sm" loading={pollingLoading}
-              icon={config.polling_ativo ? 'player-pause' : 'player-play'} onClick={togglePolling}>
+            <Btn
+              variant={config.polling_ativo ? 'danger-btn' : 'ghost'}
+              size="sm"
+              loading={pollingLoading}
+              icon={config.polling_ativo ? 'player-pause' : 'player-play'}
+              onClick={togglePolling}
+            >
               {config.polling_ativo ? 'Pausar' : 'Ativar'}
             </Btn>
           </div>
         )}
+
       </div>
     </Modal>
   )
 }
 
-// ─── STAT CARD ───────────────────────────────────────────────────────────────
+// ─── STAT CARD ────────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, accent, warn }) {
   return (
     <div className={`${styles.statCard} ${accent ? styles.statAccent : ''} ${warn ? styles.statWarn : ''}`}>
@@ -652,7 +860,7 @@ function StatCard({ label, value, icon, accent, warn }) {
   )
 }
 
-// ─── UTILS ───────────────────────────────────────────────────────────────────
+// ─── UTILS ────────────────────────────────────────────────────────────────────
 function fmtTime(dt) {
   if (!dt) return '—'
   return new Date(dt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })

@@ -140,3 +140,140 @@
 }
 .select:focus  { border-color: var(--caramelo); box-shadow: 0 0 0 3px var(--caramelo-dim); }
 .select option { background: var(--surface); }
+/* ─────────────────────────────────────────────────────────────────────────────
+ * PATCH — IFood.module.css
+ * Adicione estas classes ao final do arquivo existente.
+ * Referem-se à funcionalidade "Criar Cliente" e ao bloco de cliente no detalhe.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Bloco "sem cliente" no modal de detalhe ── */
+.semClienteBox {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.semClienteTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Botões de ação inline (Vincular / Criar) dentro do detalhe ── */
+.clienteAcoesMini {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.btnAcaoMini {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.btnAcaoMini:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--texto);
+  border-color: var(--texto);
+}
+
+.btnAcaoMiniPrimary {
+  border-color: var(--caramelo);
+  color: var(--caramelo);
+}
+
+.btnAcaoMiniPrimary:hover:not(:disabled) {
+  background: var(--caramelo);
+  color: #fff;
+  border-color: var(--caramelo);
+}
+
+.btnAcaoMini:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Itens do pedido ── */
+.itensList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.itemRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.itemQtd {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--caramelo);
+  min-width: 24px;
+  padding-top: 1px;
+}
+
+.itemInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.itemNome {
+  font-size: 13px;
+  color: var(--texto);
+}
+
+.itemObs {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.complementos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.complementoTag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid var(--border);
+  color: var(--muted);
+}
+
+.itemPreco {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--texto);
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+/* ── Grid de totais ── */
+.totaisGrid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  font-size: 13px;
+}
