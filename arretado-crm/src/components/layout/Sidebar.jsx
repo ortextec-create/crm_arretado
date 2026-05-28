@@ -2,39 +2,32 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { Avatar } from '../ui'
 import styles from './Sidebar.module.css'
-import { pedidosApi } from '../../api/services'
-import { useState, useEffect } from 'react'
 
 const NAV = [
   {
     section: 'Principal',
     items: [
-      { to: '/', icon: 'layout-dashboard', label: 'Dashboard' },
-      { to: '/clientes', icon: 'users', label: 'Clientes' },
-      { to: '/tags', icon: 'tag', label: 'Tags' },
-      { path: '/vinculacoes',
-        icon: 'ti-link',
-        label: 'Associações',
-      },
-      { to: '/eventos',      icon: 'calendar-event',   label: 'Eventos' },   // ← ADICIONAR
-
+      { to: '/',            icon: 'layout-dashboard', label: 'Dashboard' },
+      { to: '/clientes',    icon: 'users',             label: 'Clientes' },
+      { to: '/tags',        icon: 'tag',               label: 'Tags' },
+      { to: '/vinculacoes', icon: 'link',              label: 'Associações' },
+      { to: '/eventos',     icon: 'calendar-event',    label: 'Eventos' },
     ],
   },
   {
     section: 'Integrações',
     items: [
-      { to: '/integracoes/ifood', icon: 'brand-firebase', label: 'iFood', dot: true },
-      { to: '/integracoes/anotaai', icon: 'device-mobile', label: 'Anota AI', dot: true },
-      { to: '/integracoes/pdv', icon: 'building-store', label: 'PDV Próprio' },
-      { to: '/integracoes/pdv/catalogo', icon: 'package', label: 'Catálogo', sub: true }
-
+      { to: '/integracoes/ifood',    icon: 'brand-firebase', label: 'iFood',       dot: true },
+      { to: '/integracoes/anotaai',  icon: 'device-mobile',  label: 'Anota AI',    dot: true },
+      { to: '/integracoes/pdv',      icon: 'building-store', label: 'PDV Próprio' },
+      { to: '/integracoes/pdv/catalogo', icon: 'package',    label: 'Catálogo',    sub: true },
     ],
   },
   {
     section: 'Administração',
     items: [
-      { to: '/usuarios', icon: 'shield-lock', label: 'Usuários' },
-      { to: '/configuracoes', icon: 'settings', label: 'Configurações' },
+      { to: '/usuarios',      icon: 'shield-lock', label: 'Usuários' },
+      { to: '/configuracoes', icon: 'settings',    label: 'Configurações' },
     ],
   },
 ]
@@ -70,7 +63,6 @@ export default function Sidebar() {
                 end={to === '/'}
                 className={({ isActive }) =>
                   `${styles.navItem} ${isActive ? styles.active : ''} ${sub ? styles.navItemSub : ''}`
-
                 }
               >
                 <i className={`ti ti-${icon}`} aria-hidden="true" />
