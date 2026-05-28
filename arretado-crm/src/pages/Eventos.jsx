@@ -551,7 +551,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
   const STEP_LABELS = ['Dados do Evento', 'Entrega', 'Itens', 'Financeiro']
 
   return (
-    <Modal title="Novo Evento" onClose={onClose} wide>
+    <Modal open title="Novo Evento" onClose={onClose} wide>
       {/* Stepper */}
       <div className={styles.stepper}>
         {STEP_LABELS.map((l, i) => (
@@ -920,7 +920,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
   const cfg = STATUS_CONFIG[evento.status] || {}
 
   return (
-    <Modal title={`Evento ${evento.numero}`} onClose={onClose} wide>
+    <Modal open title={`Evento ${evento.numero}`} onClose={onClose} wide>
       <div className={styles.detalheLayout}>
 
         {/* Coluna esquerda: informações */}
