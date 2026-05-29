@@ -5,17 +5,21 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Interceptor: inject CSRF token from cookie if present
+// Injeta token em todas as requisições
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('auth_token')
   if (token) config.headers.Authorization = `Token ${token}`
   return config
 })
 
+// Interceptor de resposta:
+// Redireciona para /login em 401, MAS ignora a rota de login
+// para não causar redirect durante a tentativa de autenticação.
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const isLoginEndpoint = err.config?.url?.includes('/usuarios/login/')
+    if (err.response?.status === 401 && !isLoginEndpoint) {
       localStorage.removeItem('auth_token')
       localStorage.removeItem('auth_user')
       window.location.href = '/login'
