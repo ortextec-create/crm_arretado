@@ -13,15 +13,24 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!email || !password) { setError('Preencha e-mail e senha.'); return }
-    setLoading(true); setError('')
+    if (!email || !password) {
+      setError('Preencha e-mail e senha.')
+      return
+    }
+    setLoading(true)
+    setError('')
     try {
       await login(email, password)
       navigate('/')
-    } catch {
-      setError('Credenciais inválidas. Tente novamente.')
-    } finally {
-      setLoading(false)
+      // não chama setLoading(false) aqui — a navegação desmonta o componente
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      if (err?.response?.status === 403) {
+        setError(detail || 'Usuário inativo. Fale com o administrador.')
+      } else {
+        setError(detail || 'E-mail ou senha incorretos.')
+      }
+      setLoading(false) // só reseta o loading após exibir o erro
     }
   }
 
@@ -47,27 +56,35 @@ export default function Login() {
 
         <div className={styles.field}>
           <label>E-mail</label>
-          <input type="email" autoComplete="email" placeholder="seu@arretado.com.br"
-            value={email} onChange={e => setEmail(e.target.value)} />
+          <input
+            type="email"
+            autoComplete="email"
+            placeholder="seu@arretado.com.br"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setError('') }}
+          />
         </div>
         <div className={styles.field}>
           <label>Senha</label>
-          <input type="password" autoComplete="current-password" placeholder="••••••••"
-            value={password} onChange={e => setPassword(e.target.value)} />
+          <input
+            type="password"
+            autoComplete="current-password"
+            placeholder="••••••••"
+            value={password}
+            onChange={e => { setPassword(e.target.value); setError('') }}
+          />
         </div>
 
         {error && (
           <p className={styles.error}>
-            <i className="ti ti-alert-circle" />{error}
+            <i className="ti ti-alert-circle" /> {error}
           </p>
         )}
 
         <button type="submit" className={styles.btnLogin} disabled={loading}>
           {loading && <i className="ti ti-loader spin" />}
-          {loading ? 'Entrando...' : 'Entrar no sistema'}
+          {loading ? 'Verificando...' : 'Entrar no sistema'}
         </button>
-
-        <p className={styles.hint}>Use qualquer e-mail + senha para o demo.</p>
       </form>
     </div>
   )
