@@ -22,6 +22,8 @@ CANCEL_URL      = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/requestCancellat
 DISPATCH_URL    = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/dispatch'
 PICKUP_URL      = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/readyToPickup'
 CANCEL_REASONS  = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/cancellationReasons'
+ACCEPT_CANCELLATION_URL  = IFOOD_BASE + '/order/v1.0/orders/{order_id}/acceptCancellation'
+DENY_CANCELLATION_URL    = IFOOD_BASE + '/order/v1.0/orders/{order_id}/denyCancellation'
 
 
 class IFoodAPIError(Exception):
@@ -194,7 +196,26 @@ class IFoodClient:
         except IFoodAPIError as e:
             return {'ok': False, 'erro': str(e), 'status_code': e.status_code}
 
+    def accept_cancellation(self, order_id: str) -> dict:
+        """
+        POST /order/v1.0/orders/{id}/acceptCancellation
+        Aceita o cancelamento solicitado pelo cliente (Plataforma de Negociação).
+        Chamado quando o operador concorda com o cancelamento.
+        """
+        url = ACCEPT_CANCELLATION_URL.format(order_id=order_id)
+        resp = self._request('POST', url)
+        return resp.json() if resp.content else {}
 
+
+    def deny_cancellation(self, order_id: str) -> dict:
+        """
+        POST /order/v1.0/orders/{id}/denyCancellation
+        Recusa o cancelamento solicitado pelo cliente (Plataforma de Negociação).
+        Chamado quando o operador não concorda e quer manter o pedido.
+        """
+        url = DENY_CANCELLATION_URL.format(order_id=order_id)
+        resp = self._request('POST', url)
+        return resp.json() if resp.content else {}
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 def _chunks(lst, n):

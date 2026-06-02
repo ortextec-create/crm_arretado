@@ -35,6 +35,10 @@ STATUS_MAP = {
     'ORDER_DISPATCHED':        'DISPATCHED',
     'ORDER_CONCLUDED':         'CONCLUDED',
     'ORDER_CANCELLED':         'CANCELLED',
+    'CANCELLATION_REQUESTED':           'CANCELLATION_REQUESTED',
+    'CONSUMER_CANCELLATION_REQUESTED':  'CANCELLATION_REQUESTED',
+    'CANCELLATION_DENIED':              'CONFIRMED',   # loja recusou → volta a CONFIRMED
+    'ORDER_CANCELLATION_REQUESTED':     'CANCELLATION_REQUESTED',
 }
 
 CODE_MAP = {
@@ -112,11 +116,32 @@ def _processar_config(config):
             continue
 
         # Processar evento de pedido
+        NEGOCIACAO_CODES = {
+            'CANCELLATION_REQUESTED',
+            'CONSUMER_CANCELLATION_REQUESTED',
+            'ORDER_CANCELLATION_REQUESTED',
+            'NEGOTIATION_REQUESTED',
+        }
         try:
             with transaction.atomic():
                 novo = _processar_evento_pedido(client, evt, config)
                 if novo:
                     pedidos_novos += 1
+
+                # ── Negociação: marcar pedido como pendente ──────────────
+                if full_code in NEGOCIACAO_CODES and order_id:
+                    # Extrai descrição do motivo se disponível
+                    nego_desc = evt.get('metadata', {}).get('reason', '') or evt.get('reason', '')
+                    PedidoIFood.objects.filter(ifood_order_id=order_id).update(
+                        negociacao_pendente  = True,
+                        negociacao_tipo      = full_code,
+                        negociacao_descricao = nego_desc,
+                        status               = 'CANCELLATION_REQUESTED',
+                    )
+                    logger.info(
+                        'Negociação detectada para pedido %s: %s', order_id[:8], full_code
+                    )
+
             evento_obj.processado = True
             evento_obj.save(update_fields=['processado'])
         except Exception as e:
@@ -174,89 +199,164 @@ def _processar_evento_pedido(client, evt, config):
         return False
 
 
-def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
+def _criar_pedido(detalhe: dict, config) -> 'PedidoIFood':
     """
     Cria PedidoIFood + ItemPedidoIFood a partir do payload completo.
     Tenta vincular ao Cliente CRM por telefone ou ifood_customer_id.
+
+    Campos extraídos (novos para homologação):
+      - payment_brand    ← payments.methods[0].card.brand
+      - payment_troco    ← payments.methods[0].cash.changeFor
+      - payment_prepaid  ← payments.prepaid
+      - cliente_cpf      ← customer.taxPayerIdentificationNumber
+      - observacao_pedido← metadata.observations / userNote
+      - agendamento_dt   ← schedule.scheduledDateTimeEnd
+      - benefits_raw     ← benefits (lista de cupons)
     """
+    from django.utils import timezone as dj_tz
+    from clientes.models import Cliente
+    from .models import PedidoIFood, ItemPedidoIFood
+
     order_id   = detalhe.get('id', '')
     customer   = detalhe.get('customer', {})
     delivery   = detalhe.get('delivery', {})
     payments   = detalhe.get('payments', {})
     total_info = detalhe.get('total', {})
     items_raw  = detalhe.get('items', [])
+    metadata   = detalhe.get('metadata', {})
+    schedule   = detalhe.get('schedule', {})
+    benefits   = detalhe.get('benefits', [])
 
-    # Pagamento
-    payment_label = ''
+    # ── Pagamento ──────────────────────────────────────────────────────────
+    payment_label   = ''
+    payment_brand   = ''
+    payment_troco   = None
+    payment_prepaid = bool(payments.get('prepaid', False))
+
     methods = payments.get('methods', [])
     if methods:
         m = methods[0]
         payment_label = m.get('method', '') or m.get('type', '')
 
-    # Valores
+        # Bandeira do cartão
+        card_info = m.get('card', {})
+        if card_info:
+            payment_brand = card_info.get('brand', '')
+
+        # Troco (pagamento em dinheiro na entrega)
+        cash_info = m.get('cash', {})
+        if cash_info:
+            raw_troco = cash_info.get('changeFor', None)
+            if raw_troco is not None:
+                payment_troco = _cents(raw_troco)
+
+    # ── Valores ────────────────────────────────────────────────────────────
     total_valor  = _cents(total_info.get('orderAmount', 0))
     subtotal     = _cents(total_info.get('subTotal', 0))
     taxa_entrega = _cents(total_info.get('deliveryFee', 0))
     desconto     = _cents(total_info.get('benefits', 0))
 
-    # Endereço
+    # ── Endereço ───────────────────────────────────────────────────────────
     delivery_address = delivery.get('deliveryAddress', {}) if delivery else {}
 
-    # Tenta vincular cliente CRM
-    cliente_obj = None
+    # ── CPF/CNPJ do cliente ────────────────────────────────────────────────
+    cliente_cpf = customer.get('taxPayerIdentificationNumber', '') or ''
+
+    # ── Observação do pedido ───────────────────────────────────────────────
+    observacao_pedido = (
+        metadata.get('observations', '')
+        or detalhe.get('userNote', '')
+        or detalhe.get('observations', '')
+        or ''
+    )
+
+    # ── Agendamento ────────────────────────────────────────────────────────
+    agendamento_dt = None
+    if schedule:
+        raw_sched = schedule.get('scheduledDateTimeEnd') or schedule.get('deliveryDateTimeEnd')
+        if raw_sched:
+            agendamento_dt = _parse_dt(raw_sched)
+
+    # ── Vínculo com Cliente CRM ────────────────────────────────────────────
+    cliente_obj   = None
     ifood_cust_id = customer.get('id', '')
     telefone_raw  = customer.get('phone', {})
-    telefone_num  = telefone_raw.get('number', '') if isinstance(telefone_raw, dict) else str(telefone_raw)
+    telefone_num  = (
+        telefone_raw.get('number', '')
+        if isinstance(telefone_raw, dict)
+        else str(telefone_raw)
+    )
 
     if ifood_cust_id:
         cliente_obj = Cliente.objects.filter(ifood_customer_id=ifood_cust_id).first()
 
     if not cliente_obj and telefone_num:
-        # Tenta por telefone (busca parcial nos últimos 8 dígitos)
         sufixo = telefone_num[-8:] if len(telefone_num) >= 8 else telefone_num
-        cliente_obj = Cliente.objects.filter(telefone_principal__endswith=sufixo).first()
+        cliente_obj = Cliente.objects.filter(
+            telefone_principal__endswith=sufixo
+        ).first()
 
+    # ── Cria o pedido ──────────────────────────────────────────────────────
     pedido = PedidoIFood.objects.create(
-        ifood_order_id   = order_id,
-        ifood_merchant_id= detalhe.get('merchant', {}).get('id', config.merchant_id),
-        display_id       = detalhe.get('displayId', ''),
-        cliente          = cliente_obj,
-        status           = STATUS_MAP.get(detalhe.get('fullCode', 'PLACED'), 'PLACED'),
-        order_type       = detalhe.get('orderType', 'DELIVERY'),
-        total_valor      = total_valor,
-        subtotal         = subtotal,
-        taxa_entrega     = taxa_entrega,
-        desconto         = desconto,
-        payment_method   = payment_label,
-        cliente_nome     = customer.get('name', ''),
-        cliente_telefone = telefone_num,
-        cliente_ifood_id = ifood_cust_id,
-        endereco_entrega = delivery_address,
-        payload_raw      = detalhe,
-        ifood_criado_em  = _parse_dt(detalhe.get('createdAt')),
+        ifood_order_id    = order_id,
+        ifood_merchant_id = detalhe.get('merchant', {}).get('id', config.merchant_id),
+        display_id        = detalhe.get('displayId', ''),
+        cliente           = cliente_obj,
+        status            = STATUS_MAP.get(detalhe.get('fullCode', 'PLACED'), 'PLACED'),
+        order_type        = detalhe.get('orderType', 'DELIVERY'),
+        total_valor       = total_valor,
+        subtotal          = subtotal,
+        taxa_entrega      = taxa_entrega,
+        desconto          = desconto,
+        # Pagamento
+        payment_method    = payment_label,
+        payment_brand     = payment_brand,
+        payment_troco     = payment_troco,
+        payment_prepaid   = payment_prepaid,
+        # Cliente
+        cliente_nome      = customer.get('name', ''),
+        cliente_telefone  = telefone_num,
+        cliente_ifood_id  = ifood_cust_id,
+        cliente_cpf       = cliente_cpf,
+        # Observação e agendamento
+        observacao_pedido = observacao_pedido,
+        agendamento_dt    = agendamento_dt,
+        benefits_raw      = benefits if isinstance(benefits, list) else [],
+        # Entrega e payload
+        endereco_entrega  = delivery_address,
+        payload_raw       = detalhe,
+        ifood_criado_em   = _parse_dt(detalhe.get('createdAt')),
     )
 
-    # Cria itens
+    # ── Cria itens ─────────────────────────────────────────────────────────
     for item in items_raw:
         complementos = []
         for opt in item.get('options', []):
             complementos.append({
-                'nome': opt.get('name', ''),
+                'nome':       opt.get('name', ''),
                 'quantidade': opt.get('quantity', 1),
-                'preco': _cents(opt.get('unitPrice', 0)),
+                'preco':      _cents(opt.get('unitPrice', 0)),
             })
         ItemPedidoIFood.objects.create(
-            pedido        = pedido,
-            ifood_item_id = item.get('id', ''),
-            nome          = item.get('name', ''),
-            quantidade    = item.get('quantity', 1),
-            preco_unit    = _cents(item.get('unitPrice', 0)),
-            preco_total   = _cents(item.get('totalPrice', 0)),
-            observacao    = item.get('observations', ''),
-            complementos  = complementos,
+            pedido         = pedido,
+            ifood_item_id  = item.get('id', ''),
+            nome           = item.get('name', ''),
+            quantidade     = item.get('quantity', 1),
+            preco_unit     = _cents(item.get('unitPrice', 0)),
+            preco_total    = _cents(item.get('totalPrice', 0)),
+            observacao     = item.get('observations', ''),
+            complementos   = complementos,
         )
 
-    logger.info('Pedido iFood criado: %s (cliente=%s)', pedido.display_id or order_id[:8], cliente_obj)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(
+        'Pedido iFood criado: %s (cliente=%s, agendado=%s, troco=%s)',
+        pedido.display_id or order_id[:8],
+        cliente_obj,
+        agendamento_dt,
+        payment_troco,
+    )
     return pedido
 
 

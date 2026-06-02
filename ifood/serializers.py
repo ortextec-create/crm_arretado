@@ -57,12 +57,36 @@ class PedidoIFoodListSerializer(serializers.ModelSerializer):
 
 
 class PedidoIFoodDetailSerializer(serializers.ModelSerializer):
-    """Serializer completo com itens."""
+    """Serializer completo com itens — inclui campos de homologação."""
     status_display     = serializers.CharField(source='get_status_display', read_only=True)
     order_type_display = serializers.CharField(source='get_order_type_display', read_only=True)
     itens              = ItemPedidoSerializer(many=True, read_only=True)
     cliente_crm_id     = serializers.SerializerMethodField()
     cliente_nome_crm   = serializers.SerializerMethodField()
+
+    # ── Campos extras para homologação ──────────────────────────────────────
+    # Pagamento detalhado
+    payment_brand    = serializers.CharField(read_only=True)
+    payment_troco    = serializers.DecimalField(max_digits=10, decimal_places=2,
+                                                 read_only=True, allow_null=True)
+    payment_prepaid  = serializers.BooleanField(read_only=True)
+
+    # Cliente fiscal
+    cliente_cpf       = serializers.CharField(read_only=True)
+
+    # Pedido
+    observacao_pedido = serializers.CharField(read_only=True)
+
+    # Agendamento
+    agendamento_dt    = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    # Benefícios / cupons
+    benefits_raw      = serializers.JSONField(read_only=True)
+
+    # Negociação
+    negociacao_pendente  = serializers.BooleanField(read_only=True)
+    negociacao_tipo      = serializers.CharField(read_only=True)
+    negociacao_descricao = serializers.CharField(read_only=True)
 
     class Meta:
         model  = PedidoIFood
@@ -71,10 +95,19 @@ class PedidoIFoodDetailSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'order_type', 'order_type_display',
             'total_valor', 'subtotal', 'taxa_entrega', 'desconto',
-            'payment_method',
+            # Pagamento
+            'payment_method', 'payment_brand', 'payment_troco', 'payment_prepaid',
+            # Cliente
             'cliente_nome', 'cliente_telefone', 'cliente_ifood_id',
+            'cliente_cpf',
             'cliente_crm_id', 'cliente_nome_crm',
+            # Pedido
+            'observacao_pedido', 'agendamento_dt', 'benefits_raw',
+            # Negociação
+            'negociacao_pendente', 'negociacao_tipo', 'negociacao_descricao',
+            # Endereço e itens
             'endereco_entrega', 'itens',
+            # Ações e datas
             'pode_confirmar', 'pode_cancelar',
             'ifood_criado_em', 'criado_em', 'atualizado_em',
         ]

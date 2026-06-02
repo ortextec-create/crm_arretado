@@ -173,6 +173,70 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             return Response({'status': 'CANCELLED'})
         except IFoodAPIError as e:
             return Response({'detail': str(e)}, status=502)
+        
+    @action(detail=True, methods=['post'], url_path='aceitar-negociacao')
+    def aceitar_negociacao(self, request, pk=None):
+        """
+        POST /api/v1/ifood/pedidos/{id}/aceitar-negociacao/
+
+        Aceita o cancelamento solicitado pelo cliente via Plataforma de Negociação.
+        Chama POST /orders/{id}/acceptCancellation na API iFood.
+        """
+        pedido = self.get_object()
+
+        if not pedido.negociacao_pendente:
+            return Response(
+                {'detail': 'Não há negociação pendente para este pedido.'},
+                status=400,
+            )
+
+        client, err = self._get_client()
+        if err:
+            return err
+
+        try:
+            client.accept_cancellation(pedido.ifood_order_id)
+            pedido.negociacao_pendente = False
+            pedido.status = 'CANCELLED'
+            pedido.save(update_fields=['negociacao_pendente', 'status', 'atualizado_em'])
+            return Response({'status': 'CANCELLED', 'detail': 'Cancelamento aceito.'})
+        except IFoodAPIError as e:
+            return Response({'detail': str(e)}, status=502)
+
+    @action(detail=True, methods=['post'], url_path='recusar-negociacao')
+    def recusar_negociacao(self, request, pk=None):
+        """
+        POST /api/v1/ifood/pedidos/{id}/recusar-negociacao/
+
+        Recusa o cancelamento solicitado pelo cliente via Plataforma de Negociação.
+        Chama POST /orders/{id}/denyCancellation na API iFood.
+        O pedido volta ao status CONFIRMED.
+        """
+        pedido = self.get_object()
+
+        if not pedido.negociacao_pendente:
+            return Response(
+                {'detail': 'Não há negociação pendente para este pedido.'},
+                status=400,
+            )
+
+        client, err = self._get_client()
+        if err:
+            return err
+
+        try:
+            client.deny_cancellation(pedido.ifood_order_id)
+            pedido.negociacao_pendente   = False
+            pedido.negociacao_tipo       = ''
+            pedido.negociacao_descricao  = ''
+            pedido.status = 'CONFIRMED'
+            pedido.save(update_fields=[
+                'negociacao_pendente', 'negociacao_tipo',
+                'negociacao_descricao', 'status', 'atualizado_em',
+            ])
+            return Response({'status': 'CONFIRMED', 'detail': 'Cancelamento recusado. Pedido mantido.'})
+        except IFoodAPIError as e:
+            return Response({'detail': str(e)}, status=502)
 
     @action(detail=True, methods=['post'], url_path='despachar')
     def despachar(self, request, pk=None):

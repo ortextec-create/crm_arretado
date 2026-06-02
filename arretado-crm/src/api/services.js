@@ -40,6 +40,8 @@ export const ifoodApi = {
   cancelar:       (id, data)  => api.post(`/ifood/pedidos/${id}/cancelar/`, data),
   statusPolling:  ()          => api.get('/ifood/polling/status/'),
   triggerPolling: ()          => api.post('/ifood/polling/trigger/'),
+  aceitarNegociacao: (id)     => api.post(`/ifood/pedidos/${id}/aceitar-negociacao/`),
+  recusarNegociacao: (id)     => api.post(`/ifood/pedidos/${id}/recusar-negociacao/`),
 }
 
 // ─── PDV ────────────────────────────────────────────────────────────────────

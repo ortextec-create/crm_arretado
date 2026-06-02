@@ -77,7 +77,26 @@ class PedidoIFood(models.Model):
     taxa_entrega  = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     desconto      = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     payment_method = models.CharField(max_length=100, blank=True, default='')
+    payment_brand    = models.CharField(max_length=60,  blank=True, default='')  # bandeira: VISA, MASTERCARD…
+    payment_troco    = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # troco solicitado
+    payment_prepaid  = models.BooleanField(default=False)  # True = pago online; False = pagar na entrega
 
+    # Dados do cliente (Cenário 5)
+    cliente_cpf      = models.CharField(max_length=20, blank=True, default='')   # CPF/CNPJ para nota
+
+    # Observação do pedido (Cenário 5)
+    observacao_pedido = models.TextField(blank=True, default='')
+
+    # Agendamento (Cenário 1)
+    agendamento_dt   = models.DateTimeField(null=True, blank=True)  # scheduledDateTimeEnd
+
+    # Cupons / benefícios (Cenário 1)
+    benefits_raw     = models.JSONField(default=list, blank=True)   # lista de benefits do payload
+
+    # Plataforma de Negociação (Cenário 4)
+    negociacao_pendente  = models.BooleanField(default=False)       # True enquanto aguarda ação do operador
+    negociacao_tipo      = models.CharField(max_length=60, blank=True, default='')  # ex: CONSUMER_CANCELLATION_REQUESTED
+    negociacao_descricao = models.TextField(blank=True, default='') # motivo enviado pelo consumidor
     # Cliente iFood (pode não estar vinculado ao CRM)
     cliente_nome     = models.CharField(max_length=200, blank=True, default='')
     cliente_telefone = models.CharField(max_length=30, blank=True, default='')
@@ -94,6 +113,8 @@ class PedidoIFood(models.Model):
     atualizado_em = models.DateTimeField(auto_now=True)
     # Quando o iFood criou o pedido
     ifood_criado_em = models.DateTimeField(null=True, blank=True)
+
+    
 
     class Meta:
         verbose_name = 'Pedido iFood'
