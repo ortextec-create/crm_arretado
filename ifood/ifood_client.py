@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 IFOOD_BASE      = 'https://merchant-api.ifood.com.br'
 AUTH_URL        = f'{IFOOD_BASE}/authentication/v1.0/oauth/token'
 POLLING_URL     = f'{IFOOD_BASE}/order/v1.0/events:polling'
-#ACK_URL        = f'{IFOOD_BASE}/order/v1.0/events:acknowledgment'
-ACK_URL         = f'{IFOOD_BASE}/order/v1.0/orders:acknowledgment'
+
+ACK_URL = 'https://merchant-api.ifood.com.br/order/v1.0/events/acknowledgment'
+
 ORDER_URL       = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}'
 CONFIRM_URL     = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/confirm'
 CANCEL_URL      = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/requestCancellation'
@@ -137,20 +138,17 @@ class IFoodClient:
 
         return resp.json() if resp.text else []
 
-    def acknowledgment(self, event_ids: list):
+    def acknowledgment(self, events: list):
         """
-        POST /order/v1.0/orders:acknowledgment
-        Confirma recebimento dos eventos para o iFood não reenviar.
+        POST /order/v1.0/events/acknowledgment
+        Envia os objetos de evento completos recebidos no polling.
+        A API extrai o campo 'id' internamente.
         """
-        if not event_ids:
+        if not events:
             return
-        # API aceita até 2000 IDs por request
-        for chunk in _chunks(event_ids, 2000):
-            self._request(
-                'POST', ACK_URL,
-                json={'acknowledgedEventIds': chunk},
-            )
-        logger.info('ACK enviado para %d eventos', len(event_ids))
+        for chunk in _chunks(events, 2000):
+            self._request('POST', ACK_URL, json=chunk)
+        logger.info('ACK enviado para %d eventos', len(events))
 
     # ─── PEDIDOS ─────────────────────────────────────────────────────────────
 

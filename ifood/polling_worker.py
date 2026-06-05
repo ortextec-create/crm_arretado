@@ -1,12 +1,25 @@
 """
-Worker de polling do iFood.
-Chamado a cada 30 segundos via management command ou Celery.
+ifood/polling_worker.py
+Worker de polling do iFood — Arretado CRM
+Atualizado: Junho 2026
 
 Fluxo:
-  1. GET /orders:polling
+  1. GET /order/v1.0/events:polling (a cada 30s)
   2. Para cada evento PLACED → busca detalhes, cria PedidoIFood, vincula Cliente CRM
   3. Para demais eventos → atualiza status do pedido existente
-  4. POST /orders:acknowledgment com todos os IDs recebidos
+  4. Detecta eventos de negociação (CANCELLATION_REQUESTED etc.) e marca pedido
+  5. POST /order/v1.0/events/acknowledgment com os OBJETOS COMPLETOS dos eventos
+     (a API extrai o campo 'id' internamente — não enviar só os IDs)
+
+Campos extraídos para homologação:
+  - payment_brand    ← payments.methods[0].card.brand
+  - payment_troco    ← payments.methods[0].cash.changeFor
+  - payment_prepaid  ← payments.prepaid
+  - cliente_cpf      ← customer.taxPayerIdentificationNumber
+  - observacao_pedido← metadata.observations / userNote
+  - agendamento_dt   ← schedule.scheduledDateTimeEnd
+  - benefits_raw     ← benefits (lista de cupons)
+  - negociacao_*     ← detectado via NEGOCIACAO_CODES
 """
 import logging
 from datetime import datetime, timezone as dt_tz
@@ -20,25 +33,26 @@ from .ifood_client import IFoodClient, IFoodAPIError
 
 logger = logging.getLogger(__name__)
 
-# Mapeamento: fullCode iFood → status interno
+# ── Mapeamento: fullCode iFood → status interno ───────────────────────────────
 STATUS_MAP = {
-    'PLACED':                  'PLACED',
-    'CONFIRMED':               'CONFIRMED',
-    'PREPARATION_STARTED':     'PREPARATION_STARTED',
-    'READY_TO_PICKUP':         'READY_TO_PICKUP',
-    'DISPATCHED':              'DISPATCHED',
-    'CONCLUDED':               'CONCLUDED',
-    'CANCELLATION_REQUESTED':  'CANCELLATION_REQUESTED',
-    'CANCELLED':               'CANCELLED',
-    'ORDER_PLACED':            'PLACED',
-    'ORDER_CONFIRMED':         'CONFIRMED',
-    'ORDER_DISPATCHED':        'DISPATCHED',
-    'ORDER_CONCLUDED':         'CONCLUDED',
-    'ORDER_CANCELLED':         'CANCELLED',
-    'CANCELLATION_REQUESTED':           'CANCELLATION_REQUESTED',
-    'CONSUMER_CANCELLATION_REQUESTED':  'CANCELLATION_REQUESTED',
-    'CANCELLATION_DENIED':              'CONFIRMED',   # loja recusou → volta a CONFIRMED
-    'ORDER_CANCELLATION_REQUESTED':     'CANCELLATION_REQUESTED',
+    'PLACED':                          'PLACED',
+    'CONFIRMED':                       'CONFIRMED',
+    'PREPARATION_STARTED':             'PREPARATION_STARTED',
+    'READY_TO_PICKUP':                 'READY_TO_PICKUP',
+    'DISPATCHED':                      'DISPATCHED',
+    'CONCLUDED':                       'CONCLUDED',
+    'CANCELLATION_REQUESTED':          'CANCELLATION_REQUESTED',
+    'CANCELLED':                       'CANCELLED',
+    # Aliases usados pelo iFood em diferentes versões
+    'ORDER_PLACED':                    'PLACED',
+    'ORDER_CONFIRMED':                 'CONFIRMED',
+    'ORDER_DISPATCHED':                'DISPATCHED',
+    'ORDER_CONCLUDED':                 'CONCLUDED',
+    'ORDER_CANCELLED':                 'CANCELLED',
+    # Negociação
+    'CONSUMER_CANCELLATION_REQUESTED': 'CANCELLATION_REQUESTED',
+    'ORDER_CANCELLATION_REQUESTED':    'CANCELLATION_REQUESTED',
+    'CANCELLATION_DENIED':             'CONFIRMED',  # loja recusou → volta a CONFIRMED
 }
 
 CODE_MAP = {
@@ -46,11 +60,21 @@ CODE_MAP = {
     'CAN': 'CAN', 'CAC': 'CAC', 'CON': 'CON', 'HBT': 'HBT',
 }
 
+# Eventos que indicam pedido de cancelamento via Plataforma de Negociação
+NEGOCIACAO_CODES = {
+    'CANCELLATION_REQUESTED',
+    'CONSUMER_CANCELLATION_REQUESTED',
+    'ORDER_CANCELLATION_REQUESTED',
+    'NEGOTIATION_REQUESTED',
+}
+
+
+# ── Entrada principal ─────────────────────────────────────────────────────────
 
 def run_polling():
     """
     Executa um ciclo de polling para todas as configurações ativas.
-    Retorna dict com resumo.
+    Retorna dict com resumo: configs, eventos, pedidos_novos, erros.
     """
     configs = ConfiguracaoIFood.objects.filter(polling_ativo=True)
     if not configs.exists():
@@ -62,8 +86,8 @@ def run_polling():
     for config in configs:
         try:
             result = _processar_config(config)
-            totais['configs'] += 1
-            totais['eventos'] += result['eventos']
+            totais['configs']      += 1
+            totais['eventos']      += result['eventos']
             totais['pedidos_novos'] += result['pedidos_novos']
         except Exception as e:
             logger.error('Erro no polling config %s: %s', config.merchant_id, e, exc_info=True)
@@ -72,6 +96,8 @@ def run_polling():
     return totais
 
 
+# ── Processamento por configuração ────────────────────────────────────────────
+
 def _processar_config(config):
     client = IFoodClient(config)
     eventos_raw = client.polling()
@@ -79,17 +105,18 @@ def _processar_config(config):
     if not eventos_raw:
         return {'eventos': 0, 'pedidos_novos': 0}
 
-    event_ids_para_ack = []
-    pedidos_novos = 0
+    # Guarda OBJETOS COMPLETOS para ACK (a API extrai o campo 'id' internamente)
+    eventos_para_ack = []
+    pedidos_novos    = 0
 
     for evt in eventos_raw:
-        event_id  = evt.get('id', '')
-        full_code = evt.get('fullCode', evt.get('code', ''))
-        order_id  = evt.get('orderId', '')
-        code      = evt.get('code', 'OTH')
+        event_id   = evt.get('id', '')
+        full_code  = evt.get('fullCode', evt.get('code', ''))
+        order_id   = evt.get('orderId', '')
+        code       = evt.get('code', 'OTH')
         created_at = _parse_dt(evt.get('createdAt'))
 
-        # Salva o evento no log (ignora duplicatas)
+        # ── Salva evento no log (ignora duplicatas) ──
         evento_obj, criado = EventoPollingIFood.objects.get_or_create(
             ifood_event_id=event_id,
             defaults={
@@ -102,36 +129,33 @@ def _processar_config(config):
             }
         )
 
+        # Sempre inclui no ACK (duplicata ou não)
+        eventos_para_ack.append(evt)
+
         if not criado:
-            # Já processado antes
-            event_ids_para_ack.append(event_id)
+            # Evento já processado anteriormente — só faz ACK
             continue
 
-        # Heartbeat: só faz ACK
+        # ── Heartbeat: só faz ACK, não cria pedido ──
         if full_code in ('HEARTBEAT', 'HBT') or code == 'HBT':
-            event_ids_para_ack.append(event_id)
             evento_obj.acknowledged = True
-            evento_obj.processado = True
+            evento_obj.processado   = True
             evento_obj.save(update_fields=['acknowledged', 'processado'])
             continue
 
-        # Processar evento de pedido
-        NEGOCIACAO_CODES = {
-            'CANCELLATION_REQUESTED',
-            'CONSUMER_CANCELLATION_REQUESTED',
-            'ORDER_CANCELLATION_REQUESTED',
-            'NEGOTIATION_REQUESTED',
-        }
+        # ── Processa evento de pedido ──
         try:
             with transaction.atomic():
                 novo = _processar_evento_pedido(client, evt, config)
                 if novo:
                     pedidos_novos += 1
 
-                # ── Negociação: marcar pedido como pendente ──────────────
+                # ── Negociação: marcar pedido como pendente ──
                 if full_code in NEGOCIACAO_CODES and order_id:
-                    # Extrai descrição do motivo se disponível
-                    nego_desc = evt.get('metadata', {}).get('reason', '') or evt.get('reason', '')
+                    nego_desc = (
+                        evt.get('metadata', {}).get('reason', '')
+                        or evt.get('reason', '')
+                    )
                     PedidoIFood.objects.filter(ifood_order_id=order_id).update(
                         negociacao_pendente  = True,
                         negociacao_tipo      = full_code,
@@ -139,27 +163,39 @@ def _processar_config(config):
                         status               = 'CANCELLATION_REQUESTED',
                     )
                     logger.info(
-                        'Negociação detectada para pedido %s: %s', order_id[:8], full_code
+                        'Negociação detectada para pedido %s: %s',
+                        order_id[:8], full_code,
                     )
 
             evento_obj.processado = True
             evento_obj.save(update_fields=['processado'])
+
         except Exception as e:
-            logger.error('Erro ao processar evento %s (%s): %s', event_id, full_code, e, exc_info=True)
+            logger.error(
+                'Erro ao processar evento %s (%s): %s',
+                event_id, full_code, e, exc_info=True,
+            )
 
-        event_ids_para_ack.append(event_id)
-
-    # Envia ACK para todos os eventos recebidos
-    try:
-        client.acknowledgment(event_ids_para_ack)
-        EventoPollingIFood.objects.filter(
-            ifood_event_id__in=event_ids_para_ack
-        ).update(acknowledged=True)
-    except IFoodAPIError as e:
-        logger.error('Falha ao enviar ACK: %s', e)
+    # ── ACK: envia objetos completos (não apenas IDs) ──
+    # A documentação iFood diz: "send an array with event IDs or the complete
+    # content received in polling. The API only uses the ID to process acknowledgment."
+    # Enviamos os objetos completos pois é o formato que o endpoint aceita.
+    if eventos_para_ack:
+        try:
+            client.acknowledgment(eventos_para_ack)
+            # Marca como acknowledged no banco usando os IDs extraídos
+            ids_ack = [e.get('id') for e in eventos_para_ack if e.get('id')]
+            EventoPollingIFood.objects.filter(
+                ifood_event_id__in=ids_ack
+            ).update(acknowledged=True)
+            logger.info('ACK enviado para %d eventos', len(eventos_para_ack))
+        except IFoodAPIError as e:
+            logger.error('Falha ao enviar ACK: %s', e)
 
     return {'eventos': len(eventos_raw), 'pedidos_novos': pedidos_novos}
 
+
+# ── Processamento individual de evento ───────────────────────────────────────
 
 def _processar_evento_pedido(client, evt, config):
     """
@@ -174,16 +210,15 @@ def _processar_evento_pedido(client, evt, config):
 
     novo_status = STATUS_MAP.get(full_code)
 
-    # Pedido ainda não existe → busca detalhes e cria
     pedido_existente = PedidoIFood.objects.filter(ifood_order_id=order_id).first()
 
     if pedido_existente is None:
-        # Busca detalhes mesmo que não seja PLACED (pode ter perdido o evento)
+        # Pedido ainda não existe → busca detalhes e cria
         try:
             detalhe = client.get_order(order_id)
         except IFoodAPIError as e:
             if e.status_code == 404:
-                logger.warning('Pedido %s não encontrado na API iFood', order_id)
+                logger.warning('Pedido %s não encontrado na API iFood (ainda não disponível)', order_id)
                 return False
             raise
         pedido = _criar_pedido(detalhe, config)
@@ -192,42 +227,40 @@ def _processar_evento_pedido(client, evt, config):
             pedido.save(update_fields=['status'])
         return True
     else:
-        # Atualiza status se mapeado
+        # Pedido já existe → atualiza status se mapeado
         if novo_status and pedido_existente.status != novo_status:
             pedido_existente.status = novo_status
             pedido_existente.save(update_fields=['status', 'atualizado_em'])
         return False
 
 
-def _criar_pedido(detalhe: dict, config) -> 'PedidoIFood':
-    """
-    Cria PedidoIFood + ItemPedidoIFood a partir do payload completo.
-    Tenta vincular ao Cliente CRM por telefone ou ifood_customer_id.
+# ── Criação de pedido a partir do payload completo ────────────────────────────
 
-    Campos extraídos (novos para homologação):
-      - payment_brand    ← payments.methods[0].card.brand
-      - payment_troco    ← payments.methods[0].cash.changeFor
-      - payment_prepaid  ← payments.prepaid
-      - cliente_cpf      ← customer.taxPayerIdentificationNumber
-      - observacao_pedido← metadata.observations / userNote
-      - agendamento_dt   ← schedule.scheduledDateTimeEnd
-      - benefits_raw     ← benefits (lista de cupons)
+def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
     """
-    from django.utils import timezone as dj_tz
-    from clientes.models import Cliente
-    from .models import PedidoIFood, ItemPedidoIFood
+    Cria PedidoIFood + ItemPedidoIFood a partir do payload completo da API iFood.
+    Tenta vincular ao Cliente CRM por ifood_customer_id ou telefone.
 
+    Campos extraídos para homologação:
+      - payment_brand     ← payments.methods[0].card.brand
+      - payment_troco     ← payments.methods[0].cash.changeFor
+      - payment_prepaid   ← payments.prepaid
+      - cliente_cpf       ← customer.taxPayerIdentificationNumber
+      - observacao_pedido ← metadata.observations / userNote
+      - agendamento_dt    ← schedule.scheduledDateTimeEnd
+      - benefits_raw      ← benefits (lista de cupons)
+    """
     order_id   = detalhe.get('id', '')
-    customer   = detalhe.get('customer', {})
-    delivery   = detalhe.get('delivery', {})
-    payments   = detalhe.get('payments', {})
-    total_info = detalhe.get('total', {})
-    items_raw  = detalhe.get('items', [])
-    metadata   = detalhe.get('metadata', {})
-    schedule   = detalhe.get('schedule', {})
-    benefits   = detalhe.get('benefits', [])
+    customer   = detalhe.get('customer', {}) or {}
+    delivery   = detalhe.get('delivery', {}) or {}
+    payments   = detalhe.get('payments', {}) or {}
+    total_info = detalhe.get('total', {}) or {}
+    items_raw  = detalhe.get('items', []) or []
+    metadata   = detalhe.get('metadata', {}) or {}
+    schedule   = detalhe.get('schedule', {}) or {}
+    benefits   = detalhe.get('benefits', []) or []
 
-    # ── Pagamento ──────────────────────────────────────────────────────────
+    # ── Pagamento ──────────────────────────────────────────────────────────────
     payment_label   = ''
     payment_brand   = ''
     payment_troco   = None
@@ -238,31 +271,29 @@ def _criar_pedido(detalhe: dict, config) -> 'PedidoIFood':
         m = methods[0]
         payment_label = m.get('method', '') or m.get('type', '')
 
-        # Bandeira do cartão
-        card_info = m.get('card', {})
+        card_info = m.get('card', {}) or {}
         if card_info:
             payment_brand = card_info.get('brand', '')
 
-        # Troco (pagamento em dinheiro na entrega)
-        cash_info = m.get('cash', {})
+        cash_info = m.get('cash', {}) or {}
         if cash_info:
             raw_troco = cash_info.get('changeFor', None)
             if raw_troco is not None:
                 payment_troco = _cents(raw_troco)
 
-    # ── Valores ────────────────────────────────────────────────────────────
+    # ── Valores financeiros ───────────────────────────────────────────────────
     total_valor  = _cents(total_info.get('orderAmount', 0))
     subtotal     = _cents(total_info.get('subTotal', 0))
     taxa_entrega = _cents(total_info.get('deliveryFee', 0))
     desconto     = _cents(total_info.get('benefits', 0))
 
-    # ── Endereço ───────────────────────────────────────────────────────────
-    delivery_address = delivery.get('deliveryAddress', {}) if delivery else {}
+    # ── Endereço de entrega ───────────────────────────────────────────────────
+    delivery_address = delivery.get('deliveryAddress', {}) or {}
 
-    # ── CPF/CNPJ do cliente ────────────────────────────────────────────────
+    # ── CPF/CNPJ do cliente ───────────────────────────────────────────────────
     cliente_cpf = customer.get('taxPayerIdentificationNumber', '') or ''
 
-    # ── Observação do pedido ───────────────────────────────────────────────
+    # ── Observação do pedido ──────────────────────────────────────────────────
     observacao_pedido = (
         metadata.get('observations', '')
         or detalhe.get('userNote', '')
@@ -270,21 +301,24 @@ def _criar_pedido(detalhe: dict, config) -> 'PedidoIFood':
         or ''
     )
 
-    # ── Agendamento ────────────────────────────────────────────────────────
+    # ── Agendamento ───────────────────────────────────────────────────────────
     agendamento_dt = None
     if schedule:
-        raw_sched = schedule.get('scheduledDateTimeEnd') or schedule.get('deliveryDateTimeEnd')
+        raw_sched = (
+            schedule.get('scheduledDateTimeEnd')
+            or schedule.get('deliveryDateTimeEnd')
+        )
         if raw_sched:
             agendamento_dt = _parse_dt(raw_sched)
 
-    # ── Vínculo com Cliente CRM ────────────────────────────────────────────
+    # ── Vínculo com Cliente CRM ───────────────────────────────────────────────
     cliente_obj   = None
     ifood_cust_id = customer.get('id', '')
     telefone_raw  = customer.get('phone', {})
     telefone_num  = (
         telefone_raw.get('number', '')
         if isinstance(telefone_raw, dict)
-        else str(telefone_raw)
+        else str(telefone_raw or '')
     )
 
     if ifood_cust_id:
@@ -296,7 +330,7 @@ def _criar_pedido(detalhe: dict, config) -> 'PedidoIFood':
             telefone_principal__endswith=sufixo
         ).first()
 
-    # ── Cria o pedido ──────────────────────────────────────────────────────
+    # ── Cria o pedido ─────────────────────────────────────────────────────────
     pedido = PedidoIFood.objects.create(
         ifood_order_id    = order_id,
         ifood_merchant_id = detalhe.get('merchant', {}).get('id', config.merchant_id),
@@ -318,7 +352,7 @@ def _criar_pedido(detalhe: dict, config) -> 'PedidoIFood':
         cliente_telefone  = telefone_num,
         cliente_ifood_id  = ifood_cust_id,
         cliente_cpf       = cliente_cpf,
-        # Observação e agendamento
+        # Pedido
         observacao_pedido = observacao_pedido,
         agendamento_dt    = agendamento_dt,
         benefits_raw      = benefits if isinstance(benefits, list) else [],
@@ -328,52 +362,58 @@ def _criar_pedido(detalhe: dict, config) -> 'PedidoIFood':
         ifood_criado_em   = _parse_dt(detalhe.get('createdAt')),
     )
 
-    # ── Cria itens ─────────────────────────────────────────────────────────
+    # ── Cria itens ────────────────────────────────────────────────────────────
     for item in items_raw:
         complementos = []
-        for opt in item.get('options', []):
+        for opt in item.get('options', []) or []:
             complementos.append({
                 'nome':       opt.get('name', ''),
                 'quantidade': opt.get('quantity', 1),
                 'preco':      _cents(opt.get('unitPrice', 0)),
             })
         ItemPedidoIFood.objects.create(
-            pedido         = pedido,
-            ifood_item_id  = item.get('id', ''),
-            nome           = item.get('name', ''),
-            quantidade     = item.get('quantity', 1),
-            preco_unit     = _cents(item.get('unitPrice', 0)),
-            preco_total    = _cents(item.get('totalPrice', 0)),
-            observacao     = item.get('observations', ''),
-            complementos   = complementos,
+            pedido        = pedido,
+            ifood_item_id = item.get('id', ''),
+            nome          = item.get('name', ''),
+            quantidade    = item.get('quantity', 1),
+            preco_unit    = _cents(item.get('unitPrice', 0)),
+            preco_total   = _cents(item.get('totalPrice', 0)),
+            observacao    = item.get('observations', ''),
+            complementos  = complementos,
         )
 
-    import logging
-    logger = logging.getLogger(__name__)
     logger.info(
-        'Pedido iFood criado: %s (cliente=%s, agendado=%s, troco=%s)',
+        'Pedido iFood criado: %s (cliente=%s, tipo=%s, agendado=%s, troco=%s)',
         pedido.display_id or order_id[:8],
         cliente_obj,
+        pedido.order_type,
         agendamento_dt,
         payment_troco,
     )
     return pedido
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def _cents(value):
-    """iFood retorna valores em centavos (int) ou float — normaliza para Decimal."""
+    """
+    iFood retorna valores monetários de formas inconsistentes:
+    às vezes em centavos (int > 1000), às vezes em reais (float < 100).
+    Heurística: se valor > 1000, assume centavos e divide por 100.
+    """
     try:
         v = float(value)
-        return v / 100 if v > 1000 else v  # heurística: >1000 provavelmente centavos
+        return round(v / 100, 2) if v > 1000 else round(v, 2)
     except (TypeError, ValueError):
         return 0
 
 
 def _parse_dt(value):
+    """Converte string ISO 8601 (com ou sem 'Z') para datetime UTC."""
     if not value:
         return None
     try:
-        if value.endswith('Z'):
+        if isinstance(value, str) and value.endswith('Z'):
             value = value[:-1] + '+00:00'
         return datetime.fromisoformat(value).astimezone(dt_tz.utc).replace(tzinfo=dt_tz.utc)
     except Exception:
