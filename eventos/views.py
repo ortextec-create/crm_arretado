@@ -6,6 +6,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
 from .models import LocalEvento, Evento, ItemEvento
+from notificacoes.servico import notificar, _fone_pedido
+
+
+def _notificar_evento(evento, mensagem):
+    notificar(_fone_pedido(evento), mensagem, cliente=evento.cliente, tipo='pedido')
 from .serializers import (
     LocalEventoSerializer,
     EventoListSerializer,
@@ -111,6 +116,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         evento.status = 'confirmado'
         evento.save(update_fields=['status', 'atualizado_em'])
+        _notificar_evento(evento, f'✅ Sua encomenda #{evento.numero} está confirmada para {evento.data_evento.strftime("%d/%m/%Y")}! Qualquer dúvida, é só chamar. 🍬')
         return Response(EventoDetailSerializer(evento).data)
 
     @action(detail=True, methods=['post'], url_path='iniciar-producao')
@@ -121,6 +127,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         evento.status = 'em_producao'
         evento.save(update_fields=['status', 'atualizado_em'])
+        _notificar_evento(evento, f'👨‍🍳 Sua encomenda #{evento.numero} entrou em produção! Estamos caprichando em cada detalhe.')
         return Response(EventoDetailSerializer(evento).data)
 
     @action(detail=True, methods=['post'], url_path='marcar-pronto')
@@ -131,6 +138,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         evento.status = 'pronto'
         evento.save(update_fields=['status', 'atualizado_em'])
+        _notificar_evento(evento, f'🎉 Sua encomenda #{evento.numero} está pronta! Entraremos em contato para combinar a entrega.')
         return Response(EventoDetailSerializer(evento).data)
 
     @action(detail=True, methods=['post'], url_path='entregar')
@@ -141,6 +149,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         evento.status = 'entregue'
         evento.save(update_fields=['status', 'atualizado_em'])
+        _notificar_evento(evento, f'💚 Encomenda #{evento.numero} entregue! Obrigado pela confiança na Arretado Doces. Até a próxima! 🍬')
         return Response(EventoDetailSerializer(evento).data)
 
     @action(detail=True, methods=['post'], url_path='cancelar')
@@ -151,6 +160,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         evento.status = 'cancelado'
         evento.save(update_fields=['status', 'atualizado_em'])
+        _notificar_evento(evento, f'❌ Sua encomenda #{evento.numero} foi cancelada. Entre em contato se precisar de ajuda.')
         return Response(EventoDetailSerializer(evento).data)
 
     # ── Itens ─────────────────────────────────────────────────────────────

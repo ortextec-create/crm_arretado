@@ -13,6 +13,8 @@ import PDV from './pages/PDV'
 import CatalogoPDV from './pages/CatalogoPDV'
 import Vinculacoes from './pages/Vinculacoes'
 import Eventos from './pages/Eventos'
+import Notificacoes from './pages/Notificacoes'
+import Configuracoes from './pages/Configuracoes'
 
 
 
@@ -45,10 +47,11 @@ export default function App() {
             <Route path="integracoes/ifood" element={<IFood />} />
             <Route path="integracoes/anotaai" element={<Placeholder title="Anota AI" />} />
             <Route path="integracoes/pdv" element={<PDV />} />
-            <Route path="configuracoes" element={<Placeholder title="Configurações" />} />
+            <Route path="configuracoes" element={<Configuracoes />} />
             <Route path="integracoes/pdv/catalogo" element={<CatalogoPDV />} />
             <Route path="/vinculacoes" element={<Vinculacoes />} />
             <Route path="eventos" element={<Eventos />} />
+            <Route path="notificacoes" element={<Notificacoes />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

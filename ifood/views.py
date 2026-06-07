@@ -9,6 +9,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .models import ConfiguracaoIFood, PedidoIFood, EventoPollingIFood
+from notificacoes.servico import notificar, _fone_pedido
+
+
+def _notificar_ifood(pedido, mensagem):
+    notificar(_fone_pedido(pedido), mensagem, cliente=pedido.cliente, tipo='pedido')
 from .serializers import (
     ConfiguracaoIFoodSerializer,
     PedidoIFoodListSerializer,
@@ -152,6 +157,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             client.confirm_order(pedido.ifood_order_id)
             pedido.status = 'CONFIRMED'
             pedido.save(update_fields=['status', 'atualizado_em'])
+            _notificar_ifood(pedido, f'✅ Seu pedido iFood #{pedido.display_id} foi confirmado! Estamos preparando com carinho. 🍬')
             return Response({'status': 'CONFIRMED'})
         except IFoodAPIError as e:
             return Response({'detail': str(e)}, status=502)
@@ -170,6 +176,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             client.cancel_order(pedido.ifood_order_id, reason_code, reason_desc)
             pedido.status = 'CANCELLED'
             pedido.save(update_fields=['status', 'atualizado_em'])
+            _notificar_ifood(pedido, f'❌ Seu pedido iFood #{pedido.display_id} foi cancelado. Pedimos desculpas pelo inconveniente.')
             return Response({'status': 'CANCELLED'})
         except IFoodAPIError as e:
             return Response({'detail': str(e)}, status=502)
@@ -248,6 +255,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             client.dispatch_order(pedido.ifood_order_id)
             pedido.status = 'DISPATCHED'
             pedido.save(update_fields=['status', 'atualizado_em'])
+            _notificar_ifood(pedido, f'🛵 Seu pedido iFood #{pedido.display_id} saiu para entrega! Aguarde.')
             return Response({'status': 'DISPATCHED'})
         except IFoodAPIError as e:
             return Response({'detail': str(e)}, status=502)
@@ -262,6 +270,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             client.ready_to_pickup(pedido.ifood_order_id)
             pedido.status = 'READY_TO_PICKUP'
             pedido.save(update_fields=['status', 'atualizado_em'])
+            _notificar_ifood(pedido, f'🎉 Seu pedido iFood #{pedido.display_id} está pronto para retirada na Arretado Doces!')
             return Response({'status': 'READY_TO_PICKUP'})
         except IFoodAPIError as e:
             return Response({'detail': str(e)}, status=502)

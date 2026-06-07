@@ -117,6 +117,20 @@ export const authApi = {
   },
 }
 
+// ─── NOTIFICAÇÕES WHATSAPP ────────────────────────────────────────────────────
+
+export const notificacoesApi = {
+  listar:         (params = {}) => api.get('/notificacoes/mensagens/', { params }),
+  enviar:         (data)        => api.post('/notificacoes/mensagens/enviar/', data),
+  statusConexao:  ()            => api.get('/notificacoes/mensagens/status-conexao/'),
+}
+
+export const configWhatsappApi = {
+  get:    ()     => api.get('/notificacoes/configuracao/'),
+  update: (data) => api.patch('/notificacoes/configuracao/', data),
+  testar: ()     => api.post('/notificacoes/configuracao/testar/'),
+}
+
 // ─── EVENTOS ─────────────────────────────────────────────────────────────────
 
 export const locaisEventoApi = {

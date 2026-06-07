@@ -23,7 +23,8 @@ INSTALLED_APPS = [
     'pedidos',
     'pdv',
     'eventos',
-    'usuarios', 
+    'usuarios',
+    'notificacoes',
 ]
 
 MIDDLEWARE = [
@@ -99,3 +100,18 @@ IFOOD_MERCHANT_ID = os.getenv('IFOOD_MERCHANT_ID', '')
 
 ANOTAAI_TOKEN = os.getenv('ANOTAAI_TOKEN', '')
 ANOTAAI_STORE_ID = os.getenv('ANOTAAI_STORE_ID', '')
+
+EVOLUTION_API_URL  = os.getenv('EVOLUTION_API_URL', '')
+EVOLUTION_API_KEY  = os.getenv('EVOLUTION_API_KEY', '')
+EVOLUTION_INSTANCE = os.getenv('EVOLUTION_INSTANCE', 'arretado')
+
+# WhatsApp — Twilio (desativado)
+TWILIO_ACCOUNT_SID    = os.getenv('TWILIO_ACCOUNT_SID', '')
+TWILIO_AUTH_TOKEN     = os.getenv('TWILIO_AUTH_TOKEN', '')
+TWILIO_WHATSAPP_FROM  = os.getenv('TWILIO_WHATSAPP_FROM', '')
+TWILIO_CONTENT_SID    = os.getenv('TWILIO_CONTENT_SID', '')
+
+# WhatsApp — Z-API
+ZAPI_INSTANCE_ID  = os.getenv('ZAPI_INSTANCE_ID', '')
+ZAPI_TOKEN        = os.getenv('ZAPI_TOKEN', '')
+ZAPI_CLIENT_TOKEN = os.getenv('ZAPI_CLIENT_TOKEN', '')

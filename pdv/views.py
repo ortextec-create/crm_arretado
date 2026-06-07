@@ -5,6 +5,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
 from .models import CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV
+from notificacoes.servico import notificar, _fone_pedido
+
+
+def _notificar_pdv(pedido, mensagem):
+    notificar(_fone_pedido(pedido), mensagem, cliente=pedido.cliente, tipo='pedido')
 from .serializers import (
     CategoriaProdutoSerializer,
     ProdutoSerializer,
@@ -120,6 +125,7 @@ class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Pedido não pode ser confirmado.'}, status=status.HTTP_400_BAD_REQUEST)
         pedido.status = 'confirmado'
         pedido.save(update_fields=['status', 'atualizado_em'])
+        _notificar_pdv(pedido, f'✅ Pedido #{pedido.numero} confirmado! Já estamos separando tudo com carinho. 🍬')
         return Response(PedidoPDVDetailSerializer(pedido).data)
 
     @action(detail=True, methods=['post'], url_path='iniciar-preparo')
@@ -129,6 +135,7 @@ class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Pedido precisa estar confirmado.'}, status=status.HTTP_400_BAD_REQUEST)
         pedido.status = 'em_preparo'
         pedido.save(update_fields=['status', 'atualizado_em'])
+        _notificar_pdv(pedido, f'👨‍🍳 Seu pedido #{pedido.numero} entrou em preparo! Em breve ficará pronto.')
         return Response(PedidoPDVDetailSerializer(pedido).data)
 
     @action(detail=True, methods=['post'], url_path='marcar-pronto')
@@ -138,6 +145,7 @@ class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Pedido precisa estar em preparo.'}, status=status.HTTP_400_BAD_REQUEST)
         pedido.status = 'pronto'
         pedido.save(update_fields=['status', 'atualizado_em'])
+        _notificar_pdv(pedido, f'🎉 Seu pedido #{pedido.numero} está pronto! Pode vir retirar na Arretado Doces.')
         return Response(PedidoPDVDetailSerializer(pedido).data)
 
     @action(detail=True, methods=['post'], url_path='concluir')
@@ -147,6 +155,7 @@ class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Pedido não pode ser concluído neste status.'}, status=status.HTTP_400_BAD_REQUEST)
         pedido.status = 'concluido'
         pedido.save(update_fields=['status', 'atualizado_em'])
+        _notificar_pdv(pedido, f'💚 Pedido #{pedido.numero} concluído! Obrigado pela preferência. Volte sempre! 🍬')
         return Response(PedidoPDVDetailSerializer(pedido).data)
 
     @action(detail=True, methods=['post'], url_path='cancelar')
@@ -156,6 +165,7 @@ class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Pedido já foi concluído ou cancelado.'}, status=status.HTTP_400_BAD_REQUEST)
         pedido.status = 'cancelado'
         pedido.save(update_fields=['status', 'atualizado_em'])
+        _notificar_pdv(pedido, f'❌ Seu pedido #{pedido.numero} foi cancelado. Entre em contato se precisar de ajuda.')
         return Response(PedidoPDVDetailSerializer(pedido).data)
 
     # ── Gerenciar itens ────────────────────────────────────────────────────
