@@ -7,12 +7,13 @@ class ConfiguracaoWhatsAppSerializer(serializers.ModelSerializer):
         model  = ConfiguracaoWhatsApp
         fields = [
             'zapi_instance_id', 'zapi_token', 'zapi_client_token',
+            'whatsapp_conectado',
             'notificacoes_pedido_ativo', 'aniversario_ativo',
             'reengajamento_ativo', 'dias_sem_compra',
             'mensagem_aniversario', 'mensagem_reengajamento',
             'atualizado_em',
         ]
-        read_only_fields = ['atualizado_em']
+        read_only_fields = ['atualizado_em', 'whatsapp_conectado']
 
 
 class HistoricoMensagemSerializer(serializers.ModelSerializer):

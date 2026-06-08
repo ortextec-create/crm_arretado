@@ -53,8 +53,9 @@ def notificar(telefone: str, mensagem: str, cliente=None, tipo: str = 'pedido') 
     )
 
     try:
-        zapi.enviar_texto(telefone, mensagem)
-        registro.status = 'enviado'
+        result = zapi.enviar_texto(telefone, mensagem)
+        registro.status     = 'enviado'
+        registro.message_id = result.get('messageId', '') if isinstance(result, dict) else ''
     except zapi.ZAPIError as e:
         registro.status = 'falha'
         registro.erro   = str(e)

@@ -61,8 +61,9 @@ class MensagemViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
         )
 
         try:
-            evo.enviar_texto(telefone, mensagem)
-            registro.status = 'enviado'
+            result = evo.enviar_texto(telefone, mensagem)
+            registro.status     = 'enviado'
+            registro.message_id = result.get('messageId', '') if isinstance(result, dict) else ''
         except evo.ZAPIError as e:
             registro.status = 'falha'
             registro.erro   = str(e)
@@ -80,6 +81,34 @@ class MensagemViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             return Response(data)
         except evo.ZAPIError as e:
             return Response({'state': 'error', 'detail': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    # ── Webhooks Z-API ────────────────────────────────────────────────────────
+
+    _STATUS_MAP = {'DELIVERED': 'entregue', 'READ': 'lido', 'PLAYED': 'lido'}
+
+    @action(detail=False, methods=['post'], url_path='webhook/status')
+    def webhook_status(self, request):
+        """Z-API → receber confirmação de entrega/leitura."""
+        message_id  = request.data.get('messageId', '')
+        zapi_status = request.data.get('status', '')
+        novo_status = self._STATUS_MAP.get(zapi_status)
+
+        if message_id and novo_status:
+            HistoricoMensagem.objects.filter(message_id=message_id).update(status=novo_status)
+
+        return Response({'ok': True})
+
+    @action(detail=False, methods=['post'], url_path='webhook/desconectado')
+    def webhook_desconectado(self, request):
+        """Z-API → celular desconectado."""
+        ConfiguracaoWhatsApp.objects.filter(pk=1).update(whatsapp_conectado=False)
+        return Response({'ok': True})
+
+    @action(detail=False, methods=['post'], url_path='webhook/conectado')
+    def webhook_conectado(self, request):
+        """Z-API → celular reconectado."""
+        ConfiguracaoWhatsApp.objects.filter(pk=1).update(whatsapp_conectado=True)
+        return Response({'ok': True})
 
 
 class ConfiguracaoWhatsAppViewSet(CsrfExemptMixin, viewsets.GenericViewSet):

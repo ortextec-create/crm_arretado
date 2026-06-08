@@ -22,6 +22,9 @@ class ConfiguracaoWhatsApp(models.Model):
     zapi_token        = models.CharField('Token',         max_length=200, blank=True)
     zapi_client_token = models.CharField('Client-Token',  max_length=200, blank=True)
 
+    # Estado de conexão (atualizado pelos webhooks Ao conectar / Ao desconectar)
+    whatsapp_conectado = models.BooleanField('WhatsApp conectado', default=True)
+
     # Toggles
     notificacoes_pedido_ativo = models.BooleanField('Notif. de pedidos ativa', default=True)
     aniversario_ativo         = models.BooleanField('Parabéns de aniversário ativo', default=True)
@@ -59,9 +62,11 @@ class HistoricoMensagem(models.Model):
     ]
 
     STATUS_CHOICES = [
-        ('enviado', 'Enviado'),
-        ('falha',   'Falha'),
-        ('pendente', 'Pendente'),
+        ('pendente',  'Pendente'),
+        ('enviado',   'Enviado'),
+        ('entregue',  'Entregue'),
+        ('lido',      'Lido'),
+        ('falha',     'Falha'),
     ]
 
     cliente  = models.ForeignKey(
@@ -70,11 +75,12 @@ class HistoricoMensagem(models.Model):
         on_delete=models.SET_NULL,
         related_name='mensagens_whatsapp',
     )
-    telefone  = models.CharField(max_length=30)
-    mensagem  = models.TextField()
-    tipo      = models.CharField(max_length=20, choices=TIPO_CHOICES, default='manual')
-    status    = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pendente', db_index=True)
-    erro      = models.TextField(blank=True, default='')
+    telefone   = models.CharField(max_length=30)
+    mensagem   = models.TextField()
+    tipo       = models.CharField(max_length=20, choices=TIPO_CHOICES, default='manual')
+    status     = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pendente', db_index=True)
+    message_id = models.CharField(max_length=100, blank=True, db_index=True)
+    erro       = models.TextField(blank=True, default='')
     enviado_em = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

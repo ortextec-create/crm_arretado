@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { configWhatsappApi } from '../api/services'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { configWhatsappApi, notificacoesApi } from '../api/services'
 import styles from './Configuracoes.module.css'
 
 const PLACEHOLDER_MSG = '{nome} será substituído pelo primeiro nome do cliente.'
@@ -33,22 +33,33 @@ function StatusBadge({ state }) {
 }
 
 export default function Configuracoes() {
-  const [form,    setForm]    = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [saving,  setSaving]  = useState(false)
-  const [testing, setTesting] = useState(false)
+  const [form,      setForm]      = useState(null)
+  const [loading,   setLoading]   = useState(true)
+  const [saving,    setSaving]    = useState(false)
+  const [testing,   setTesting]   = useState(false)
   const [connState, setConnState] = useState(null)
-  const [toast,   setToast]   = useState(null)
+  const [toast,     setToast]     = useState(null)
+  const pollRef = useRef(null)
 
   const showToast = (msg, type = 'ok') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }
 
+  const refreshConn = useCallback(async () => {
+    try {
+      const { data } = await notificacoesApi.statusConexao()
+      setConnState(data.state === 'open' ? 'open' : 'close')
+    } catch {
+      setConnState('error')
+    }
+  }, [])
+
   const load = useCallback(async () => {
     try {
       const { data } = await configWhatsappApi.get()
       setForm(data)
+      setConnState(data.whatsapp_conectado ? 'open' : 'close')
     } catch {
       showToast('Erro ao carregar configurações.', 'err')
     } finally {
@@ -56,7 +67,11 @@ export default function Configuracoes() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    pollRef.current = setInterval(refreshConn, 30_000)
+    return () => clearInterval(pollRef.current)
+  }, [load, refreshConn])
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }))
 
@@ -75,12 +90,11 @@ export default function Configuracoes() {
 
   const testar = async () => {
     setTesting(true)
-    setConnState(null)
     try {
       const { data } = await configWhatsappApi.testar()
       setConnState(data.ok ? 'open' : 'error')
       showToast(data.ok ? 'Conexão Z-API OK!' : `Falha: ${data.detail || 'erro desconhecido'}`, data.ok ? 'ok' : 'err')
-    } catch (e) {
+    } catch {
       setConnState('error')
       showToast('Falha ao testar conexão.', 'err')
     } finally {
@@ -112,6 +126,7 @@ export default function Configuracoes() {
           <i className="ti ti-brand-whatsapp" />
           <h2>Credenciais Z-API</h2>
           {connState && <StatusBadge state={connState} />}
+          {!connState && <span className={`${styles.badge} ${styles.badgeGray}`}>Verificando…</span>}
         </div>
 
         <div className={styles.grid3}>
