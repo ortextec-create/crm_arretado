@@ -12,6 +12,7 @@ const NAV = [
       { to: '/tags',        icon: 'tag',               label: 'Tags' },
       { to: '/vinculacoes', icon: 'link',              label: 'Associações' },
       { to: '/eventos',       icon: 'calendar-event',    label: 'Eventos' },
+      { to: '/orcamentos',    icon: 'file-description',  label: 'Orçamentos', sub: true },
       { to: '/notificacoes', icon: 'brand-whatsapp',    label: 'WhatsApp' },
     ],
   },

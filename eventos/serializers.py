@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import LocalEvento, Evento, ItemEvento
+from .models import LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento
 
 
 # ─── Local de Evento ──────────────────────────────────────────────────────────
@@ -159,3 +159,110 @@ class EventoAgendaSerializer(serializers.ModelSerializer):
 
     def get_local_nome(self, obj):
         return obj.local.nome if obj.local else None
+
+
+# ─── Orçamento ────────────────────────────────────────────────────────────────
+
+class ItemOrcamentoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ItemOrcamento
+        fields = ['id', 'produto', 'nome', 'preco_unit', 'quantidade',
+                  'preco_total', 'observacao']
+        read_only_fields = ['preco_total']
+
+
+class ItemOrcamentoCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ItemOrcamento
+        fields = ['produto', 'nome', 'preco_unit', 'quantidade', 'observacao']
+
+    def validate(self, data):
+        produto = data.get('produto')
+        if produto:
+            data.setdefault('nome',       produto.nome)
+            data.setdefault('preco_unit', produto.preco)
+        if not data.get('nome'):
+            raise serializers.ValidationError({'nome': 'Informe o nome do item.'})
+        if not data.get('preco_unit'):
+            raise serializers.ValidationError({'preco_unit': 'Informe o preço unitário.'})
+        return data
+
+
+class OrcamentoListSerializer(serializers.ModelSerializer):
+    status_display       = serializers.CharField(source='get_status_display',      read_only=True)
+    tipo_evento_display  = serializers.CharField(source='get_tipo_evento_display', read_only=True)
+    nome_cliente_display = serializers.ReadOnlyField()
+    telefone_display     = serializers.ReadOnlyField()
+    cliente_nome_crm     = serializers.SerializerMethodField()
+    evento_numero        = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = Orcamento
+        fields = [
+            'id', 'numero',
+            'status', 'status_display',
+            'tipo_evento', 'tipo_evento_display',
+            'data_evento', 'validade',
+            'cliente', 'cliente_nome', 'cliente_telefone',
+            'cliente_nome_crm', 'nome_cliente_display', 'telefone_display',
+            'subtotal', 'desconto', 'valor_total',
+            'pode_enviar', 'pode_aprovar', 'pode_recusar',
+            'pode_converter', 'pode_cancelar',
+            'evento', 'evento_numero',
+            'criado_em', 'atualizado_em',
+        ]
+
+    def get_cliente_nome_crm(self, obj):
+        return obj.cliente.nome if obj.cliente else None
+
+    def get_evento_numero(self, obj):
+        return obj.evento.numero if obj.evento else None
+
+
+class OrcamentoDetailSerializer(OrcamentoListSerializer):
+    itens = ItemOrcamentoSerializer(many=True, read_only=True)
+
+    class Meta(OrcamentoListSerializer.Meta):
+        fields = OrcamentoListSerializer.Meta.fields + ['itens', 'observacoes']
+
+
+class OrcamentoCreateSerializer(serializers.ModelSerializer):
+    itens = ItemOrcamentoCreateSerializer(many=True, required=False)
+
+    class Meta:
+        model  = Orcamento
+        fields = [
+            'cliente', 'cliente_nome', 'cliente_telefone',
+            'tipo_evento', 'data_evento', 'validade',
+            'desconto', 'observacoes',
+            'itens',
+        ]
+
+    def create(self, validated_data):
+        itens_data = validated_data.pop('itens', [])
+        validated_data['numero'] = Orcamento.proximo_numero()
+        orcamento = Orcamento.objects.create(**validated_data)
+
+        subtotal = 0
+        for item_data in itens_data:
+            qty   = item_data.get('quantidade', 1)
+            price = item_data['preco_unit']
+            total = price * qty
+            ItemOrcamento.objects.create(
+                orcamento=orcamento,
+                preco_total=total,
+                **item_data,
+            )
+            subtotal += total
+
+        orcamento.subtotal    = subtotal
+        orcamento.valor_total = max(subtotal - orcamento.desconto, 0)
+        orcamento.save(update_fields=['subtotal', 'valor_total'])
+        return orcamento
+
+    def update(self, instance, validated_data):
+        validated_data.pop('itens', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance

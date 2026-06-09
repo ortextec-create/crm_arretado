@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from .models import LocalEvento, Evento, ItemEvento
+from .models import LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento
 from notificacoes.servico import notificar, _fone_pedido
 
 
@@ -19,6 +19,10 @@ from .serializers import (
     EventoAgendaSerializer,
     ItemEventoCreateSerializer,
     ItemEventoSerializer,
+    OrcamentoListSerializer,
+    OrcamentoDetailSerializer,
+    OrcamentoCreateSerializer,
+    ItemOrcamentoCreateSerializer,
 )
 
 import datetime
@@ -287,3 +291,183 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             'proximos_7_dias':    EventoAgendaSerializer(prox7, many=True).data,
             'por_status':         por_status,
         })
+
+
+# ─── Orçamentos ───────────────────────────────────────────────────────────────
+
+class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+    queryset           = Orcamento.objects.prefetch_related('itens').select_related('cliente', 'evento').all()
+    permission_classes = [AllowAny]
+    filter_backends    = [filters.OrderingFilter]
+    ordering_fields    = ['criado_em', 'valor_total', 'data_evento']
+    ordering           = ['-criado_em']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return OrcamentoListSerializer
+        if self.action in ('update', 'partial_update'):
+            return OrcamentoCreateSerializer
+        return OrcamentoDetailSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = OrcamentoCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        orcamento = serializer.save()
+        return Response(
+            OrcamentoDetailSerializer(orcamento).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def get_queryset(self):
+        qs     = super().get_queryset()
+        params = self.request.query_params
+
+        search = params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(numero__icontains=search) |
+                Q(cliente_nome__icontains=search) |
+                Q(cliente__nome__icontains=search) |
+                Q(cliente_telefone__icontains=search)
+            )
+
+        status_param = params.get('status')
+        if status_param:
+            qs = qs.filter(status=status_param)
+
+        tipo_evento = params.get('tipo_evento')
+        if tipo_evento:
+            qs = qs.filter(tipo_evento=tipo_evento)
+
+        return qs
+
+    # ── Ações de status ───────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='enviar')
+    def enviar(self, request, pk=None):
+        orc = self.get_object()
+        if not orc.pode_enviar:
+            return Response({'detail': 'Orçamento não pode ser marcado como enviado neste status.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        orc.status = 'enviado'
+        orc.save(update_fields=['status', 'atualizado_em'])
+        return Response(OrcamentoDetailSerializer(orc).data)
+
+    @action(detail=True, methods=['post'], url_path='aprovar')
+    def aprovar(self, request, pk=None):
+        orc = self.get_object()
+        if not orc.pode_aprovar:
+            return Response({'detail': 'Orçamento não pode ser aprovado neste status.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        orc.status = 'aprovado'
+        orc.save(update_fields=['status', 'atualizado_em'])
+        return Response(OrcamentoDetailSerializer(orc).data)
+
+    @action(detail=True, methods=['post'], url_path='recusar')
+    def recusar(self, request, pk=None):
+        orc = self.get_object()
+        if not orc.pode_recusar:
+            return Response({'detail': 'Orçamento não pode ser recusado neste status.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        orc.status = 'recusado'
+        orc.save(update_fields=['status', 'atualizado_em'])
+        return Response(OrcamentoDetailSerializer(orc).data)
+
+    @action(detail=True, methods=['post'], url_path='converter-em-evento')
+    def converter_em_evento(self, request, pk=None):
+        orc = self.get_object()
+        if not orc.pode_converter:
+            return Response({'detail': 'Orçamento precisa estar aprovado para ser convertido.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        data_evento = request.data.get('data_evento') or (
+            str(orc.data_evento) if orc.data_evento else None
+        )
+        if not data_evento:
+            return Response({'detail': 'Informe a data do evento para converter.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        tipo_entrega    = request.data.get('tipo_entrega', 'retirada_loja')
+        hora_evento     = request.data.get('hora_evento') or None
+        local_id        = request.data.get('local') or None
+        endereco_avulso = request.data.get('endereco_avulso', '')
+        sinal_pago      = request.data.get('sinal_pago', 0)
+
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(),
+            cliente=orc.cliente,
+            cliente_nome=orc.cliente_nome,
+            cliente_telefone=orc.cliente_telefone,
+            tipo_evento=orc.tipo_evento or 'outro',
+            data_evento=data_evento,
+            hora_evento=hora_evento,
+            tipo_entrega=tipo_entrega,
+            local_id=local_id,
+            endereco_avulso=endereco_avulso,
+            status='orcamento',
+            subtotal=orc.subtotal,
+            desconto=orc.desconto,
+            valor_total=orc.valor_total,
+            sinal_pago=sinal_pago,
+            observacoes=orc.observacoes,
+        )
+
+        for item in orc.itens.all():
+            ItemEvento.objects.create(
+                evento=evento,
+                produto=item.produto,
+                nome=item.nome,
+                preco_unit=item.preco_unit,
+                quantidade=item.quantidade,
+                preco_total=item.preco_total,
+                observacao=item.observacao,
+            )
+
+        orc.evento = evento
+        orc.status = 'convertido'
+        orc.save(update_fields=['evento', 'status', 'atualizado_em'])
+
+        return Response({
+            'evento':    EventoDetailSerializer(evento).data,
+            'orcamento': OrcamentoDetailSerializer(orc).data,
+        }, status=status.HTTP_201_CREATED)
+
+    # ── Itens ─────────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='itens')
+    def adicionar_item(self, request, pk=None):
+        orc = self.get_object()
+        if orc.status not in ('rascunho', 'enviado'):
+            return Response(
+                {'detail': 'Só é possível adicionar itens em orçamentos com status Rascunho ou Enviado.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        serializer = ItemOrcamentoCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            data  = serializer.validated_data
+            qty   = data.get('quantidade', 1)
+            price = data['preco_unit']
+            ItemOrcamento.objects.create(
+                orcamento=orc,
+                preco_total=price * qty,
+                **data,
+            )
+            orc.recalcular_totais()
+            return Response(OrcamentoDetailSerializer(orc).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['delete'], url_path=r'itens/(?P<item_id>[^/.]+)/remover')
+    def remover_item(self, request, pk=None, item_id=None):
+        orc = self.get_object()
+        if orc.status not in ('rascunho', 'enviado'):
+            return Response(
+                {'detail': 'Não é possível remover itens neste status.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            item = orc.itens.get(pk=item_id)
+        except ItemOrcamento.DoesNotExist:
+            return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        item.delete()
+        orc.recalcular_totais()
+        return Response(OrcamentoDetailSerializer(orc).data)

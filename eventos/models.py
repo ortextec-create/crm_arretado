@@ -4,6 +4,8 @@ Modelos para agendamento de eventos com entrega futura.
 
 Estrutura:
   - LocalEvento    → locais de festa cadastráveis e reutilizáveis
+  - Orcamento      → orçamento pré-evento (ORC-0001...) — pode ser convertido em Evento
+  - ItemOrcamento  → itens do orçamento (snapshot de nome/preço)
   - Evento         → pedido agendado (casamento, aniversário, etc.)
   - ItemEvento     → itens do evento (doces, bolos, salgados, massas)
 
@@ -14,6 +16,154 @@ por cliente.
 from django.db import models
 from django.utils import timezone
 from clientes.models import Cliente
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Orçamento (pré-evento)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Orcamento(models.Model):
+
+    STATUS_CHOICES = [
+        ('rascunho',   'Rascunho'),
+        ('enviado',    'Enviado'),
+        ('aprovado',   'Aprovado'),
+        ('recusado',   'Recusado'),
+        ('expirado',   'Expirado'),
+        ('convertido', 'Convertido'),
+    ]
+
+    TIPO_EVENTO_CHOICES = [
+        ('casamento',   'Casamento'),
+        ('formatura',   'Formatura'),
+        ('aniversario', 'Aniversário'),
+        ('corporativo', 'Corporativo'),
+        ('batizado',    'Batizado'),
+        ('cha',         'Chá de bebê / revelação'),
+        ('outro',       'Outro'),
+    ]
+
+    numero           = models.CharField(max_length=20, unique=True, db_index=True)
+
+    cliente          = models.ForeignKey(
+        Cliente,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='orcamentos',
+    )
+    cliente_nome     = models.CharField(max_length=200, blank=True, default='')
+    cliente_telefone = models.CharField(max_length=30,  blank=True, default='')
+
+    tipo_evento      = models.CharField(max_length=30, choices=TIPO_EVENTO_CHOICES, blank=True, default='')
+    data_evento      = models.DateField(null=True, blank=True)
+    validade         = models.DateField(null=True, blank=True,
+                                        help_text='Data limite de validade do orçamento')
+
+    status           = models.CharField(
+        max_length=20, choices=STATUS_CHOICES,
+        default='rascunho', db_index=True,
+    )
+
+    subtotal         = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    desconto         = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    valor_total      = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    observacoes      = models.TextField(blank=True, default='')
+
+    # Preenchido quando o orçamento é convertido em evento
+    evento           = models.OneToOneField(
+        'Evento',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='orcamento_origem',
+    )
+
+    criado_em        = models.DateTimeField(auto_now_add=True)
+    atualizado_em    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = 'Orçamento'
+        verbose_name_plural = 'Orçamentos'
+        ordering            = ['-criado_em']
+        indexes             = [models.Index(fields=['status', 'criado_em'])]
+
+    def __str__(self):
+        nome = self.cliente.nome if self.cliente else self.cliente_nome or '—'
+        return f'{self.numero} — {nome}'
+
+    @classmethod
+    def proximo_numero(cls):
+        ultimo = cls.objects.order_by('-id').first()
+        if not ultimo:
+            return 'ORC-0001'
+        try:
+            seq = int(ultimo.numero.split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            seq = cls.objects.count() + 1
+        return f'ORC-{seq:04d}'
+
+    def recalcular_totais(self):
+        self.subtotal    = sum(i.preco_total for i in self.itens.all())
+        self.valor_total = max(self.subtotal - self.desconto, 0)
+        self.save(update_fields=['subtotal', 'valor_total', 'atualizado_em'])
+
+    @property
+    def nome_cliente_display(self):
+        if self.cliente:
+            return self.cliente.nome
+        return self.cliente_nome or '—'
+
+    @property
+    def telefone_display(self):
+        if self.cliente:
+            return self.cliente.telefone_principal or self.cliente_telefone
+        return self.cliente_telefone
+
+    @property
+    def pode_enviar(self):
+        return self.status == 'rascunho'
+
+    @property
+    def pode_aprovar(self):
+        return self.status in ('rascunho', 'enviado')
+
+    @property
+    def pode_recusar(self):
+        return self.status in ('rascunho', 'enviado')
+
+    @property
+    def pode_converter(self):
+        return self.status == 'aprovado'
+
+    @property
+    def pode_cancelar(self):
+        return self.status not in ('convertido', 'recusado', 'expirado')
+
+
+class ItemOrcamento(models.Model):
+    orcamento  = models.ForeignKey(Orcamento, on_delete=models.CASCADE, related_name='itens')
+    produto    = models.ForeignKey(
+        'pdv.Produto',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='itens_orcamento',
+    )
+    nome        = models.CharField(max_length=200)
+    preco_unit  = models.DecimalField(max_digits=10, decimal_places=2)
+    quantidade  = models.PositiveIntegerField(default=1)
+    preco_total = models.DecimalField(max_digits=10, decimal_places=2)
+    observacao  = models.CharField(max_length=300, blank=True, default='')
+
+    class Meta:
+        verbose_name = 'Item de Orçamento'
+        ordering     = ['id']
+
+    def __str__(self):
+        return f'{self.quantidade}x {self.nome} — {self.orcamento.numero}'
+
+    def save(self, *args, **kwargs):
+        self.preco_total = self.preco_unit * self.quantidade
+        super().save(*args, **kwargs)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

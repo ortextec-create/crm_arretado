@@ -13,6 +13,7 @@ import PDV from './pages/PDV'
 import CatalogoPDV from './pages/CatalogoPDV'
 import Vinculacoes from './pages/Vinculacoes'
 import Eventos from './pages/Eventos'
+import Orcamentos from './pages/Orcamentos'
 import Notificacoes from './pages/Notificacoes'
 import Configuracoes from './pages/Configuracoes'
 
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="integracoes/pdv/catalogo" element={<CatalogoPDV />} />
             <Route path="/vinculacoes" element={<Vinculacoes />} />
             <Route path="eventos" element={<Eventos />} />
+            <Route path="orcamentos" element={<Orcamentos />} />
             <Route path="notificacoes" element={<Notificacoes />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

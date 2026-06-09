@@ -155,3 +155,19 @@ export const eventosApi = {
   agenda:          (mes)   => api.get('/eventos/agenda/', { params: { mes } }),
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
 }
+
+// ─── ORÇAMENTOS ──────────────────────────────────────────────────────────────
+
+export const orcamentosApi = {
+  list:            (params) => api.get('/eventos/orcamentos/', { params }),
+  detail:          (id)     => api.get(`/eventos/orcamentos/${id}/`),
+  create:          (data)   => api.post('/eventos/orcamentos/', data),
+  update:          (id, d)  => api.patch(`/eventos/orcamentos/${id}/`, d),
+  delete:          (id)     => api.delete(`/eventos/orcamentos/${id}/`),
+  enviar:          (id)     => api.post(`/eventos/orcamentos/${id}/enviar/`),
+  aprovar:         (id)     => api.post(`/eventos/orcamentos/${id}/aprovar/`),
+  recusar:         (id)     => api.post(`/eventos/orcamentos/${id}/recusar/`),
+  converterEmEvento: (id, data) => api.post(`/eventos/orcamentos/${id}/converter-em-evento/`, data),
+  adicionarItem:   (id, data)   => api.post(`/eventos/orcamentos/${id}/itens/`, data),
+  removerItem:     (id, itemId) => api.delete(`/eventos/orcamentos/${id}/itens/${itemId}/remover/`),
+}

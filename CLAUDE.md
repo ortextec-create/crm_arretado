@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: junho de 2026.
+> Última atualização: 09/jun/2026.
 
 ---
 
@@ -40,9 +40,9 @@ arretado/                        ← raiz Django
 ├── pdv/                         ← Fase 3-ext-A: PDV próprio
 │   ├── models.py                ← CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV
 │   └── signals.py               ← espelha PedidoPDV → PedidoUnificado
-├── eventos/                     ← Fase 4: gestão de eventos/encomendas
-│   ├── models.py                ← Evento, ItemEvento, LocalEvento
-│   └── views.py
+├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos
+│   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento
+│   └── views.py                 ← OrcamentoViewSet (converter-em-evento) + EventoViewSet
 ├── usuarios/                    ← Gestão de usuários + RBAC
 │   └── views.py
 ├── notificacoes/                ← WhatsApp via Z-API
@@ -61,7 +61,8 @@ arretado-crm/                    ← raiz React
     ├── api/
     │   ├── client.js            ← axios base
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
-    │                               eventosApi, locaisEventoApi, notificacoesApi, usuariosApi, authApi
+    │                               eventosApi, locaisEventoApi, orcamentosApi,
+    │                               notificacoesApi, usuariosApi, authApi
     ├── pages/
     │   ├── Login.jsx
     │   ├── Dashboard.jsx
@@ -73,6 +74,7 @@ arretado-crm/                    ← raiz React
     │   ├── PDV.jsx
     │   ├── CatalogoPDV.jsx
     │   ├── Eventos.jsx
+    │   ├── Orcamentos.jsx
     │   ├── Notificacoes.jsx
     │   └── Vinculacoes.jsx
     ├── components/
@@ -112,8 +114,9 @@ arretado-crm/                    ← raiz React
   - `--verde` → indicadores positivos
 - **Tipografia:** `'Playfair Display', serif` em títulos · `'Inter', sans-serif` em corpo
 - **Ícones:** Tabler Icons (`ti ti-*`)
-- **`services.js`:** um objeto de API por canal — `clientesApi`, `ifoodApi`, `pdvApi`, `notificacoesApi`
+- **`services.js`:** um objeto de API por canal — `clientesApi`, `ifoodApi`, `pdvApi`, `notificacoesApi`, `orcamentosApi`
 - **Novo canal** = novo objeto no `services.js` seguindo o mesmo padrão
+- **Busca de cliente CRM** (padrão usado em `Eventos.jsx` e `Orcamentos.jsx`): input com debounce 350ms → `clientesApi.list({ search })` → dropdown com seleção → chip com nome/telefone e botão X para limpar. Nunca usar `<select>` com todos os clientes pré-carregados.
 
 ---
 
@@ -127,6 +130,7 @@ arretado-crm/                    ← raiz React
 | Fase 3-ext-A | PDV Próprio (backend + frontend) | ✅ Concluída · `migrate pdv` pendente em prod |
 | Fase 3-ext-B | Anota AI | 🔲 Pendente |
 | Fase 4 | Vinculação manual de pedidos a clientes | ✅ Concluída (`Vinculacoes.jsx`) |
+| Orçamentos | Orçamentos pré-evento (ORC-0001) + conversão em Evento | ✅ Concluída (`eventos/` + `Orcamentos.jsx`) |
 | Fase 5 | Dashboard e relatórios | ✅ Concluída (`Dashboard.jsx`) |
 | WhatsApp | Notificações via Z-API | ✅ Concluída e funcionando (`notificacoes/` + `zapi_client.py`) |
 | Usuários | Gestão de usuários + RBAC | ✅ Concluída (`Usuarios.jsx` + API real) |
@@ -137,14 +141,15 @@ arretado-crm/                    ← raiz React
 
 1. **`python manage.py migrate pdv`** — aplicar em produção
 2. **`python manage.py migrate notificacoes`** — aplicar em produção (app criado em jun/2026)
-3. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
+3. **`python manage.py migrate eventos`** — aplicar em produção (migration `0003_orcamento` criada em jun/2026)
+4. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
    ```
    ZAPI_INSTANCE_ID=3F44AD8FFA071145A7847A94F00847F6
    ZAPI_TOKEN=664FD7CD1788EFA5660A875F
    ZAPI_CLIENT_TOKEN=<client-token>
    ```
-4. **Anota AI (Fase 3-ext-B)** — criar app `anotaai/` seguindo o padrão de `pdv/`
-5. **PDV Hardware (roadmap):**
+5. **Anota AI (Fase 3-ext-B)** — criar app `anotaai/` seguindo o padrão de `pdv/`
+6. **PDV Hardware (roadmap):**
    - Curto prazo: impressora térmica TCP/IP (Django imprime via socket ESC/POS) + caixa registradora pelo mesmo cabo
    - Médio prazo: NFC-e (nota fiscal — SEFAZ-PI)
    - Longo prazo: TEF integrado
@@ -172,6 +177,18 @@ GET/POST /api/v1/pdv/produtos/
 GET/POST /api/v1/pdv/categorias/
 POST     /api/v1/pdv/pedidos/{id}/confirmar/
 POST     /api/v1/pdv/pedidos/{id}/concluir/
+
+# Orçamentos
+GET/POST      /api/v1/eventos/orcamentos/
+GET/PATCH     /api/v1/eventos/orcamentos/{id}/
+POST          /api/v1/eventos/orcamentos/{id}/enviar/
+POST          /api/v1/eventos/orcamentos/{id}/aprovar/
+POST          /api/v1/eventos/orcamentos/{id}/recusar/
+POST          /api/v1/eventos/orcamentos/{id}/converter-em-evento/
+POST          /api/v1/eventos/orcamentos/{id}/itens/
+DELETE        /api/v1/eventos/orcamentos/{id}/itens/{item_id}/remover/
+  ← filtros: ?status=rascunho|enviado|aprovado|recusado|expirado|convertido
+             ?search=<número|nome|telefone>
 
 # Eventos
 GET/POST /api/v1/eventos/
