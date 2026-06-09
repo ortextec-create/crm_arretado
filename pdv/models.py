@@ -34,6 +34,14 @@ class CategoriaProduto(models.Model):
 
 
 class Produto(models.Model):
+    SEGMENTO_CHOICES = [
+        ('unidade_pequena', 'Unidade Pequena'),
+        ('unidade_media',   'Unidade Média'),
+        ('bem_casado',      'Bem Casado'),
+        ('bolo_encomenda',  'Bolo / Encomenda'),
+        ('outro',           'Outro'),
+    ]
+
     nome      = models.CharField(max_length=200)
     descricao = models.TextField(blank=True, default='')
     preco     = models.DecimalField(max_digits=10, decimal_places=2)
@@ -42,6 +50,13 @@ class Produto(models.Model):
         null=True, blank=True,
         on_delete=models.SET_NULL,
         related_name='produtos',
+    )
+    foto               = models.ImageField(upload_to='produtos/', null=True, blank=True)
+    disponivel_pdv     = models.BooleanField(default=True)
+    disponivel_ifood   = models.BooleanField(default=False)
+    disponivel_eventos = models.BooleanField(default=False)
+    segmento           = models.CharField(
+        max_length=30, choices=SEGMENTO_CHOICES, default='outro'
     )
     ativo       = models.BooleanField(default=True, db_index=True)
     criado_em   = models.DateTimeField(auto_now_add=True)

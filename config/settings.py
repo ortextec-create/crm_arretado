@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     'eventos',
     'usuarios',
     'notificacoes',
+    'fichas',
 ]
 
 MIDDLEWARE = [

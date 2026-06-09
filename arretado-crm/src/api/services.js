@@ -171,3 +171,39 @@ export const orcamentosApi = {
   adicionarItem:   (id, data)   => api.post(`/eventos/orcamentos/${id}/itens/`, data),
   removerItem:     (id, itemId) => api.delete(`/eventos/orcamentos/${id}/itens/${itemId}/remover/`),
 }
+
+// ─── FICHAS / PRECIFICAÇÃO ────────────────────────────────────────────────────
+
+export const fichasApi = {
+  // Matérias-primas
+  listarMaterias:        (params) => api.get('/fichas/materias-primas/', { params }),
+  getMateriaDetalhe:     (id)     => api.get(`/fichas/materias-primas/${id}/`),
+  criarMateria:          (data)   => api.post('/fichas/materias-primas/', data),
+  atualizarMateria:      (id, d)  => api.patch(`/fichas/materias-primas/${id}/`, d),
+  atualizarPrecoMateria: (id, d)  => api.post(`/fichas/materias-primas/${id}/atualizar-preco/`, d),
+
+  // Fichas técnicas
+  listarFichas:   (params) => api.get('/fichas/fichas/', { params }),
+  detalharFicha:  (id)     => api.get(`/fichas/fichas/${id}/`),
+  criarFicha:     (data)   => api.post('/fichas/fichas/', data),
+  atualizarFicha: (id, d)  => api.patch(`/fichas/fichas/${id}/`, d),
+  resumoFicha:    (id)     => api.get(`/fichas/fichas/${id}/resumo/`),
+  adicionarItemFicha: (id, d)   => api.post(`/fichas/fichas/${id}/adicionar-item/`, d),
+  removerItemFicha:   (id, iid) => api.delete(`/fichas/fichas/${id}/remover-item/${iid}/`),
+
+  // Parâmetros do negócio
+  getParametros:    ()     => api.get('/fichas/parametros/1/'),
+  salvarParametros: (data) => api.patch('/fichas/parametros/1/', data),
+
+  // Ajuste linear
+  previewAjuste:  (data) => api.post('/fichas/ajuste-linear/', { ...data, confirmar: false }),
+  aplicarAjuste:  (data) => api.post('/fichas/ajuste-linear/', { ...data, confirmar: true }),
+  desfazerAjuste: (id)   => api.post(`/fichas/desfazer-ajuste/${id}/`),
+
+  // Snapshots
+  listarSnapshots: (params) => api.get('/fichas/snapshots/', { params }),
+
+  // Produtos (para semáforo — reutiliza pdvApi mas com segmento)
+  listarProdutos:  (params) => api.get('/pdv/produtos/', { params }),
+  atualizarProduto:(id, d)  => api.patch(`/pdv/produtos/${id}/`, d),
+}

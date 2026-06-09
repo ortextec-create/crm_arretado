@@ -1,0 +1,267 @@
+.page { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.header {
+  padding: 22px 26px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.title    { font-size: 20px; color: var(--texto); margin: 0 0 2px; }
+.subtitle { font-size: 12px; color: var(--muted); margin: 0; }
+
+/* Layout dois painéis */
+.layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.center { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+/* Lista */
+.lista {
+  width: 260px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.listaSearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.listaSearch > i { color: var(--muted); font-size: 14px; }
+
+.listaSearch input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--texto);
+  flex: 1;
+}
+
+.listaItens { flex: 1; overflow-y: auto; }
+
+.listaItem {
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+
+.listaItem:hover { background: var(--hover); }
+
+.listaItemActive { background: color-mix(in srgb, var(--caramelo) 8%, var(--surface)) !important; }
+
+.listaItemNome {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--texto);
+  margin-bottom: 2px;
+}
+
+.listaItemInfo {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.empty { padding: 16px; font-size: 12px; color: var(--muted); }
+
+/* Detalhe */
+.detalhe { flex: 1; overflow-y: auto; }
+
+.detalheVazio {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  height: 100%;
+}
+
+.detalheVazio i { font-size: 40px; opacity: .3; }
+.detalheVazio p { font-size: 14px; }
+
+.detalheInner {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+}
+
+.detHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.detNome    { font-size: 18px; color: var(--texto); margin: 0 0 4px; }
+.detProduto { font-size: 12px; color: var(--muted); margin: 0; }
+
+.margemBadge {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.statusVerde    { color: #059669; background: #d1fae5; }
+.statusAmarelo  { color: #d97706; background: #fef3c7; }
+.statusVermelho { color: #dc2626; background: #fee2e2; }
+
+.detMeta {
+  display: flex;
+  gap: 20px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.detMeta span { display: flex; align-items: center; gap: 5px; }
+.detMeta i    { color: var(--caramelo); }
+
+/* Tabela de ingredientes */
+.iTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.iTable th {
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+.iTable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--texto);
+  vertical-align: middle;
+}
+
+.iTable tbody tr:hover td { background: var(--hover); }
+
+.thRight { text-align: right !important; }
+.tdIdx   { color: var(--muted); width: 30px; }
+.tdCusto { font-weight: 600; }
+
+.btnRemove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.btnRemove:hover { color: #dc2626; background: #fee2e2; }
+
+/* Totais */
+.totaisBox {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+}
+
+.totaisRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.totaisRow strong { color: var(--texto); }
+
+.totaisSep {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 2px;
+  font-weight: 600;
+  color: var(--texto);
+}
+
+.totaisIdeal { margin-top: 4px; }
+
+.precoIdeal { color: var(--caramelo) !important; font-size: 15px; }
+
+/* Add form */
+.btnAdd {
+  align-self: flex-start;
+  padding: 7px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all .15s;
+}
+
+.btnAdd:hover { border-color: var(--caramelo); color: var(--caramelo); }
+
+.addForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.addSelect {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--texto);
+  font-size: 13px;
+}
+
+.addRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.addQtyInput {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--texto);
+  font-size: 13px;
+}
+
+.addSelect:focus, .addQtyInput:focus { outline: none; border-color: var(--caramelo); }

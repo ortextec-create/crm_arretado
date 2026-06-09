@@ -17,12 +17,20 @@ const NAV = [
     ],
   },
   {
+    section: 'Catálogo & Preços',
+    items: [
+      { to: '/catalogo',       icon: 'book-2',           label: 'Catálogo' },
+      { to: '/fichas-tecnicas',icon: 'flask',            label: 'Fichas Técnicas', sub: true },
+      { to: '/central-precos', icon: 'currency-dollar',  label: 'Central de Preços' },
+    ],
+  },
+  {
     section: 'Integrações',
     items: [
       { to: '/integracoes/ifood',    icon: 'brand-firebase', label: 'iFood',       dot: true },
       { to: '/integracoes/anotaai',  icon: 'device-mobile',  label: 'Anota AI',    dot: true },
       { to: '/integracoes/pdv',      icon: 'building-store', label: 'PDV Próprio' },
-      { to: '/integracoes/pdv/catalogo', icon: 'package',    label: 'Catálogo',    sub: true },
+      { to: '/integracoes/pdv/catalogo', icon: 'package',    label: 'Catálogo PDV', sub: true },
     ],
   },
   {

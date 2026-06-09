@@ -16,6 +16,9 @@ import Eventos from './pages/Eventos'
 import Orcamentos from './pages/Orcamentos'
 import Notificacoes from './pages/Notificacoes'
 import Configuracoes from './pages/Configuracoes'
+import Catalogo from './pages/Catalogo'
+import FichasTecnicas from './pages/FichasTecnicas'
+import CentralPrecos from './pages/CentralPrecos'
 
 
 
@@ -54,6 +57,9 @@ export default function App() {
             <Route path="eventos" element={<Eventos />} />
             <Route path="orcamentos" element={<Orcamentos />} />
             <Route path="notificacoes" element={<Notificacoes />} />
+            <Route path="catalogo" element={<Catalogo />} />
+            <Route path="fichas-tecnicas" element={<FichasTecnicas />} />
+            <Route path="central-precos" element={<CentralPrecos />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
