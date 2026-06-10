@@ -8,13 +8,15 @@
 ## Visão Geral
 
 CRM proprietário para a **Arretado Doces** — confeitaria em Teresina/PI, Brasil.  
-Gerencia clientes, pedidos e múltiplos canais de venda (iFood, PDV próprio, futuramente Anota AI).
+Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, catálogo de produtos e precificação.
 
 - **Backend:** Django 4.2 + DRF · Python
 - **Frontend:** React + Vite · CSS Modules
-- **Banco:** SQLite (dev) · PostgreSQL (prod)
-- **Deploy:** Gunicorn + Nginx · Ubuntu 24 · VPS
+- **Banco:** PostgreSQL (prod e dev local via Docker)
+- **Deploy:** Gunicorn (`arretado.service`) + Nginx · Ubuntu 24 · VPS `root@2.25.142.171`
+- **Código:** `git@github.com:ortextec-create/crm_arretado.git`
 - **URL prod:** https://arretado.ortex.solutions
+- **Caminho VPS:** `/var/www/crm_arretado/`
 
 ---
 
@@ -23,8 +25,8 @@ Gerencia clientes, pedidos e múltiplos canais de venda (iFood, PDV próprio, fu
 ```
 arretado/                        ← raiz Django
 ├── config/
-│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/
+│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/
 │   └── wsgi.py
 ├── clientes/                    ← Fase 1: CRM de clientes
 │   ├── models.py                ← Cliente, Endereço, TagCliente
@@ -38,7 +40,7 @@ arretado/                        ← raiz Django
 │   ├── models.py                ← PedidoUnificado
 │   └── apps.py                  ← registra signals do iFood e PDV no ready()
 ├── pdv/                         ← Fase 3-ext-A: PDV próprio
-│   ├── models.py                ← CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV
+│   ├── models.py                ← CategoriaProduto, Produto (+ segmento/foto/disponibilidades), PedidoPDV, ItemPedidoPDV
 │   └── signals.py               ← espelha PedidoPDV → PedidoUnificado
 ├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos
 │   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento
@@ -48,12 +50,14 @@ arretado/                        ← raiz Django
 ├── notificacoes/                ← WhatsApp via Z-API
 │   ├── models.py                ← HistoricoMensagem
 │   ├── zapi_client.py           ← enviar_texto(), status_conexao() · resolve número canônico via phone-exists · lança ZAPIError
-│   ├── twilio_client.py         ← legado, não usado
-│   ├── evolution_client.py      ← legado, não usado
 │   ├── views.py                 ← MensagemViewSet (listar, enviar, status-conexao)
-│   ├── serializers.py
-│   ├── urls.py
 │   └── management/commands/lembrar_aniversarios.py
+├── fichas/                      ← Catálogo, Fichas Técnicas e Precificação
+│   ├── models.py                ← MateriaPrima, FichaTecnica, ItemFichaTecnica, ParametrosNegocio, SnapshotPrecos
+│   ├── views.py                 ← MateriaPrimaViewSet, FichaTecnicaViewSet, ParametrosNegocioViewSet,
+│   │                               SnapshotPrecosViewSet, AjusteLinearView, DesfazerAjusteView
+│   ├── urls.py                  ← router + ajuste-linear/ + desfazer-ajuste/<id>/
+│   └── management/commands/importar_planilha.py  ← popula BD a partir do .xlsx
 └── manage.py
 
 arretado-crm/                    ← raiz React
@@ -62,7 +66,7 @@ arretado-crm/                    ← raiz React
     │   ├── client.js            ← axios base
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
     │                               eventosApi, locaisEventoApi, orcamentosApi,
-    │                               notificacoesApi, usuariosApi, authApi
+    │                               notificacoesApi, usuariosApi, authApi, fichasApi
     ├── pages/
     │   ├── Login.jsx
     │   ├── Dashboard.jsx
@@ -72,17 +76,20 @@ arretado-crm/                    ← raiz React
     │   ├── Usuarios.jsx
     │   ├── IFood.jsx
     │   ├── PDV.jsx
-    │   ├── CatalogoPDV.jsx
+    │   ├── CatalogoPDV.jsx      ← catálogo do PDV (gestão de produtos para venda)
+    │   ├── Catalogo.jsx         ← catálogo geral (grid de cards, foto, segmento, canais)
+    │   ├── FichasTecnicas.jsx   ← composição de ingredientes por produto
+    │   ├── CentralPrecos.jsx    ← precificação (matérias, ajuste linear, semáforo, parâmetros)
     │   ├── Eventos.jsx
     │   ├── Orcamentos.jsx
     │   ├── Notificacoes.jsx
+    │   ├── Configuracoes.jsx
     │   └── Vinculacoes.jsx
     ├── components/
     │   ├── layout/
     │   │   ├── AppLayout.jsx
     │   │   └── Sidebar.jsx
-    │   ├── ui/                  ← Btn, Modal, Spinner, Avatar, etc.
-    │   └── HistoricoPedidos.jsx
+    │   └── ui/                  ← Btn, Modal, Spinner, Avatar, etc.
     └── App.jsx                  ← rotas do frontend
 ```
 
@@ -99,6 +106,9 @@ arretado-crm/                    ← raiz React
 - Número do pedido PDV: método `PedidoPDV.proximo_numero()` — sequencial com zero-fill
 - Itens do PDV: snapshot de nome e preço no momento da venda
 - **Z-API WhatsApp:** configurado via `.env` (`ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`). O cliente em `notificacoes/zapi_client.py` resolve o número canônico via `phone-exists` antes de cada envio (trata números BR de 8 e 9 dígitos), lança `ZAPIError` em caso de falha — views capturam e gravam `status='falha'` no `HistoricoMensagem`.
+- **fichas.ParametrosNegocio é singleton** — sempre acessado via `ParametrosNegocio.get()`, nunca instanciado diretamente
+- **FichaTecnica → pdv.Produto** é uma FK fraca via `produto_pdv_id` (IntegerField, não ForeignKey) — o produto pode existir sem ficha e vice-versa
+- **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -114,7 +124,7 @@ arretado-crm/                    ← raiz React
   - `--verde` → indicadores positivos
 - **Tipografia:** `'Playfair Display', serif` em títulos · `'Inter', sans-serif` em corpo
 - **Ícones:** Tabler Icons (`ti ti-*`)
-- **`services.js`:** um objeto de API por canal — `clientesApi`, `ifoodApi`, `pdvApi`, `notificacoesApi`, `orcamentosApi`
+- **`services.js`:** um objeto de API por canal — `clientesApi`, `ifoodApi`, `pdvApi`, `notificacoesApi`, `orcamentosApi`, `fichasApi`
 - **Novo canal** = novo objeto no `services.js` seguindo o mesmo padrão
 - **Busca de cliente CRM** (padrão usado em `Eventos.jsx` e `Orcamentos.jsx`): input com debounce 350ms → `clientesApi.list({ search })` → dropdown com seleção → chip com nome/telefone e botão X para limpar. Nunca usar `<select>` com todos os clientes pré-carregados.
 
@@ -127,32 +137,32 @@ arretado-crm/                    ← raiz React
 | Fase 1 | CRM de Clientes (cadastro, endereços, tags) | ✅ Concluída |
 | Fase 2 | Integração iFood (polling, pedidos, ações) | ✅ Concluída |
 | Fase 3 | Histórico unificado de pedidos | ✅ Concluída |
-| Fase 3-ext-A | PDV Próprio (backend + frontend) | ✅ Concluída · `migrate pdv` pendente em prod |
+| Fase 3-ext-A | PDV Próprio (backend + frontend) | ✅ Concluída |
 | Fase 3-ext-B | Anota AI | 🔲 Pendente |
 | Fase 4 | Vinculação manual de pedidos a clientes | ✅ Concluída (`Vinculacoes.jsx`) |
-| Orçamentos | Orçamentos pré-evento (ORC-0001) + conversão em Evento | ✅ Concluída (`eventos/` + `Orcamentos.jsx`) |
+| Orçamentos | Orçamentos pré-evento (ORC-0001) + conversão em Evento | ✅ Concluída |
 | Fase 5 | Dashboard e relatórios | ✅ Concluída (`Dashboard.jsx`) |
-| WhatsApp | Notificações via Z-API | ✅ Concluída e funcionando (`notificacoes/` + `zapi_client.py`) |
-| Usuários | Gestão de usuários + RBAC | ✅ Concluída (`Usuarios.jsx` + API real) |
+| WhatsApp | Notificações via Z-API | ✅ Concluída (`notificacoes/` + `zapi_client.py`) |
+| Usuários | Gestão de usuários + RBAC | ✅ Concluída |
+| Catálogo & Precificação | App `fichas/` + 3 telas de frontend | ✅ Concluída · dados importados em prod |
 
 ---
 
 ## Pendências Ativas
 
-1. **`python manage.py migrate pdv`** — aplicar em produção
-2. **`python manage.py migrate notificacoes`** — aplicar em produção (app criado em jun/2026)
-3. **`python manage.py migrate eventos`** — aplicar em produção (migration `0003_orcamento` criada em jun/2026)
-4. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
+1. **Anota AI (Fase 3-ext-B)** — criar app `anotaai/` seguindo o padrão de `pdv/`
+2. **Fichas técnicas incompletas** — 3 ingredientes com custo zero na planilha original (`Cobertura cappucino`, `Folha decorativa`, `Castanha do Pará`, `Ameixa`) e `Brigadeiro Sensacional` sem quantidades
+3. **Foto de produtos** — campo `foto` (ImageField) existe no model mas upload ainda não está no frontend (`Catalogo.jsx`)
+4. **PDV Hardware (roadmap):**
+   - Curto prazo: impressora térmica TCP/IP (Django imprime via socket ESC/POS) + caixa registradora pelo mesmo cabo
+   - Médio prazo: NFC-e (nota fiscal — SEFAZ-PI)
+   - Longo prazo: TEF integrado
+5. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
    ```
    ZAPI_INSTANCE_ID=3F44AD8FFA071145A7847A94F00847F6
    ZAPI_TOKEN=664FD7CD1788EFA5660A875F
    ZAPI_CLIENT_TOKEN=<client-token>
    ```
-5. **Anota AI (Fase 3-ext-B)** — criar app `anotaai/` seguindo o padrão de `pdv/`
-6. **PDV Hardware (roadmap):**
-   - Curto prazo: impressora térmica TCP/IP (Django imprime via socket ESC/POS) + caixa registradora pelo mesmo cabo
-   - Médio prazo: NFC-e (nota fiscal — SEFAZ-PI)
-   - Longo prazo: TEF integrado
 
 ---
 
@@ -162,7 +172,7 @@ arretado-crm/                    ← raiz React
 # Clientes
 GET/POST             /api/v1/clientes/
 GET/PUT/PATCH/DELETE /api/v1/clientes/{id}/
-GET                  /api/v1/clientes/{id}/historico/   ← histórico unificado multi-canal
+GET                  /api/v1/clientes/{id}/historico/
 GET/POST             /api/v1/tags/
 
 # iFood
@@ -187,8 +197,6 @@ POST          /api/v1/eventos/orcamentos/{id}/recusar/
 POST          /api/v1/eventos/orcamentos/{id}/converter-em-evento/
 POST          /api/v1/eventos/orcamentos/{id}/itens/
 DELETE        /api/v1/eventos/orcamentos/{id}/itens/{item_id}/remover/
-  ← filtros: ?status=rascunho|enviado|aprovado|recusado|expirado|convertido
-             ?search=<número|nome|telefone>
 
 # Eventos
 GET/POST /api/v1/eventos/
@@ -201,6 +209,20 @@ GET      /api/v1/eventos/agenda/
 GET  /api/v1/notificacoes/mensagens/
 POST /api/v1/notificacoes/mensagens/enviar/
 GET  /api/v1/notificacoes/mensagens/status-conexao/
+
+# Catálogo / Fichas / Precificação
+GET/POST         /api/v1/fichas/materias-primas/
+PATCH            /api/v1/fichas/materias-primas/{id}/
+POST             /api/v1/fichas/materias-primas/{id}/atualizar-preco/
+GET/POST         /api/v1/fichas/fichas/
+GET/PATCH        /api/v1/fichas/fichas/{id}/
+GET              /api/v1/fichas/fichas/{id}/resumo/
+POST             /api/v1/fichas/fichas/{id}/adicionar-item/
+DELETE           /api/v1/fichas/fichas/{id}/remover-item/{item_id}/
+GET/PATCH        /api/v1/fichas/parametros/1/
+POST             /api/v1/fichas/ajuste-linear/
+POST             /api/v1/fichas/desfazer-ajuste/{snapshot_id}/
+GET              /api/v1/fichas/snapshots/
 ```
 
 ---
@@ -208,7 +230,8 @@ GET  /api/v1/notificacoes/mensagens/status-conexao/
 ## Como Rodar
 
 ```bash
-# Backend
+# Backend (ativar venv primeiro)
+source venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
@@ -222,10 +245,33 @@ python manage.py lembrar_aniversarios
 # Reengajamento WhatsApp (cron diário — ex: 10:00)
 python manage.py avisar_sem_compras --dias 30
 
+# Importar planilha de precificação
+python manage.py importar_planilha --arquivo PLANILHA_DE_PRECIFICACAO_ARRETADO.xlsx
+# flags: --dry-run | --apenas-materias | --sobrescrever
+
 # Frontend
 cd arretado-crm/
 npm install
 npm run dev
+```
+
+---
+
+## Deploy VPS (checklist)
+
+```bash
+# No WSL — upload de arquivos se necessário
+scp arquivo root@2.25.142.171:/var/www/crm_arretado/
+
+# Na VPS
+cd /var/www/crm_arretado
+git pull origin main
+source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py collectstatic --noinput
+cd arretado-crm && npm ci && npm run build && cd ..
+systemctl restart arretado
 ```
 
 ---
@@ -239,3 +285,5 @@ npm run dev
 - Não implementar nada sem antes verificar se já existe no código (usar `grep` ou leitura direta dos arquivos)
 - Não usar Celery — o projeto usa cron + management commands
 - Não chamar `zapi_client.enviar_texto()` diretamente em signals ou models — sempre passar pela view ou pelo management command, que gravam o `HistoricoMensagem`
+- Não instanciar `ParametrosNegocio()` diretamente — sempre usar `ParametrosNegocio.get()`
+- Não fazer FK direta de `fichas` para `pdv` — a ligação entre FichaTecnica e Produto é via `produto_pdv_id` (IntegerField fraco)
