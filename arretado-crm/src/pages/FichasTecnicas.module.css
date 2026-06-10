@@ -7,7 +7,7 @@
 }
 
 .title    { font-size: 20px; color: var(--texto); margin: 0 0 2px; }
-.subtitle { font-size: 12px; color: var(--muted); margin: 0; }
+.subtitle { font-size: 12px; color: var(--texto-muted); margin: 0; }
 
 /* Layout dois painéis */
 .layout {
@@ -27,16 +27,39 @@
   flex-shrink: 0;
 }
 
-.listaSearch {
+/* Cabeçalho da lista com busca + botão nova ficha */
+.listaHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 0;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
 
-.listaSearch > i { color: var(--muted); font-size: 14px; }
+.listaSearch {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.listaSearch > i { color: var(--texto-muted); font-size: 14px; }
+
+.btnNovaFicha {
+  padding: 10px 12px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--texto-muted);
+  cursor: pointer;
+  font-size: 16px;
+  transition: all .15s;
+  display: flex;
+  align-items: center;
+}
+
+.btnNovaFicha:hover { background: var(--caramelo-dim); color: var(--caramelo); }
 
 .listaSearch input {
   border: none;
@@ -60,7 +83,7 @@
   transition: background .12s;
 }
 
-.listaItem:hover { background: var(--hover); }
+.listaItem:hover { background: var(--surface-hover); }
 
 .listaItemActive { background: color-mix(in srgb, var(--caramelo) 8%, var(--surface)) !important; }
 
@@ -75,10 +98,10 @@
   display: flex;
   gap: 8px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--texto-muted);
 }
 
-.empty { padding: 16px; font-size: 12px; color: var(--muted); }
+.empty { padding: 16px; font-size: 12px; color: var(--texto-muted); }
 
 /* Detalhe */
 .detalhe { flex: 1; overflow-y: auto; }
@@ -90,7 +113,7 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: var(--muted);
+  color: var(--texto-muted);
   height: 100%;
 }
 
@@ -113,7 +136,7 @@
 }
 
 .detNome    { font-size: 18px; color: var(--texto); margin: 0 0 4px; }
-.detProduto { font-size: 12px; color: var(--muted); margin: 0; }
+.detProduto { font-size: 12px; color: var(--texto-muted); margin: 0; }
 
 .margemBadge {
   padding: 3px 10px;
@@ -131,7 +154,7 @@
   display: flex;
   gap: 20px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--texto-muted);
 }
 
 .detMeta span { display: flex; align-items: center; gap: 5px; }
@@ -147,7 +170,7 @@
 .iTable th {
   padding: 6px 10px;
   text-align: left;
-  color: var(--muted);
+  color: var(--texto-muted);
   font-size: 11px;
   text-transform: uppercase;
   border-bottom: 1px solid var(--border);
@@ -160,17 +183,17 @@
   vertical-align: middle;
 }
 
-.iTable tbody tr:hover td { background: var(--hover); }
+.iTable tbody tr:hover td { background: var(--surface-hover); }
 
 .thRight { text-align: right !important; }
-.tdIdx   { color: var(--muted); width: 30px; }
+.tdIdx   { color: var(--texto-muted); width: 30px; }
 .tdCusto { font-weight: 600; }
 
 .btnRemove {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--muted);
+  color: var(--texto-muted);
   padding: 3px 6px;
   border-radius: 4px;
   font-size: 14px;
@@ -193,7 +216,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--texto-muted);
 }
 
 .totaisRow strong { color: var(--texto); }
@@ -217,7 +240,7 @@
   border: 1px dashed var(--border);
   border-radius: 8px;
   background: transparent;
-  color: var(--muted);
+  color: var(--texto-muted);
   font-size: 13px;
   cursor: pointer;
   display: flex;
@@ -233,7 +256,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: var(--hover);
+  background: var(--surface-hover);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -265,3 +288,182 @@
 }
 
 .addSelect:focus, .addQtyInput:focus { outline: none; border-color: var(--caramelo); }
+
+/* Botão criar no estado vazio */
+.btnCriarVazio {
+  padding: 8px 16px;
+  border: 1px solid var(--caramelo);
+  border-radius: 8px;
+  background: var(--caramelo-dim);
+  color: var(--caramelo);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background .15s;
+}
+.btnCriarVazio:hover { background: var(--caramelo-dim2); }
+
+/* Sem ingredientes */
+.semIngredientes {
+  font-size: 12px;
+  color: var(--texto-muted);
+  text-align: center;
+  padding: 16px 0;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+/* Detalhe header */
+.detHeaderRight {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.btnEditHeader {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--texto-muted);
+  padding: 4px 7px;
+  font-size: 14px;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.btnEditHeader:hover { background: var(--surface-hover); color: var(--caramelo); }
+
+.detProdutoAusente {
+  font-size: 12px;
+  color: var(--texto-muted);
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Editar cabeçalho */
+.editHeaderBox {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.editHeaderGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.editField { display: flex; flex-direction: column; gap: 5px; }
+
+.editField label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--texto-muted);
+}
+
+.editField input,
+.editField select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--texto);
+  font-size: 13px;
+}
+
+.editField input:focus,
+.editField select:focus { outline: none; border-color: var(--caramelo); }
+
+.editHeaderActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Modal nova ficha */
+.modalDesc {
+  font-size: 13px;
+  color: var(--texto-muted);
+  margin-bottom: 16px;
+}
+
+.novaFichaGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.nfField { display: flex; flex-direction: column; gap: 5px; }
+
+.nfField label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--texto-muted);
+}
+
+.nfField input,
+.nfField select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--texto);
+  font-size: 13px;
+}
+
+.nfField input:focus,
+.nfField select:focus { outline: none; border-color: var(--caramelo); }
+
+.nfHint { font-size: 11px; color: var(--texto-muted); }
+
+.nfInputUnit {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.nfInputUnit input {
+  flex: 1;
+  border: none;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--texto);
+  background: var(--surface);
+  outline: none;
+}
+
+.nfUnit {
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--texto-muted);
+  background: var(--bg-alt);
+  border-left: 1px solid var(--border);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+.nfErro { color: var(--danger); font-size: 12px; margin: 6px 0 0; }
+
+.nfActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}

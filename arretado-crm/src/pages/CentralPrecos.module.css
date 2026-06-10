@@ -15,7 +15,7 @@
 }
 
 .title    { font-size: 20px; color: var(--texto); margin: 0 0 2px; }
-.subtitle { font-size: 12px; color: var(--muted); margin: 0; }
+.subtitle { font-size: 12px; color: var(--texto-muted); margin: 0; }
 
 /* Tab bar */
 .tabBar {
@@ -30,7 +30,7 @@
   padding: 10px 18px;
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: var(--texto-muted);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -85,7 +85,7 @@
   max-width: 320px;
 }
 
-.searchBox > i { color: var(--muted); font-size: 15px; }
+.searchBox > i { color: var(--texto-muted); font-size: 15px; }
 
 .searchBox input {
   border: none;
@@ -118,12 +118,12 @@
 .table th {
   padding: 8px 12px;
   text-align: left;
-  color: var(--muted);
+  color: var(--texto-muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .04em;
   border-bottom: 1px solid var(--border);
-  background: var(--fundo);
+  background: var(--bg);
   position: sticky;
   top: 0;
 }
@@ -136,13 +136,13 @@
 }
 
 .row { cursor: pointer; }
-.row:hover td { background: var(--hover); }
+.row:hover td { background: var(--surface-hover); }
 .rowActive td { background: color-mix(in srgb, var(--caramelo) 6%, var(--surface)); }
 
 .thRight  { text-align: right !important; }
 .tdRight  { text-align: right; }
 .tdNome   { font-weight: 500; }
-.tdMuted  { color: var(--muted); font-size: 12px; }
+.tdMuted  { color: var(--texto-muted); font-size: 12px; }
 .tdDestaque { font-weight: 600; }
 .tdVerde  { color: #059669; font-weight: 600; }
 .tdVermelho { color: #dc2626; font-weight: 600; }
@@ -162,6 +162,120 @@
 }
 
 .inputPreco:focus { outline: none; border-color: var(--caramelo); }
+
+/* Botão editar linha */
+.btnEdit {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--texto-muted);
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all .15s;
+}
+.btnEdit:hover { background: var(--surface-hover); color: var(--caramelo); }
+
+.custoUn { font-size: 11px; color: var(--texto-muted); }
+
+/* Modal de ingrediente */
+.ingGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.ingField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ingField label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--texto-muted);
+}
+
+.ingField input,
+.ingField select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--texto);
+  font-size: 13px;
+}
+
+.ingField input:focus,
+.ingField select:focus { outline: none; border-color: var(--caramelo); }
+
+.ingHint  { font-size: 11px; color: var(--texto-muted); }
+
+.ingInputUnit {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ingInputUnit input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--texto);
+  outline: none;
+}
+
+.ingUnit {
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--texto-muted);
+  background: var(--bg-alt);
+  border-left: 1px solid var(--border);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+.ingPreview {
+  font-size: 12px;
+  color: var(--texto-muted);
+}
+
+.ingPreview strong { color: var(--caramelo); }
+
+.ingCheckLabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--texto);
+  cursor: pointer;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.ingCheckLabel input { accent-color: var(--caramelo); cursor: pointer; }
+
+.ingErro    { color: var(--danger); font-size: 12px; margin: 6px 0 0; }
+
+.ingActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
 
 /* Semáforo */
 .semaforo {
@@ -231,19 +345,19 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--muted);
+  color: var(--texto-muted);
   font-size: 16px;
   padding: 2px 4px;
   border-radius: 4px;
 }
 
-.painelClose:hover { background: var(--hover); }
+.painelClose:hover { background: var(--surface-hover); }
 
 .painelRow {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--texto-muted);
 }
 
 .painelRow strong { color: var(--texto); font-weight: 600; }
@@ -256,7 +370,7 @@
 
 .painelIdeal { color: var(--caramelo) !important; }
 
-.semFicha { font-size: 12px; color: var(--muted); }
+.semFicha { font-size: 12px; color: var(--texto-muted); }
 
 .painelPrecoField {
   display: flex;
@@ -270,7 +384,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .04em;
-  color: var(--muted);
+  color: var(--texto-muted);
 }
 
 .inputDestaque {
@@ -328,7 +442,7 @@
 }
 
 .ajusteField { display: flex; flex-direction: column; gap: 6px; }
-.ajusteField label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.ajusteField label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-muted); }
 
 .chipGroup {
   display: flex;
@@ -341,7 +455,7 @@
   border-radius: 20px;
   border: 1px solid var(--border);
   background: transparent;
-  color: var(--muted);
+  color: var(--texto-muted);
   font-size: 12px;
   cursor: pointer;
   transition: all .15s;
@@ -350,7 +464,7 @@
   gap: 4px;
 }
 
-.chip:hover { background: var(--hover); color: var(--texto); }
+.chip:hover { background: var(--surface-hover); color: var(--texto); }
 .chipActive  { background: var(--caramelo) !important; border-color: var(--caramelo) !important; color: #fff !important; }
 
 .chipDanger:hover { background: #fee2e2; color: #dc2626; }
@@ -385,7 +499,7 @@
   text-align: right;
 }
 
-.valorSufixo { font-size: 14px; font-weight: 600; color: var(--muted); }
+.valorSufixo { font-size: 14px; font-weight: 600; color: var(--texto-muted); }
 
 .ajusteActions { margin-top: 16px; }
 
@@ -406,7 +520,7 @@
   color: var(--texto);
 }
 
-.previewDesc { color: var(--muted); }
+.previewDesc { color: var(--texto-muted); }
 
 /* Histórico */
 .historicoCard {
@@ -421,7 +535,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .04em;
-  color: var(--muted);
+  color: var(--texto-muted);
   margin: 0 0 10px;
 }
 
@@ -456,12 +570,12 @@
   white-space: nowrap;
 }
 
-.btnDesfazer:hover { background: var(--hover); }
+.btnDesfazer:hover { background: var(--surface-hover); }
 
 .tagRevertido {
   font-size: 11px;
-  color: var(--muted);
-  background: var(--hover);
+  color: var(--texto-muted);
+  background: var(--surface-hover);
   padding: 2px 8px;
   border-radius: 20px;
 }
@@ -489,21 +603,21 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .04em;
-  color: var(--muted);
+  color: var(--texto-muted);
 }
 
 .paramField input {
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--fundo);
+  background: var(--bg);
   color: var(--texto);
   font-size: 14px;
 }
 
 .paramField input:focus { outline: none; border-color: var(--caramelo); }
 
-.paramHelp { font-size: 11px; color: var(--muted); }
+.paramHelp { font-size: 11px; color: var(--texto-muted); }
 
 .pctRow {
   display: flex;
@@ -512,7 +626,7 @@
 }
 
 .pctRow input { flex: 1; }
-.pctRow span  { font-size: 14px; font-weight: 600; color: var(--muted); }
+.pctRow span  { font-size: 14px; font-weight: 600; color: var(--texto-muted); }
 
 .markupDisplay {
   display: flex;
@@ -533,12 +647,12 @@
   min-width: 80px;
 }
 
-.markupBox span  { font-size: 11px; color: var(--muted); }
+.markupBox span  { font-size: 11px; color: var(--texto-muted); }
 .markupBox strong{ font-size: 28px; font-weight: 700; color: var(--caramelo); }
 
 .markupNote {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--texto-muted);
   margin: 0;
   display: flex;
   align-items: flex-start;

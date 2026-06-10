@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fichasApi } from '../api/services'
-import { Btn, Spinner, Toast } from '../components/ui'
+import { Btn, Modal, Spinner, Toast } from '../components/ui'
 import styles from './CentralPrecos.module.css'
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -65,11 +65,12 @@ export default function CentralPrecos() {
 // ─── Aba 1: Matérias-Primas ───────────────────────────────────────────────────
 
 function AbaMateriaPrima({ onToast }) {
-  const [materias,  setMaterias]  = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [search,    setSearch]    = useState('')
-  const [editados,  setEditados]  = useState({})   // { id: novoValor }
-  const [saving,    setSaving]    = useState(false)
+  const [materias,   setMaterias]   = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [search,     setSearch]     = useState('')
+  const [editados,   setEditados]   = useState({})   // { id: novoValor }
+  const [saving,     setSaving]     = useState(false)
+  const [modalItem,  setModalItem]  = useState(null)  // null | {} (novo) | materia (editar)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -85,7 +86,7 @@ function AbaMateriaPrima({ onToast }) {
     setEditados(e => ({ ...e, [id]: val }))
   }
 
-  async function handleSalvar() {
+  async function handleSalvarPrecos() {
     const ids = Object.keys(editados).filter(id => editados[id] !== '')
     if (!ids.length) return
     setSaving(true)
@@ -101,6 +102,12 @@ function AbaMateriaPrima({ onToast }) {
     } finally { setSaving(false) }
   }
 
+  function handleSalvoModal(item, criado) {
+    setModalItem(null)
+    onToast(criado ? `Ingrediente "${item.nome}" cadastrado!` : `"${item.nome}" atualizado.`)
+    load()
+  }
+
   const temEdicoes = Object.values(editados).some(v => v !== '')
 
   return (
@@ -114,8 +121,11 @@ function AbaMateriaPrima({ onToast }) {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <Btn onClick={handleSalvar} loading={saving} disabled={!temEdicoes}>
-          <i className="ti ti-device-floppy" /> Salvar alterações
+        <Btn variant="secondary" onClick={() => setModalItem({})}>
+          <i className="ti ti-plus" /> Novo ingrediente
+        </Btn>
+        <Btn onClick={handleSalvarPrecos} loading={saving} disabled={!temEdicoes}>
+          <i className="ti ti-device-floppy" /> Salvar preços
         </Btn>
       </div>
 
@@ -126,9 +136,11 @@ function AbaMateriaPrima({ onToast }) {
               <tr>
                 <th>Ingrediente</th>
                 <th>Embalagem</th>
+                <th className={styles.thRight}>Qtd emb.</th>
                 <th className={styles.thRight}>Preço atual</th>
-                <th className={styles.thRight}>Custo/g·ml·un</th>
-                <th className={styles.thRight}>Novo preço</th>
+                <th className={styles.thRight}>Custo/un</th>
+                <th className={styles.thRight}>Atualizar preço</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -138,8 +150,15 @@ function AbaMateriaPrima({ onToast }) {
                   <tr key={m.id} className={editado ? styles.rowEditado : ''}>
                     <td className={styles.tdNome}>{m.nome}</td>
                     <td className={styles.tdMuted}>{m.unidade_compra}</td>
+                    <td className={styles.tdRight}>
+                      {Number(m.quantidade_compra).toLocaleString('pt-BR')} {m.unidade_medida}
+                    </td>
                     <td className={styles.tdRight}>{fmt(m.valor_compra)}</td>
-                    <td className={styles.tdRight}>{fmt(m.custo_unitario)}/{m.unidade_medida}</td>
+                    <td className={styles.tdRight}>
+                      <span className={styles.custoUn}>
+                        {fmt(m.custo_unitario)}/{m.unidade_medida}
+                      </span>
+                    </td>
                     <td className={styles.tdRight}>
                       <input
                         type="number"
@@ -151,6 +170,15 @@ function AbaMateriaPrima({ onToast }) {
                         onChange={e => handleChange(m.id, e.target.value)}
                       />
                     </td>
+                    <td>
+                      <button
+                        className={styles.btnEdit}
+                        onClick={() => setModalItem(m)}
+                        title="Editar ingrediente"
+                      >
+                        <i className="ti ti-pencil" />
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
@@ -158,7 +186,173 @@ function AbaMateriaPrima({ onToast }) {
           </table>
         </div>
       )}
+
+      {modalItem !== null && (
+        <ModalIngrediente
+          item={Object.keys(modalItem).length === 0 ? null : modalItem}
+          onClose={() => setModalItem(null)}
+          onSalvo={handleSalvoModal}
+        />
+      )}
     </div>
+  )
+}
+
+// ─── Modal de ingrediente ─────────────────────────────────────────────────────
+
+const UNIDADE_OPTS = [
+  { value: 'g',  label: 'Gramas (g)' },
+  { value: 'ml', label: 'Mililitros (ml)' },
+  { value: 'un', label: 'Unidade (un)' },
+  { value: 'kg', label: 'Quilograma (kg)' },
+  { value: 'l',  label: 'Litro (l)' },
+]
+
+function ModalIngrediente({ item, onClose, onSalvo }) {
+  const criando = !item
+  const [form,   setForm]   = useState({
+    nome:              item?.nome              ?? '',
+    unidade_compra:    item?.unidade_compra    ?? '',
+    quantidade_compra: item?.quantidade_compra ? String(item.quantidade_compra) : '',
+    unidade_medida:    item?.unidade_medida    ?? 'g',
+    valor_compra:      item?.valor_compra      ? String(item.valor_compra) : '',
+    ativo:             item?.ativo             ?? true,
+  })
+  const [saving, setSaving] = useState(false)
+  const [erro,   setErro]   = useState('')
+
+  function set(f, v) { setForm(prev => ({ ...prev, [f]: v })) }
+
+  // Calcula custo unitário preview em tempo real
+  const custoPreview = form.quantidade_compra && form.valor_compra
+    ? Number(form.valor_compra) / Number(form.quantidade_compra)
+    : null
+
+  async function handleSalvar() {
+    if (!form.nome.trim())              { setErro('Nome é obrigatório.'); return }
+    if (!form.unidade_compra.trim())    { setErro('Embalagem é obrigatória.'); return }
+    if (!form.quantidade_compra || isNaN(Number(form.quantidade_compra)) || Number(form.quantidade_compra) <= 0) {
+      setErro('Quantidade inválida.')
+      return
+    }
+    if (!form.valor_compra || isNaN(Number(form.valor_compra)) || Number(form.valor_compra) <= 0) {
+      setErro('Valor de compra inválido.')
+      return
+    }
+
+    setSaving(true); setErro('')
+    const payload = {
+      nome:              form.nome.trim(),
+      unidade_compra:    form.unidade_compra.trim(),
+      quantidade_compra: form.quantidade_compra,
+      unidade_medida:    form.unidade_medida,
+      valor_compra:      form.valor_compra,
+      ativo:             form.ativo,
+    }
+    try {
+      const res = criando
+        ? await fichasApi.criarMateria(payload)
+        : await fichasApi.atualizarMateria(item.id, payload)
+      onSalvo(res.data, criando)
+    } catch (e) {
+      const errs = e?.response?.data
+      if (errs?.nome) setErro(`Nome: ${errs.nome.join(' ')}`)
+      else setErro(typeof errs === 'string' ? errs : JSON.stringify(errs) || 'Erro ao salvar.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open title={criando ? 'Novo Ingrediente' : `Editar: ${item.nome}`} onClose={onClose}>
+      <div className={styles.ingGrid}>
+
+        {/* Nome */}
+        <div className={styles.ingField} style={{ gridColumn: '1 / -1' }}>
+          <label>Nome do ingrediente *</label>
+          <input
+            value={form.nome}
+            onChange={e => set('nome', e.target.value)}
+            placeholder="Ex: Leite Condensado"
+            autoFocus
+          />
+        </div>
+
+        {/* Embalagem + Qtd */}
+        <div className={styles.ingField}>
+          <label>Embalagem de compra *</label>
+          <input
+            value={form.unidade_compra}
+            onChange={e => set('unidade_compra', e.target.value)}
+            placeholder="Ex: 395g, 1kg, 30 unidades"
+          />
+          <span className={styles.ingHint}>Como aparece na etiqueta do produto</span>
+        </div>
+        <div className={styles.ingField}>
+          <label>Unidade de medida *</label>
+          <select value={form.unidade_medida} onChange={e => set('unidade_medida', e.target.value)}>
+            {UNIDADE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+
+        {/* Qtd numérica */}
+        <div className={styles.ingField}>
+          <label>Quantidade na embalagem *</label>
+          <div className={styles.ingInputUnit}>
+            <input
+              type="number"
+              step="0.001"
+              min="0"
+              value={form.quantidade_compra}
+              onChange={e => set('quantidade_compra', e.target.value)}
+              placeholder="Ex: 395"
+            />
+            <span className={styles.ingUnit}>{form.unidade_medida}</span>
+          </div>
+          <span className={styles.ingHint}>
+            {form.unidade_medida === 'g'  && 'Ex: 1kg = 1000g'}
+            {form.unidade_medida === 'ml' && 'Ex: 1 litro = 1000ml'}
+            {form.unidade_medida === 'kg' && 'Ex: 1 pacote = 1kg'}
+            {form.unidade_medida === 'l'  && 'Ex: 1 garrafa = 1l'}
+            {form.unidade_medida === 'un' && 'Ex: cartela de ovos = 30un'}
+          </span>
+        </div>
+
+        {/* Valor compra */}
+        <div className={styles.ingField}>
+          <label>Valor de compra (R$) *</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.valor_compra}
+            onChange={e => set('valor_compra', e.target.value)}
+            placeholder="Ex: 6,50"
+          />
+          {custoPreview != null && (
+            <span className={styles.ingPreview}>
+              Custo: <strong>{custoPreview.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+              /{form.unidade_medida}
+            </span>
+          )}
+        </div>
+
+        {/* Ativo */}
+        <div className={styles.ingField} style={{ gridColumn: '1 / -1' }}>
+          <label className={styles.ingCheckLabel}>
+            <input type="checkbox" checked={form.ativo} onChange={e => set('ativo', e.target.checked)} />
+            Ingrediente ativo
+          </label>
+        </div>
+      </div>
+
+      {erro && <p className={styles.ingErro}>{erro}</p>}
+
+      <div className={styles.ingActions}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={handleSalvar} loading={saving}>
+          {criando ? 'Cadastrar ingrediente' : 'Salvar alterações'}
+        </Btn>
+      </div>
+    </Modal>
   )
 }
 
