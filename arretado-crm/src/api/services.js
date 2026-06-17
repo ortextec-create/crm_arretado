@@ -29,17 +29,27 @@ export const tagsApi = {
 // ─── IFOOD ──────────────────────────────────────────────────────────────────
 
 export const ifoodApi = {
+  // Configuração
   getConfig:      ()          => api.get('/ifood/config/'),
   createConfig:   (data)      => api.post('/ifood/config/', data),
   updateConfig:   (id, data)  => api.patch(`/ifood/config/${id}/`, data),
+  statusGeral:    ()          => api.get('/ifood/config/status/'),
+  testarConexao:  (id)        => api.post(`/ifood/config/${id}/testar/`),
+  pollingManual:  (id)        => api.post(`/ifood/config/${id}/polling-manual/`),
+  ativarPolling:  (id)        => api.post(`/ifood/config/${id}/ativar-polling/`),
+  pausarPolling:  (id)        => api.post(`/ifood/config/${id}/pausar-polling/`),
+  // Pedidos
   listPedidos:    (params={}) => api.get('/ifood/pedidos/', { params }),
   getPedido:      (id)        => api.get(`/ifood/pedidos/${id}/`),
+  estatisticas:   ()          => api.get('/ifood/pedidos/estatisticas/'),
   confirmar:      (id)        => api.post(`/ifood/pedidos/${id}/confirmar/`),
   despachar:      (id)        => api.post(`/ifood/pedidos/${id}/despachar/`),
+  prontoRetirada: (id)        => api.post(`/ifood/pedidos/${id}/pronto-retirada/`),
   concluir:       (id)        => api.post(`/ifood/pedidos/${id}/concluir/`),
   cancelar:       (id, data)  => api.post(`/ifood/pedidos/${id}/cancelar/`, data),
-  statusPolling:  ()          => api.get('/ifood/polling/status/'),
-  triggerPolling: ()          => api.post('/ifood/polling/trigger/'),
+  motivosCancelamento: (id)   => api.get(`/ifood/pedidos/${id}/motivos-cancelamento/`),
+  vincularCliente:(id, clienteId) => api.post(`/ifood/pedidos/${id}/vincular-cliente/`, { cliente_id: clienteId }),
+  criarCliente:   (id)        => api.post(`/ifood/pedidos/${id}/criar-cliente/`),
   aceitarNegociacao: (id)     => api.post(`/ifood/pedidos/${id}/aceitar-negociacao/`),
   recusarNegociacao: (id)     => api.post(`/ifood/pedidos/${id}/recusar-negociacao/`),
 }

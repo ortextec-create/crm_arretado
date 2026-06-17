@@ -11,7 +11,7 @@ class ConfiguracaoIFoodSerializer(serializers.ModelSerializer):
         model  = ConfiguracaoIFood
         fields = [
             'id', 'client_id', 'client_secret', 'client_secret_preview',
-            'merchant_id', 'polling_ativo', 'polling_intervalo',
+            'merchant_id', 'polling_ativo', 'polling_intervalo', 'auto_confirmar', 'auto_despachar',
             'token_valido', 'ultimo_polling', 'token_expira_em',
             'criado_em', 'atualizado_em',
         ]
@@ -45,7 +45,7 @@ class PedidoIFoodListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'ifood_order_id', 'display_id',
             'status', 'status_display',
-            'order_type', 'order_type_display',
+            'order_type', 'order_type_display', 'delivery_mode',
             'total_valor', 'payment_method',
             'cliente_nome', 'cliente_nome_crm',
             'pode_confirmar', 'pode_cancelar',
@@ -93,7 +93,7 @@ class PedidoIFoodDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'ifood_order_id', 'display_id',
             'status', 'status_display',
-            'order_type', 'order_type_display',
+            'order_type', 'order_type_display', 'delivery_mode',
             'total_valor', 'subtotal', 'taxa_entrega', 'desconto',
             # Pagamento
             'payment_method', 'payment_brand', 'payment_troco', 'payment_prepaid',

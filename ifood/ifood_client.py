@@ -23,8 +23,8 @@ CANCEL_URL      = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/requestCancellat
 DISPATCH_URL    = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/dispatch'
 PICKUP_URL      = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/readyToPickup'
 CANCEL_REASONS  = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/cancellationReasons'
-ACCEPT_CANCELLATION_URL  = IFOOD_BASE + '/order/v1.0/orders/{order_id}/acceptCancellation'
-DENY_CANCELLATION_URL    = IFOOD_BASE + '/order/v1.0/orders/{order_id}/denyCancellation'
+ACCEPT_CANCELLATION_URL  = IFOOD_BASE + '/order/v2.0/orders/{order_id}/cancellation/accept'
+DENY_CANCELLATION_URL    = IFOOD_BASE + '/order/v2.0/orders/{order_id}/cancellation/deny'
 
 
 class IFoodAPIError(Exception):
@@ -196,7 +196,7 @@ class IFoodClient:
 
     def accept_cancellation(self, order_id: str) -> dict:
         """
-        POST /order/v1.0/orders/{id}/acceptCancellation
+        POST /order/v2.0/orders/{id}/acceptCancellation
         Aceita o cancelamento solicitado pelo cliente (Plataforma de Negociação).
         Chamado quando o operador concorda com o cancelamento.
         """
@@ -207,7 +207,7 @@ class IFoodClient:
 
     def deny_cancellation(self, order_id: str) -> dict:
         """
-        POST /order/v1.0/orders/{id}/denyCancellation
+        POST /order/v2.0/orders/{id}/denyCancellation
         Recusa o cancelamento solicitado pelo cliente (Plataforma de Negociação).
         Chamado quando o operador não concorda e quer manter o pedido.
         """

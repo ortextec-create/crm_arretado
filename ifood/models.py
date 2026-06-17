@@ -15,9 +15,20 @@ class ConfiguracaoIFood(models.Model):
     refresh_token   = models.TextField(blank=True, default='')
 
     # Estado do polling
-    polling_ativo    = models.BooleanField(default=False)
-    ultimo_polling   = models.DateTimeField(null=True, blank=True)
+    polling_ativo     = models.BooleanField(default=False)
+    ultimo_polling    = models.DateTimeField(null=True, blank=True)
     polling_intervalo = models.IntegerField(default=30, help_text='Segundos entre polls')
+
+    # Confirmação automática ao receber pedido (necessário para homologação iFood)
+    auto_confirmar = models.BooleanField(
+        default=False,
+        help_text='Confirma automaticamente todo pedido PLACED ao recebê-lo via polling',
+    )
+    # Despacho automático após confirmação (cenário "Pedido Despachado Imediato")
+    auto_despachar = models.BooleanField(
+        default=False,
+        help_text='Despacha (DELIVERY) ou marca como pronto (TAKEOUT) logo após confirmar. Requer auto_confirmar=True',
+    )
 
     criado_em    = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -101,6 +112,10 @@ class PedidoIFood(models.Model):
     cliente_nome     = models.CharField(max_length=200, blank=True, default='')
     cliente_telefone = models.CharField(max_length=30, blank=True, default='')
     cliente_ifood_id = models.CharField(max_length=100, blank=True, default='', db_index=True)
+
+    # Modo de entrega: MERCHANT (restaurante entrega), IFOOD_DELIVERY (iFood entrega)
+    # Vazio para TAKEOUT/INDOOR ou quando não informado pelo iFood
+    delivery_mode = models.CharField(max_length=30, blank=True, default='')
 
     # Entrega
     endereco_entrega = models.JSONField(default=dict, blank=True)

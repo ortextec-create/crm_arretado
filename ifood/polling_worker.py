@@ -151,9 +151,16 @@ def _processar_config(config):
                     pedidos_novos += 1
 
                 # ── Negociação: marcar pedido como pendente ──
-                if full_code in NEGOCIACAO_CODES and order_id:
+                # Só marca se for cancelamento do CONSUMIDOR, não automático do sistema
+                metadata = evt.get('metadata', {}) or {}
+                is_system_cancel = (
+                    metadata.get('ORIGIN', '').upper() == 'SYSTEM'
+                    or full_code == 'CANCELLATION_REQUESTED' and metadata.get('ORIGIN', '') == ''
+                    and metadata.get('reason_code', '') in ('902', '903', '904')
+                )
+                if full_code in NEGOCIACAO_CODES and order_id and not is_system_cancel:
                     nego_desc = (
-                        evt.get('metadata', {}).get('reason', '')
+                        metadata.get('reason', '')
                         or evt.get('reason', '')
                     )
                     PedidoIFood.objects.filter(ifood_order_id=order_id).update(
@@ -222,7 +229,35 @@ def _processar_evento_pedido(client, evt, config):
                 return False
             raise
         pedido = _criar_pedido(detalhe, config)
-        if novo_status and novo_status != 'PLACED':
+        if config.auto_confirmar:
+            try:
+                client.confirm_order(order_id)
+                pedido.status = 'CONFIRMED'
+                pedido.save(update_fields=['status', 'atualizado_em'])
+                logger.info('Pedido %s auto-confirmado', order_id[:8])
+            except IFoodAPIError as e:
+                logger.error('Falha ao auto-confirmar pedido %s: %s', order_id[:8], e)
+
+            if config.auto_despachar and pedido.status == 'CONFIRMED':
+                try:
+                    despachou = True
+                    if pedido.order_type == 'TAKEOUT':
+                        client.ready_to_pickup(order_id)
+                        pedido.status = 'READY_TO_PICKUP'
+                        logger.info('Pedido %s auto-marcado pronto p/ retirada', order_id[:8])
+                    elif pedido.delivery_mode == 'MERCHANT':
+                        client.dispatch_order(order_id)
+                        pedido.status = 'DISPATCHED'
+                        logger.info('Pedido %s auto-despachado (MERCHANT)', order_id[:8])
+                    else:
+                        # IFOOD_DELIVERY: iFood cuida do despacho, restaurante não chama dispatch
+                        despachou = False
+                        logger.info('Pedido %s sem despacho automático (modo=%s)', order_id[:8], pedido.delivery_mode)
+                    if despachou:
+                        pedido.save(update_fields=['status', 'atualizado_em'])
+                except IFoodAPIError as e:
+                    logger.error('Falha ao auto-despachar pedido %s: %s', order_id[:8], e)
+        elif novo_status and novo_status != 'PLACED':
             pedido.status = novo_status
             pedido.save(update_fields=['status'])
         return True
@@ -311,6 +346,16 @@ def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
         if raw_sched:
             agendamento_dt = _parse_dt(raw_sched)
 
+    # ── Modo de entrega ───────────────────────────────────────────────────────
+    # deliveryMethod pode estar na raiz do payload ou dentro de delivery
+    delivery_method_raw = detalhe.get('deliveryMethod', {}) or delivery.get('deliveryMethod', {}) or {}
+    delivery_mode = (
+        delivery_method_raw.get('mode', '')
+        or delivery_method_raw.get('deliveredBy', '')
+        or delivery.get('deliveredBy', '')
+        or ''
+    ).upper()
+
     # ── Vínculo com Cliente CRM ───────────────────────────────────────────────
     cliente_obj   = None
     ifood_cust_id = customer.get('id', '')
@@ -357,6 +402,7 @@ def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
         agendamento_dt    = agendamento_dt,
         benefits_raw      = benefits if isinstance(benefits, list) else [],
         # Entrega e payload
+        delivery_mode     = delivery_mode,
         endereco_entrega  = delivery_address,
         payload_raw       = detalhe,
         ifood_criado_em   = _parse_dt(detalhe.get('createdAt')),

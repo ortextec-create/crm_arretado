@@ -431,7 +431,7 @@ function PedidoDetail({ pedido, statusCfg, navigate, onCriarCliente, criandoClie
 
 // ─── ConfigModal ──────────────────────────────────────────────────────────────
 function ConfigModal({ open, onClose, config, onSaved, setToast }) {
-  const [form, setForm]             = useState({ client_id: '', client_secret: '', merchant_id: '', polling_intervalo: 30 })
+  const [form, setForm]             = useState({ client_id: '', client_secret: '', merchant_id: '', polling_intervalo: 30, auto_confirmar: false, auto_despachar: false })
   const [saving, setSaving]         = useState(false)
   const [testing, setTesting]       = useState(false)
   const [testResult, setTestResult] = useState(null)
@@ -444,6 +444,8 @@ function ConfigModal({ open, onClose, config, onSaved, setToast }) {
         client_secret:     '',
         merchant_id:       config.merchant_id || '',
         polling_intervalo: config.polling_intervalo || 30,
+        auto_confirmar:    config.auto_confirmar || false,
+        auto_despachar:    config.auto_despachar || false,
       })
     }
     setTestResult(null)
@@ -535,6 +537,69 @@ function ConfigModal({ open, onClose, config, onSaved, setToast }) {
             value={form.polling_intervalo} onChange={e => set('polling_intervalo', Number(e.target.value))} />
         </Field>
 
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          padding: '12px 14px', borderRadius: 4,
+          background: form.auto_confirmar ? 'rgba(34,197,94,0.06)' : 'rgba(255,255,255,0.03)',
+          border: `0.5px solid ${form.auto_confirmar ? 'rgba(34,197,94,0.3)' : 'var(--border)'}`,
+          cursor: 'pointer',
+        }} onClick={() => set('auto_confirmar', !form.auto_confirmar)}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--texto)', marginBottom: 2 }}>
+              Confirmação automática
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>
+              Confirma cada pedido imediatamente ao recebê-lo via polling.
+              Necessário para homologação iFood.
+            </p>
+          </div>
+          <div style={{
+            width: 36, height: 20, borderRadius: 10, flexShrink: 0, marginLeft: 12, marginTop: 2,
+            background: form.auto_confirmar ? 'var(--verde)' : 'var(--border)',
+            position: 'relative', transition: 'background 0.2s',
+          }}>
+            <div style={{
+              width: 14, height: 14, borderRadius: '50%', background: '#fff',
+              position: 'absolute', top: 3,
+              left: form.auto_confirmar ? 19 : 3,
+              transition: 'left 0.2s',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            }} />
+          </div>
+        </div>
+
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          padding: '12px 14px', borderRadius: 4,
+          background: form.auto_despachar ? 'rgba(34,197,94,0.06)' : 'rgba(255,255,255,0.03)',
+          border: `0.5px solid ${form.auto_despachar ? 'rgba(34,197,94,0.3)' : 'var(--border)'}`,
+          cursor: form.auto_confirmar ? 'pointer' : 'not-allowed',
+          opacity: form.auto_confirmar ? 1 : 0.45,
+        }} onClick={() => form.auto_confirmar && set('auto_despachar', !form.auto_despachar)}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--texto)', marginBottom: 2 }}>
+              Despacho automático
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>
+              Após confirmar, despacha (delivery) ou marca como pronto (retirada) imediatamente.
+              Requer confirmação automática ativa.
+            </p>
+          </div>
+          <div style={{
+            width: 36, height: 20, borderRadius: 10, flexShrink: 0, marginLeft: 12, marginTop: 2,
+            background: form.auto_despachar ? 'var(--verde)' : 'var(--border)',
+            position: 'relative', transition: 'background 0.2s',
+          }}>
+            <div style={{
+              width: 14, height: 14, borderRadius: '50%', background: '#fff',
+              position: 'absolute', top: 3,
+              left: form.auto_despachar ? 19 : 3,
+              transition: 'left 0.2s',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            }} />
+          </div>
+        </div>
+
         {testResult && (
           <div style={{
             padding: '10px 14px', borderRadius: 4, fontSize: 12,
@@ -592,6 +657,7 @@ export default function IFood() {
   const [toast,                setToast]                = useState(null)
   const [cancelReasons,        setCancelReasons]        = useState([])
   const [cancelCode,           setCancelCode]           = useState('')
+  const [cancelReason,         setCancelReason]         = useState('')
   const [clientes,             setClientes]             = useState([])
   const [clienteSearch,        setClienteSearch]        = useState('')
   const [pollingManualLoading, setPollingManualLoading] = useState(false)
@@ -709,6 +775,7 @@ export default function IFood() {
   const openCancel = async (pedido) => {
     setSelected(pedido)
     setShowCancel(true)
+    setCancelReason('')
     try {
       const r = await ifoodApi.motivosCancelamento(pedido.id)
       setCancelReasons(r.data)
@@ -897,11 +964,29 @@ export default function IFood() {
                     <div className={styles.cardActions} onClick={e => e.stopPropagation()}>
                       {p.pode_confirmar && (
                         <button className={styles.actBtn}
-                          title="Confirmar"
+                          title="Confirmar pedido"
                           onClick={() => doAction('confirmar', p.id)}>
                           {actionLoading === 'confirmar' + p.id
                             ? <i className="ti ti-loader spin" />
                             : <i className="ti ti-circle-check" />}
+                        </button>
+                      )}
+                      {p.status === 'PREPARATION_STARTED' && (
+                        <button className={styles.actBtn} style={{ color: '#06B6D4' }}
+                          title="Marcar como pronto"
+                          onClick={() => doAction('pronto', p.id)}>
+                          {actionLoading === 'pronto' + p.id
+                            ? <i className="ti ti-loader spin" />
+                            : <i className="ti ti-package" />}
+                        </button>
+                      )}
+                      {p.status === 'READY_TO_PICKUP' && p.order_type !== 'TAKEOUT' && (
+                        <button className={styles.actBtn} style={{ color: '#6366F1' }}
+                          title="Despachar — saiu para entrega"
+                          onClick={() => doAction('despachar', p.id)}>
+                          {actionLoading === 'despachar' + p.id
+                            ? <i className="ti ti-loader spin" />
+                            : <i className="ti ti-motorbike" />}
                         </button>
                       )}
                       {p.pode_cancelar && (
@@ -1011,7 +1096,7 @@ export default function IFood() {
             <Btn variant="ghost" onClick={() => setShowCancel(false)}>Voltar</Btn>
             <Btn
               loading={actionLoading === 'cancelar' + selected?.id}
-              onClick={() => doAction('cancelar', selected?.id, { cancellationCode: cancelCode })}
+              onClick={() => doAction('cancelar', selected?.id, { cancellationCode: cancelCode, reason: cancelReason })}
               style={{ background: '#EF4444', borderColor: '#EF4444' }}
             >
               Confirmar cancelamento
@@ -1039,6 +1124,13 @@ export default function IFood() {
             <Input value={cancelCode} onChange={e => setCancelCode(e.target.value)} placeholder="501" />
           </Field>
         )}
+        <Field label="Descrição (obrigatória pelo iFood)">
+          <Input
+            value={cancelReason}
+            onChange={e => setCancelReason(e.target.value)}
+            placeholder="Descreva o motivo do cancelamento..."
+          />
+        </Field>
       </Modal>
 
       {/* ─── MODAL VINCULAR CLIENTE ─── */}

@@ -277,3 +277,96 @@
   gap: 6px 16px;
   font-size: 13px;
 }
+
+/* ── Lista de pedidos (cards) ── */
+.pedidosList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pedidoCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 13px 16px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.pedidoCard:hover {
+  background: var(--bg-alt);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.pedidoCardTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.pedidoCardMid {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.pedidoCardBot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pedidoId {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--caramelo);
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  font-size: 11px;
+  border-radius: 20px;
+  font-weight: 500;
+  border: 1px solid;
+}
+
+.cardActions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* ── Botões mini usados no detalhe do pedido ── */
+.btnMini {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btnMini:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--texto);
+  border-color: var(--border-strong);
+}
+.btnMini:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Container do detalhe no modal ── */
+.detail {
+  display: flex;
+  flex-direction: column;
+}
