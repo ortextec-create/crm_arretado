@@ -238,7 +238,7 @@ def _processar_evento_pedido(client, evt, config):
             except IFoodAPIError as e:
                 logger.error('Falha ao auto-confirmar pedido %s: %s', order_id[:8], e)
 
-            if config.auto_despachar and pedido.status == 'CONFIRMED':
+            if config.auto_despachar and pedido.status == 'CONFIRMED' and not pedido.agendamento_dt:
                 try:
                     despachou = True
                     if pedido.order_type == 'TAKEOUT':
@@ -257,6 +257,8 @@ def _processar_evento_pedido(client, evt, config):
                         pedido.save(update_fields=['status', 'atualizado_em'])
                 except IFoodAPIError as e:
                     logger.error('Falha ao auto-despachar pedido %s: %s', order_id[:8], e)
+            elif config.auto_despachar and pedido.agendamento_dt:
+                logger.info('Pedido %s agendado — despacho automático ignorado (janela: %s)', order_id[:8], pedido.agendamento_dt)
         elif novo_status and novo_status != 'PLACED':
             pedido.status = novo_status
             pedido.save(update_fields=['status'])
