@@ -150,7 +150,7 @@ class PedidoIFood(models.Model):
 
     @property
     def pode_cancelar(self):
-        return self.status in ('PLACED', 'CONFIRMED', 'PREPARATION_STARTED')
+        return self.status in ('PLACED', 'CONFIRMED', 'PREPARATION_STARTED', 'DISPATCHED')
 
 
 class ItemPedidoIFood(models.Model):

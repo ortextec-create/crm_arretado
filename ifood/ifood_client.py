@@ -23,8 +23,8 @@ CANCEL_URL      = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/requestCancellat
 DISPATCH_URL    = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/dispatch'
 PICKUP_URL      = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/readyToPickup'
 CANCEL_REASONS  = f'{IFOOD_BASE}/order/v1.0/orders/{{order_id}}/cancellationReasons'
-ACCEPT_CANCELLATION_URL  = IFOOD_BASE + '/order/v2.0/orders/{order_id}/cancellation/accept'
-DENY_CANCELLATION_URL    = IFOOD_BASE + '/order/v2.0/orders/{order_id}/cancellation/deny'
+ACCEPT_CANCELLATION_URL  = IFOOD_BASE + '/order/v1.0/orders/{order_id}/cancellationAccept'
+DENY_CANCELLATION_URL    = IFOOD_BASE + '/order/v1.0/orders/{order_id}/cancellationDeny'
 
 
 class IFoodAPIError(Exception):
