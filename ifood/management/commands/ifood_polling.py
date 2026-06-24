@@ -14,6 +14,7 @@ import signal
 import logging
 
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 
 from ifood.polling_worker import run_polling
 
@@ -51,6 +52,7 @@ class Command(BaseCommand):
 
         while self._running:
             try:
+                close_old_connections()
                 result = run_polling()
                 if result['eventos'] > 0:
                     self.stdout.write(
