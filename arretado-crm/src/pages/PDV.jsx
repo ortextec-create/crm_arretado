@@ -138,16 +138,33 @@ function KanbanCol({ title, accentColor, icon, pedidos, onCard, onAcao, emptyMsg
 
 // ─── Modal: Novo Pedido ───────────────────────────────────────────────────────
 
+const TIPOS_PEDIDO = [
+  ['balcao',   'building-store', 'Balcão'],
+  ['retirada', 'home',           'Retirada'],
+  ['delivery', 'motorbike',      'Delivery'],
+  ['mesa',     'armchair',       'Mesa'],
+]
+
+const PAGAMENTOS = [
+  ['pix',      'PIX'],
+  ['dinheiro', 'Dinheiro'],
+  ['credito',  'Crédito'],
+  ['debito',   'Débito'],
+  ['outro',    'Outro'],
+]
+
 function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, showToast }) {
   const [form, setForm] = useState({
-    tipo: 'balcao', pagamento: 'pix', desconto: 0, taxa_entrega: 0,
-    cliente: '', cliente_nome: '', cliente_telefone: '', observacoes: '',
+    tipo: 'balcao', pagamento: 'pix', desconto: '', taxa_entrega: '',
+    cliente: '', cliente_telefone: '', observacoes: '',
   })
-  const [itens, setItens]                   = useState([])
-  const [catFilter, setCatFilter]           = useState(null)
-  const [search, setSearch]                 = useState('')
-  const [saving, setSaving]                 = useState(false)
-  const [clienteSearch, setClienteSearch]   = useState('')
+  const [itens, setItens]                 = useState([])
+  const [catFilter, setCatFilter]         = useState(null)
+  const [search, setSearch]               = useState('')
+  const [saving, setSaving]               = useState(false)
+  const [clienteSearch, setClienteSearch] = useState('')
+  const [showTel, setShowTel]             = useState(false)
+  const [showObs, setShowObs]             = useState(false)
 
   const prodsFiltrados = produtos.filter(p =>
     p.ativo &&
@@ -163,7 +180,7 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
         novo[idx] = { ...novo[idx], quantidade: novo[idx].quantidade + 1 }
         return novo
       }
-      return [...prev, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '' }]
+      return [...prev, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1 }]
     })
   }
 
@@ -180,19 +197,29 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
   const subtotal = itens.reduce((s, i) => s + Number(i.preco_unit) * i.quantidade, 0)
   const total    = subtotal - Number(form.desconto || 0) + Number(form.taxa_entrega || 0)
 
+  const limparCliente = () => {
+    setForm(f => ({ ...f, cliente: '', cliente_telefone: '' }))
+    setClienteSearch('')
+  }
+
   const salvar = async () => {
     if (itens.length === 0) { showToast('Adicione ao menos um item.', 'error'); return }
     setSaving(true)
     try {
       const payload = {
-        ...form,
-        cliente: form.cliente || null,
+        tipo:           form.tipo,
+        pagamento:      form.pagamento,
+        desconto:       form.desconto    || 0,
+        taxa_entrega:   form.taxa_entrega || 0,
+        observacoes:    form.observacoes,
+        cliente:        form.cliente || null,
+        cliente_nome:   form.cliente ? '' : clienteSearch.trim(),
+        cliente_telefone: form.cliente_telefone,
         itens: itens.map(i => ({
           produto:    i.produto,
           nome:       i.nome,
           preco_unit: i.preco_unit,
           quantidade: i.quantidade,
-          observacao: i.observacao,
         })),
       }
       await pdvApi.criarPedido(payload)
@@ -206,10 +233,12 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
     }
   }
 
-  const clientesFiltrados = clientes.filter(c =>
-    !clienteSearch || c.nome.toLowerCase().includes(clienteSearch.toLowerCase()) ||
-    c.telefone_principal?.includes(clienteSearch)
-  ).slice(0, 6)
+  const clientesFiltrados = clienteSearch && !form.cliente
+    ? clientes.filter(c =>
+        c.nome.toLowerCase().includes(clienteSearch.toLowerCase()) ||
+        c.telefone_principal?.includes(clienteSearch)
+      ).slice(0, 6)
+    : []
 
   return (
     <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -224,7 +253,7 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
 
         <div className={styles.modalNovoCols}>
 
-          {/* Col Esquerda: Catálogo */}
+          {/* ── Col Esquerda: Catálogo ── */}
           <div className={styles.catalogo}>
             <div className={styles.catalogoSearch}>
               <i className="ti ti-search" />
@@ -233,6 +262,11 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
+              {search && (
+                <button className={styles.searchClearSm} onClick={() => setSearch('')}>
+                  <i className="ti ti-x" />
+                </button>
+              )}
             </div>
             <div className={styles.catTabs}>
               <button
@@ -260,15 +294,18 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
             </div>
           </div>
 
-          {/* Col Direita: Carrinho + Dados */}
+          {/* ── Col Direita: Carrinho + Formulário ── */}
           <div className={styles.carrinho}>
 
+            {/* Itens */}
             <div className={styles.itensList}>
-              {itens.length === 0
-                ? <p className={styles.emptySmall} style={{ padding: '24px 0', textAlign: 'center' }}>
-                    Clique em um produto para adicionar.
-                  </p>
-                : itens.map((item, idx) => (
+              {itens.length === 0 ? (
+                <div className={styles.carrinhoVazio}>
+                  <i className="ti ti-shopping-cart-off" />
+                  <span>Selecione produtos ao lado</span>
+                </div>
+              ) : (
+                itens.map((item, idx) => (
                   <div key={idx} className={styles.itemRow}>
                     <div className={styles.itemNome}>{item.nome}</div>
                     <div className={styles.itemCtrl}>
@@ -282,102 +319,160 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
                     </button>
                   </div>
                 ))
-              }
+              )}
             </div>
 
+            {/* Totais compactos */}
             <div className={styles.totaisBox}>
-              <div className={styles.totaisRow}><span>Subtotal</span><span>{fmtMoeda(subtotal)}</span></div>
               <div className={styles.totaisRow}>
-                <span>Desconto</span>
-                <input type="number" min="0" step="0.01"
-                  value={form.desconto}
-                  onChange={e => setForm(f => ({ ...f, desconto: e.target.value }))}
-                  className={styles.totaisInput}
-                />
+                <span>Subtotal</span>
+                <span>{fmtMoeda(subtotal)}</span>
               </div>
-              <div className={styles.totaisRow}>
-                <span>Taxa de entrega</span>
-                <input type="number" min="0" step="0.01"
-                  value={form.taxa_entrega}
-                  onChange={e => setForm(f => ({ ...f, taxa_entrega: e.target.value }))}
-                  className={styles.totaisInput}
-                />
+              <div className={styles.totaisAjustes}>
+                <label className={styles.totaisAjusteItem}>
+                  <span>Desconto</span>
+                  <input type="number" min="0" step="0.01" placeholder="0,00"
+                    value={form.desconto}
+                    onChange={e => setForm(f => ({ ...f, desconto: e.target.value }))}
+                    className={styles.totaisInput}
+                  />
+                </label>
+                <label className={styles.totaisAjusteItem}>
+                  <span>Taxa entrega</span>
+                  <input type="number" min="0" step="0.01" placeholder="0,00"
+                    value={form.taxa_entrega}
+                    onChange={e => setForm(f => ({ ...f, taxa_entrega: e.target.value }))}
+                    className={styles.totaisInput}
+                  />
+                </label>
               </div>
               <div className={`${styles.totaisRow} ${styles.totaisTotal}`}>
-                <span>Total</span><span>{fmtMoeda(total)}</span>
+                <span>Total</span>
+                <span>{fmtMoeda(total)}</span>
               </div>
             </div>
 
-            <div className={styles.dadosPedido}>
-              <div className={styles.dadosRow}>
-                <label>Tipo</label>
-                <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}>
-                  <option value="balcao">Balcão</option>
-                  <option value="retirada">Retirada</option>
-                  <option value="delivery">Delivery</option>
-                  <option value="mesa">Mesa</option>
-                </select>
+            {/* Tipo — botões segmentados */}
+            <div className={styles.opcaoBloco}>
+              <span className={styles.opcaoLabel}>Tipo</span>
+              <div className={styles.segGroup}>
+                {TIPOS_PEDIDO.map(([v, icon, label]) => (
+                  <button
+                    key={v}
+                    className={`${styles.segBtn} ${form.tipo === v ? styles.segBtnActive : ''}`}
+                    onClick={() => setForm(f => ({ ...f, tipo: v }))}
+                  >
+                    <i className={`ti ti-${icon}`} />
+                    <span>{label}</span>
+                  </button>
+                ))}
               </div>
-              <div className={styles.dadosRow}>
-                <label>Pagamento</label>
-                <select value={form.pagamento} onChange={e => setForm(f => ({ ...f, pagamento: e.target.value }))}>
-                  <option value="dinheiro">Dinheiro</option>
-                  <option value="pix">PIX</option>
-                  <option value="credito">Cartão de Crédito</option>
-                  <option value="debito">Cartão de Débito</option>
-                  <option value="outro">Outro</option>
-                </select>
+            </div>
+
+            {/* Pagamento — botões segmentados */}
+            <div className={styles.opcaoBloco}>
+              <span className={styles.opcaoLabel}>Pagamento</span>
+              <div className={styles.segGroup}>
+                {PAGAMENTOS.map(([v, label]) => (
+                  <button
+                    key={v}
+                    className={`${styles.segBtn} ${form.pagamento === v ? styles.segBtnActive : ''}`}
+                    onClick={() => setForm(f => ({ ...f, pagamento: v }))}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              <div className={styles.dadosRow}>
-                <label>Cliente (CRM)</label>
-                <div className={styles.clienteSearch}>
-                  <input
-                    placeholder="Buscar no CRM…"
-                    value={clienteSearch}
-                    onChange={e => { setClienteSearch(e.target.value); setForm(f => ({ ...f, cliente: '' })) }}
-                  />
-                  {clienteSearch && !form.cliente && (
-                    <div className={styles.clienteDropdown}>
-                      {clientesFiltrados.map(c => (
-                        <div key={c.id} className={styles.clienteOption}
-                          onClick={() => {
-                            setForm(f => ({ ...f, cliente: c.id, cliente_nome: c.nome, cliente_telefone: c.telefone_principal }))
-                            setClienteSearch(c.nome)
-                          }}
-                        >
-                          <span>{c.nome}</span>
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{c.telefone_principal}</span>
-                        </div>
-                      ))}
-                      {clientesFiltrados.length === 0 && <div className={styles.clienteOption} style={{ color: 'var(--muted)' }}>Nenhum encontrado</div>}
-                    </div>
+            </div>
+
+            {/* Cliente unificado */}
+            <div className={styles.clienteBloco}>
+              <div className={styles.clienteRow}>
+                {form.cliente ? (
+                  <div className={styles.clienteChip}>
+                    <i className="ti ti-user-check" />
+                    <span>{clienteSearch}</span>
+                    <button onClick={limparCliente} title="Remover cliente">
+                      <i className="ti ti-x" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className={styles.clienteInputWrap}>
+                    <i className="ti ti-user" />
+                    <input
+                      placeholder="Nome do cliente ou buscar no CRM…"
+                      value={clienteSearch}
+                      onChange={e => setClienteSearch(e.target.value)}
+                    />
+                    {clienteSearch && (
+                      <button className={styles.searchClearSm} onClick={() => setClienteSearch('')}>
+                        <i className="ti ti-x" />
+                      </button>
+                    )}
+                    {clientesFiltrados.length > 0 && (
+                      <div className={styles.clienteDropdown}>
+                        {clientesFiltrados.map(c => (
+                          <div key={c.id} className={styles.clienteOption}
+                            onClick={() => {
+                              setForm(f => ({ ...f, cliente: c.id, cliente_telefone: c.telefone_principal || '' }))
+                              setClienteSearch(c.nome)
+                              setShowTel(false)
+                            }}
+                          >
+                            <span className={styles.clienteOptionNome}>{c.nome}</span>
+                            <span className={styles.clienteOptionTel}>{c.telefone_principal}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className={styles.clienteToggles}>
+                  {!form.cliente && (
+                    <button
+                      className={`${styles.toggleBtn} ${showTel ? styles.toggleBtnActive : ''}`}
+                      onClick={() => setShowTel(t => !t)}
+                      title="Telefone"
+                    >
+                      <i className="ti ti-phone" />
+                    </button>
                   )}
+                  <button
+                    className={`${styles.toggleBtn} ${showObs ? styles.toggleBtnActive : ''}`}
+                    onClick={() => setShowObs(o => !o)}
+                    title="Observações"
+                  >
+                    <i className="ti ti-notes" />
+                  </button>
                 </div>
               </div>
-              {!form.cliente && (
-                <>
-                  <div className={styles.dadosRow}>
-                    <label>Nome avulso</label>
-                    <input placeholder="Nome do cliente" value={form.cliente_nome}
-                      onChange={e => setForm(f => ({ ...f, cliente_nome: e.target.value }))} />
-                  </div>
-                  <div className={styles.dadosRow}>
-                    <label>Telefone</label>
-                    <input placeholder="(86) 9 9999-9999" value={form.cliente_telefone}
-                      onChange={e => setForm(f => ({ ...f, cliente_telefone: e.target.value }))} />
-                  </div>
-                </>
+
+              {!form.cliente && showTel && (
+                <input
+                  className={styles.clienteExtra}
+                  placeholder="Telefone: (86) 9 9999-9999"
+                  value={form.cliente_telefone}
+                  onChange={e => setForm(f => ({ ...f, cliente_telefone: e.target.value }))}
+                />
               )}
-              <div className={styles.dadosRow}>
-                <label>Observações</label>
-                <textarea rows={2} value={form.observacoes}
-                  onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))} />
-              </div>
+              {showObs && (
+                <textarea
+                  className={styles.clienteExtra}
+                  rows={2}
+                  placeholder="Observações do pedido…"
+                  value={form.observacoes}
+                  onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))}
+                />
+              )}
             </div>
 
+            {/* Criar */}
             <button className={styles.btnCriar} onClick={salvar} disabled={saving}>
-              {saving ? <i className="ti ti-loader-2 spin" /> : <i className="ti ti-check" />}
-              {saving ? 'Salvando…' : 'Criar Pedido'}
+              {saving
+                ? <><i className="ti ti-loader-2 spin" /> Salvando…</>
+                : <><i className="ti ti-check" /> Criar Pedido · {fmtMoeda(total)}</>
+              }
             </button>
 
           </div>
