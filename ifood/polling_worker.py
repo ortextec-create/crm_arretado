@@ -362,11 +362,11 @@ def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
     cliente_obj   = None
     ifood_cust_id = customer.get('id', '')
     telefone_raw  = customer.get('phone', {})
-    telefone_num  = (
-        telefone_raw.get('number', '')
-        if isinstance(telefone_raw, dict)
-        else str(telefone_raw or '')
-    )
+    if isinstance(telefone_raw, dict):
+        # localizer = número real do cliente; number = 0800 mascarado pelo iFood
+        telefone_num = telefone_raw.get('localizer', '') or telefone_raw.get('number', '')
+    else:
+        telefone_num = str(telefone_raw or '')
 
     if ifood_cust_id:
         cliente_obj = Cliente.objects.filter(ifood_customer_id=ifood_cust_id).first()

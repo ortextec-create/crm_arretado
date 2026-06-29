@@ -16,13 +16,19 @@ class ConfiguracaoIFoodSerializer(serializers.ModelSerializer):
             'criado_em', 'atualizado_em',
         ]
         extra_kwargs = {
-            'client_secret': {'write_only': True},
+            'client_secret': {'write_only': True, 'required': False, 'allow_blank': True},
         }
 
     def get_client_secret_preview(self, obj):
         if obj.client_secret:
             return obj.client_secret[:6] + '••••••••'
         return ''
+
+    def update(self, instance, validated_data):
+        # Ignora client_secret vazio/blank — mantém o secret existente
+        if not validated_data.get('client_secret', '').strip():
+            validated_data.pop('client_secret', None)
+        return super().update(instance, validated_data)
 
 
 class ItemPedidoSerializer(serializers.ModelSerializer):

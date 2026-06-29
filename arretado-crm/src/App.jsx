@@ -19,6 +19,7 @@ import Configuracoes from './pages/Configuracoes'
 import Catalogo from './pages/Catalogo'
 import FichasTecnicas from './pages/FichasTecnicas'
 import CentralPrecos from './pages/CentralPrecos'
+import Relatorios from './pages/Relatorios'
 
 
 
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="fichas-tecnicas" element={<FichasTecnicas />} />
             <Route path="central-precos" element={<CentralPrecos />} />
+            <Route path="relatorios/ifood" element={<Relatorios />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

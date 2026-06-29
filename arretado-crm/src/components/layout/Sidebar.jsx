@@ -34,6 +34,12 @@ const NAV = [
     ],
   },
   {
+    section: 'Relatórios',
+    items: [
+      { to: '/relatorios/ifood', icon: 'chart-bar', label: 'iFood' },
+    ],
+  },
+  {
     section: 'Administração',
     items: [
       { to: '/usuarios',      icon: 'shield-lock', label: 'Usuários' },

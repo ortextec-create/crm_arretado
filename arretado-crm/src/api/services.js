@@ -217,3 +217,9 @@ export const fichasApi = {
   listarProdutos:  (params) => api.get('/pdv/produtos/', { params }),
   atualizarProduto:(id, d)  => api.patch(`/pdv/produtos/${id}/`, d),
 }
+
+// ─── RELATÓRIOS ───────────────────────────────────────────────────────────────
+
+export const relatoriosApi = {
+  ifood: (params = {}) => api.get('/relatorios/ifood/', { params }),
+}

@@ -25,17 +25,7 @@ const TIPO_CFG = {
   mesa:     { label: 'Mesa',     icon: 'armchair' },
 }
 
-const TABS = ['Todos', 'Abertos', 'Em andamento', 'Prontos', 'Concluídos', 'Cancelados']
-const TAB_STATUS = {
-  'Todos':          null,
-  'Abertos':        'aberto',
-  'Em andamento':   ['confirmado', 'em_preparo'],
-  'Prontos':        'pronto',
-  'Concluídos':     'concluido',
-  'Cancelados':     'cancelado',
-}
-
-// ─── Sub-componentes ──────────────────────────────────────────────────────────
+// ─── Toast ────────────────────────────────────────────────────────────────────
 
 function Toast({ toast, onClose }) {
   useEffect(() => {
@@ -52,13 +42,95 @@ function Toast({ toast, onClose }) {
   )
 }
 
-function StatCard({ label, value, icon, accent, warn }) {
+// ─── Kanban Card ──────────────────────────────────────────────────────────────
+
+function PedidoCard({ pedido, onCard, onAcao }) {
+  const [loadingAcao, setLoadingAcao] = useState(false)
+  const tc = TIPO_CFG[pedido.tipo]     || { label: pedido.tipo,   icon: 'circle' }
+  const sc = STATUS_CFG[pedido.status] || { label: pedido.status, color: '#9CA3AF', icon: 'circle' }
+
+  let primaryAcao = null
+  if      (pedido.pode_confirmar)             primaryAcao = { label: 'Confirmar',       fn: pdvApi.confirmar,      cls: styles.acaoConfirmar }
+  else if (pedido.status === 'confirmado')    primaryAcao = { label: 'Iniciar Preparo',  fn: pdvApi.iniciarPreparo, cls: styles.acaoPreparo   }
+  else if (pedido.status === 'em_preparo')    primaryAcao = { label: 'Marcar Pronto',    fn: pdvApi.marcarPronto,   cls: styles.acaoPronto    }
+  else if (pedido.pode_concluir)              primaryAcao = { label: 'Concluir',         fn: pdvApi.concluir,       cls: styles.acaoConcluir  }
+
+  const handleAcao = async (e) => {
+    e.stopPropagation()
+    setLoadingAcao(true)
+    await onAcao(primaryAcao.fn, pedido)
+    setLoadingAcao(false)
+  }
+
   return (
-    <div className={`${styles.statCard} ${accent ? styles.statAccent : ''} ${warn ? styles.statWarn : ''}`}>
-      <i className={`ti ti-${icon}`} />
-      <div>
-        <p className={styles.statValue}>{value}</p>
-        <p className={styles.statLabel}>{label}</p>
+    <div className={styles.card} onClick={() => onCard(pedido)}>
+      <div className={styles.cardHead}>
+        <span className={styles.cardNum}>#{pedido.numero}</span>
+        <span className={styles.cardTipo}>
+          <i className={`ti ti-${tc.icon}`} /> {tc.label}
+        </span>
+        <span className={styles.cardTime}>{fmtTime(pedido.criado_em)}</span>
+      </div>
+
+      <div className={styles.cardCliente}>
+        {pedido.cliente_nome_crm || pedido.cliente_nome || 'Cliente avulso'}
+        {pedido.cliente_nome_crm && (
+          <span className={styles.crmTag}><i className="ti ti-link" /></span>
+        )}
+      </div>
+
+      <div className={styles.cardMeta}>
+        <span className={styles.cardItens}>
+          {pedido.itens?.length ?? 0} {pedido.itens?.length === 1 ? 'item' : 'itens'}
+        </span>
+        <span className={styles.cardValor}>{fmtMoeda(pedido.total)}</span>
+      </div>
+
+      {primaryAcao ? (
+        <button
+          className={`${styles.cardAcao} ${primaryAcao.cls}`}
+          onClick={handleAcao}
+          disabled={loadingAcao}
+        >
+          {loadingAcao
+            ? <><i className="ti ti-loader-2 spin" /> Aguarde…</>
+            : primaryAcao.label
+          }
+        </button>
+      ) : (
+        <div className={styles.cardStatus} style={{ color: sc.color }}>
+          <i className={`ti ti-${sc.icon}`} /> {sc.label}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Kanban Column ────────────────────────────────────────────────────────────
+
+function KanbanCol({ title, accentColor, icon, pedidos, onCard, onAcao, emptyMsg }) {
+  return (
+    <div className={styles.kanbanCol}>
+      <div className={styles.colHeader} style={{ borderTopColor: accentColor }}>
+        <i className={`ti ti-${icon}`} style={{ color: accentColor, fontSize: 15 }} />
+        <span className={styles.colTitle}>{title}</span>
+        {pedidos.length > 0 && (
+          <span className={styles.colCount} style={{ background: accentColor + '22', color: accentColor }}>
+            {pedidos.length}
+          </span>
+        )}
+      </div>
+      <div className={styles.colCards}>
+        {pedidos.length === 0 ? (
+          <div className={styles.colEmpty}>
+            <i className={`ti ti-${icon}`} style={{ opacity: 0.2, fontSize: 24 }} />
+            <span>{emptyMsg}</span>
+          </div>
+        ) : (
+          pedidos.map(p => (
+            <PedidoCard key={p.id} pedido={p} onCard={onCard} onAcao={onAcao} />
+          ))
+        )}
       </div>
     </div>
   )
@@ -71,11 +143,11 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
     tipo: 'balcao', pagamento: 'pix', desconto: 0, taxa_entrega: 0,
     cliente: '', cliente_nome: '', cliente_telefone: '', observacoes: '',
   })
-  const [itens, setItens]           = useState([])
-  const [catFilter, setCatFilter]   = useState(null)
-  const [search, setSearch]         = useState('')
-  const [saving, setSaving]         = useState(false)
-  const [clienteSearch, setClienteSearch] = useState('')
+  const [itens, setItens]                   = useState([])
+  const [catFilter, setCatFilter]           = useState(null)
+  const [search, setSearch]                 = useState('')
+  const [saving, setSaving]                 = useState(false)
+  const [clienteSearch, setClienteSearch]   = useState('')
 
   const prodsFiltrados = produtos.filter(p =>
     p.ativo &&
@@ -143,7 +215,6 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
     <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className={styles.modalNovo}>
 
-        {/* Header */}
         <div className={styles.modalHeader}>
           <span className={styles.modalTitle}>
             <i className="ti ti-receipt-2" /> Novo Pedido PDV
@@ -192,7 +263,6 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
           {/* Col Direita: Carrinho + Dados */}
           <div className={styles.carrinho}>
 
-            {/* Itens */}
             <div className={styles.itensList}>
               {itens.length === 0
                 ? <p className={styles.emptySmall} style={{ padding: '24px 0', textAlign: 'center' }}>
@@ -215,7 +285,6 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
               }
             </div>
 
-            {/* Totais */}
             <div className={styles.totaisBox}>
               <div className={styles.totaisRow}><span>Subtotal</span><span>{fmtMoeda(subtotal)}</span></div>
               <div className={styles.totaisRow}>
@@ -239,7 +308,6 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
               </div>
             </div>
 
-            {/* Dados do pedido */}
             <div className={styles.dadosPedido}>
               <div className={styles.dadosRow}>
                 <label>Tipo</label>
@@ -352,7 +420,6 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
         </div>
 
         <div className={styles.detalheBody}>
-          {/* Status + tipo */}
           <div className={styles.detalheRow}>
             <span className={styles.statusBadge} style={{ background: sc.color + '22', color: sc.color, border: `0.5px solid ${sc.color}44` }}>
               <i className={`ti ti-${sc.icon}`} />{sc.label}
@@ -365,7 +432,6 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
             </span>
           </div>
 
-          {/* Cliente */}
           {(pedido.cliente_nome_crm || pedido.cliente_nome) && (
             <div className={styles.detalheSection}>
               <span className={styles.detalheLabel}>Cliente</span>
@@ -379,7 +445,6 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
             </div>
           )}
 
-          {/* Itens */}
           {pedido.itens?.length > 0 && (
             <div className={styles.detalheSection}>
               <span className={styles.detalheLabel}>Itens</span>
@@ -393,7 +458,6 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
             </div>
           )}
 
-          {/* Totais */}
           <div className={styles.detalheTotais}>
             <div className={styles.totaisRow}><span>Subtotal</span><span>{fmtMoeda(pedido.subtotal)}</span></div>
             {Number(pedido.desconto) > 0 && (
@@ -414,7 +478,6 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
             )}
           </div>
 
-          {/* Observações */}
           {pedido.observacoes && (
             <div className={styles.detalheSection}>
               <span className={styles.detalheLabel}>Observações</span>
@@ -422,7 +485,6 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
             </div>
           )}
 
-          {/* Ações */}
           <div className={styles.detalheAcoes}>
             {pedido.pode_confirmar && (
               <button className={`${styles.btnAcao} ${styles.btnConfirmar}`} disabled={loading}
@@ -464,43 +526,33 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function PDV() {
-  const [tab,       setTab]       = useState('Todos')
-  const [search,    setSearch]    = useState('')
-  const [pedidos,   setPedidos]   = useState([])
-  const [stats,     setStats]     = useState(null)
-  const [loading,   setLoading]   = useState(true)
-  const [produtos,  setProdutos]  = useState([])
-  const [categorias,setCategorias]= useState([])
-  const [clientes,  setClientes]  = useState([])
-  const [selected,  setSelected]  = useState(null)
-  const [showNovo,  setShowNovo]  = useState(false)
-  const [toast,     setToast]     = useState(null)
+  const [search,     setSearch]     = useState('')
+  const [pedidos,    setPedidos]    = useState([])
+  const [stats,      setStats]      = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [produtos,   setProdutos]   = useState([])
+  const [categorias, setCategorias] = useState([])
+  const [clientes,   setClientes]   = useState([])
+  const [selected,   setSelected]   = useState(null)
+  const [showNovo,   setShowNovo]   = useState(false)
+  const [toast,      setToast]      = useState(null)
   const pollRef = useRef(null)
 
   const showToast = (message, type = 'success') => setToast({ message, type })
 
   const loadPedidos = useCallback(async () => {
     try {
-      const params = {}
-      if (search) params.search = search
-      const st = TAB_STATUS[tab]
-      if (typeof st === 'string') params.status = st
       const [pedRes, statsRes] = await Promise.allSettled([
-        pdvApi.listPedidos(params),
+        pdvApi.listPedidos({ page_size: 200 }),
         pdvApi.estatisticas(),
       ])
-      let lista = pedRes.status === 'fulfilled' ? (pedRes.value.data.results ?? pedRes.value.data) : []
-      // Filtro client-side para arrays de status (ex: Em andamento)
-      if (Array.isArray(st)) {
-        lista = lista.filter(p => st.includes(p.status))
-      }
+      const lista = pedRes.status === 'fulfilled' ? (pedRes.value.data.results ?? pedRes.value.data) : []
       setPedidos(lista)
       if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)
     } catch { /* silêncio */ }
     finally { setLoading(false) }
-  }, [tab, search])
+  }, [])
 
-  // Carrega catálogo e clientes uma vez
   useEffect(() => {
     Promise.allSettled([
       pdvApi.listProdutos({ ativo: 'true', page_size: 200 }),
@@ -518,35 +570,96 @@ export default function PDV() {
     loadPedidos()
   }, [loadPedidos])
 
-  // Polling de 30s
   useEffect(() => {
     pollRef.current = setInterval(loadPedidos, 30_000)
     return () => clearInterval(pollRef.current)
   }, [loadPedidos])
 
-  const sc = (s) => STATUS_CFG[s] || { label: s, color: '#9CA3AF', icon: 'circle' }
-  const tc = (t) => TIPO_CFG[t]   || { label: t, icon: 'circle' }
+  const onAcao = async (fn, pedido) => {
+    try {
+      await fn(pedido.id)
+      showToast('Status atualizado!', 'success')
+      await loadPedidos()
+    } catch {
+      showToast('Erro ao atualizar status.', 'error')
+    }
+  }
+
+  const filtrar = useCallback((arr) => {
+    if (!search.trim()) return arr
+    const s = search.toLowerCase()
+    return arr.filter(p =>
+      p.numero?.toString().includes(s) ||
+      (p.cliente_nome_crm || '').toLowerCase().includes(s) ||
+      (p.cliente_nome     || '').toLowerCase().includes(s) ||
+      (p.cliente_telefone || '').includes(s)
+    )
+  }, [search])
+
+  const abertos     = filtrar(pedidos.filter(p => p.status === 'aberto'))
+  const emAndamento = filtrar(pedidos.filter(p => ['confirmado', 'em_preparo'].includes(p.status)))
+  const prontos     = filtrar(pedidos.filter(p => p.status === 'pronto'))
+  const historico   = filtrar(pedidos.filter(p => ['concluido', 'cancelado'].includes(p.status)))
+
+  const nConcluidos = historico.filter(p => p.status === 'concluido').length
+  const nCancelados = historico.filter(p => p.status === 'cancelado').length
+  const nAtivos     = pedidos.filter(p => !['concluido', 'cancelado'].includes(p.status)).length
 
   return (
     <div className={styles.page}>
       <Toast toast={toast} onClose={() => setToast(null)} />
 
-      {/* Topbar */}
-      <div className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <h1 className={styles.topbarTitle}><i className="ti ti-building-store" /> PDV Próprio</h1>
+      {/* ── Header ── */}
+      <div className={styles.header}>
+        <div className={styles.headerLeft}>
+          <h1 className={styles.headerTitle}>
+            <i className="ti ti-building-store" /> PDV
+          </h1>
           <div className={styles.searchBox}>
             <i className="ti ti-search" />
             <input
-              placeholder="Buscar pedido, cliente…"
+              placeholder="Buscar pedido ou cliente…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            {search && (
+              <button className={styles.searchClear} onClick={() => setSearch('')}>
+                <i className="ti ti-x" />
+              </button>
+            )}
           </div>
         </div>
-        <div className={styles.topbarRight}>
-          <button className={styles.btnAtualizar} onClick={loadPedidos}>
-            <i className="ti ti-refresh" /> Atualizar
+
+        {stats && (
+          <div className={styles.statsInline}>
+            <span className={styles.statChip}>
+              <i className="ti ti-receipt" /> {stats.hoje?.pedidos ?? 0} hoje
+            </span>
+            <span className={`${styles.statChip} ${styles.statChipAccent}`}>
+              <i className="ti ti-currency-dollar" /> {fmtMoeda(stats.hoje?.receita ?? 0)}
+            </span>
+            {nAtivos > 0 && (
+              <span className={`${styles.statChip} ${styles.statChipWarn}`}>
+                <i className="ti ti-clock" /> {nAtivos} em aberto
+              </span>
+            )}
+            <span className={styles.statDivider} />
+            <span className={styles.statChip} title="Pedidos no mês">
+              <i className="ti ti-calendar" /> {stats.mes?.pedidos ?? 0} no mês
+            </span>
+            <span className={styles.statChip} title="Receita no mês">
+              <i className="ti ti-chart-bar" /> {fmtMoeda(stats.mes?.receita ?? 0)}
+            </span>
+          </div>
+        )}
+
+        <div className={styles.headerActions}>
+          <button
+            className={styles.btnAtualizar}
+            onClick={loadPedidos}
+            title="Atualizar pedidos"
+          >
+            <i className={`ti ti-refresh${loading ? ' spin' : ''}`} />
           </button>
           <button className={styles.btnNovo} onClick={() => setShowNovo(true)}>
             <i className="ti ti-plus" /> Novo Pedido
@@ -554,90 +667,70 @@ export default function PDV() {
         </div>
       </div>
 
-      <div className={styles.content}>
-        {/* Stats */}
-        {stats && (
-          <div className={styles.statsRow}>
-            <StatCard label="Pedidos hoje"   value={stats.hoje?.pedidos ?? 0}                      icon="receipt" />
-            <StatCard label="Receita hoje"   value={fmtMoeda(stats.hoje?.receita ?? 0)}             icon="currency-dollar" accent />
-            <StatCard label="Em aberto"      value={stats.pendentes ?? 0}                           icon="clock" warn={stats.pendentes > 0} />
-            <StatCard label="Pedidos no mês" value={stats.mes?.pedidos ?? 0}                        icon="calendar" />
-            <StatCard label="Receita no mês" value={fmtMoeda(stats.mes?.receita ?? 0)}              icon="chart-bar" />
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className={styles.tabsRow}>
-          {TABS.map(t => (
-            <button key={t}
-              className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`}
-              onClick={() => setTab(t)}
-            >{t}</button>
-          ))}
+      {/* ── Kanban ── */}
+      {loading && pedidos.length === 0 ? (
+        <div className={styles.loadingCenter}>
+          <i className="ti ti-loader-2 spin" style={{ fontSize: 28, color: 'var(--caramelo)' }} />
         </div>
+      ) : (
+        <div className={styles.kanban}>
+          <KanbanCol
+            title="Abertos"
+            icon="circle-dot"
+            accentColor="#3B82F6"
+            pedidos={abertos}
+            onCard={setSelected}
+            onAcao={onAcao}
+            emptyMsg="Sem pedidos abertos"
+          />
+          <KanbanCol
+            title="Em andamento"
+            icon="flame"
+            accentColor="#F59E0B"
+            pedidos={emAndamento}
+            onCard={setSelected}
+            onAcao={onAcao}
+            emptyMsg="Sem pedidos em preparo"
+          />
+          <KanbanCol
+            title="Prontos"
+            icon="bell-ringing"
+            accentColor="#10B981"
+            pedidos={prontos}
+            onCard={setSelected}
+            onAcao={onAcao}
+            emptyMsg="Sem pedidos prontos"
+          />
+        </div>
+      )}
 
-        {/* Tabela */}
-        {loading ? (
-          <div className={styles.center}><i className="ti ti-loader-2 spin" style={{ fontSize: 26, color: 'var(--caramelo)' }} /></div>
-        ) : pedidos.length === 0 ? (
-          <div className={styles.empty}>
-            <i className="ti ti-receipt-off" />
-            <p>Nenhum pedido encontrado.</p>
-            <button className={styles.btnNovo} onClick={() => setShowNovo(true)}>
-              <i className="ti ti-plus" /> Criar primeiro pedido
-            </button>
+      {/* ── Histórico do dia ── */}
+      {historico.length > 0 && (
+        <div className={styles.histStrip}>
+          <span className={styles.histLabel}>
+            <i className="ti ti-history" />
+            {nConcluidos > 0 && <span>{nConcluidos} concluído{nConcluidos !== 1 ? 's' : ''}</span>}
+            {nConcluidos > 0 && nCancelados > 0 && <span className={styles.histSep}>·</span>}
+            {nCancelados > 0 && <span className={styles.histCancel}>{nCancelados} cancelado{nCancelados !== 1 ? 's' : ''}</span>}
+          </span>
+          <div className={styles.histList}>
+            {historico.map(p => (
+              <button
+                key={p.id}
+                className={`${styles.histChip} ${p.status === 'cancelado' ? styles.histChipCanceled : ''}`}
+                onClick={() => setSelected(p)}
+                title={`${p.cliente_nome_crm || p.cliente_nome || 'Avulso'} · ${fmtMoeda(p.total)}`}
+              >
+                #{p.numero}
+                <span className={styles.histChipName}>{p.cliente_nome_crm || p.cliente_nome || 'Avulso'}</span>
+                <span className={styles.histChipVal}>{fmtMoeda(p.total)}</span>
+              </button>
+            ))}
           </div>
-        ) : (
-          <div className={styles.table}>
-            <div className={styles.thead}>
-              <span>Pedido</span>
-              <span>Cliente</span>
-              <span>Tipo</span>
-              <span>Itens</span>
-              <span>Total</span>
-              <span>Status</span>
-              <span>Ações</span>
-            </div>
-            {pedidos.map(p => {
-              const s = sc(p.status)
-              const t = tc(p.tipo)
-              return (
-                <div key={p.id} className={styles.trow} onClick={() => setSelected(p)}>
-                  <div>
-                    <div className={styles.orderId}>#{p.numero}</div>
-                    <div className={styles.sub}>{fmtTime(p.criado_em)}</div>
-                  </div>
-                  <div>
-                    <div className={styles.name}>{p.cliente_nome_crm || p.cliente_nome || 'Avulso'}</div>
-                    {p.cliente_nome_crm && (
-                      <div className={styles.crm}><i className="ti ti-link" />CRM</div>
-                    )}
-                  </div>
-                  <div>
-                    <span className={styles.tipoBadgeSmall}>
-                      <i className={`ti ti-${t.icon}`} />{t.label}
-                    </span>
-                  </div>
-                  <div className={styles.sub}>{p.itens?.length ?? '—'} {p.itens?.length === 1 ? 'item' : 'itens'}</div>
-                  <div className={styles.valor}>{fmtMoeda(p.total)}</div>
-                  <div>
-                    <span className={styles.statusBadge} style={{ background: s.color + '22', color: s.color, border: `0.5px solid ${s.color}44` }}>
-                      <i className={`ti ti-${s.icon}`} />{s.label}
-                    </span>
-                  </div>
-                  <div className={styles.rowAcoes} onClick={e => e.stopPropagation()}>
-                    <button className={styles.actBtn} title="Ver detalhe" onClick={() => setSelected(p)}>
-                      <i className="ti ti-eye" />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Modais */}
+      {/* ── Modais ── */}
       {showNovo && (
         <ModalNovoPedido
           produtos={produtos}

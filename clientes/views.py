@@ -181,20 +181,20 @@ class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
                     'canal':        'ifood',
                     'canal_label':  'iFood',
                     'origem_id':    p.pk,
-                    'numero':       p.order_id or str(p.pk),
+                    'numero':       p.display_id or str(p.pk),
                     'status':       p.status,
-                    'status_label': p.get_status_display() if hasattr(p, 'get_status_display') else p.status,
-                    'tipo':         p.delivery_method,
-                    'tipo_label':   p.get_delivery_method_display() if hasattr(p, 'get_delivery_method_display') else p.delivery_method,
-                    'valor':        float(p.total or 0),
-                    'pagamento':    getattr(p, 'payment_method', None),
+                    'status_label': p.get_status_display(),
+                    'tipo':         p.order_type,
+                    'tipo_label':   p.get_order_type_display(),
+                    'valor':        float(p.total_valor or 0),
+                    'pagamento':    p.payment_method,
                     'data':         p.criado_em.isoformat() if p.criado_em else None,
                     'itens_count':  p.itens.count(),
                 })
             total_ifood = pedidos_ifood.count()
             gasto_ifood = float(
                 pedidos_ifood.filter(status='CONCLUDED')
-                .aggregate(t=Sum('total'))['t'] or 0
+                .aggregate(t=Sum('total_valor'))['t'] or 0
             )
             metricas['por_canal']['ifood'] = {'total': total_ifood, 'gasto': gasto_ifood}
 

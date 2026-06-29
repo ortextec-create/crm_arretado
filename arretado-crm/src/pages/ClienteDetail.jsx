@@ -129,7 +129,7 @@ function PedidoHistRow({ pedido, onClickPedido }) {
       </div>
 
       {/* Valor */}
-      <div style={{ fontWeight: 600 }}>{fmtMoeda(pedido.total)}</div>
+      <div style={{ fontWeight: 600 }}>{fmtMoeda(pedido.valor)}</div>
 
       {/* Status */}
       <div>
@@ -441,7 +441,7 @@ export default function ClienteDetail() {
                   return (
                     <div key={canal} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
                       <i className={`ti ti-${cc.icon}`} style={{ color: cc.color, fontSize: 15 }} />
-                      <span style={{ color: 'var(--bege)', fontWeight: 600 }}>{qtd}</span>
+                      <span style={{ color: 'var(--bege)', fontWeight: 600 }}>{qtd.total}</span>
                       <span style={{ color: 'var(--muted)', fontSize: 11 }}>{cc.label}</span>
                     </div>
                   )
@@ -471,7 +471,7 @@ export default function ClienteDetail() {
                     background: histTab === t ? 'color-mix(in srgb, var(--caramelo) 20%, transparent)' : 'var(--border)',
                     color: histTab === t ? 'var(--caramelo)' : 'var(--muted)',
                   }}>
-                    {metricas.por_canal[HIST_TAB_MAP[t]] ?? 0}
+                    {metricas.por_canal[HIST_TAB_MAP[t]]?.total ?? 0}
                   </span>
                 )}
               </button>
@@ -522,7 +522,7 @@ export default function ClienteDetail() {
 
               {historico.map(p => (
                 <PedidoHistRow
-                  key={`${p.canal}-${p.id}`}
+                  key={`${p.canal}-${p.origem_id}`}
                   pedido={p}
                   onClickPedido={handleClickPedidoHist}
                 />

@@ -1,0 +1,354 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Cabeçalho ─────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 26px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.titulo {
+  font-size: 20px;
+  color: var(--texto);
+  margin: 0;
+}
+
+.subtitulo {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+.exportBtns {
+  display: flex;
+  gap: 8px;
+}
+
+.btnExcel,
+.btnPdf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btnExcel {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+.btnExcel:hover { background: #dcfce7; }
+
+.btnPdf {
+  background: #fff7ed;
+  color: var(--caramelo);
+  border-color: #fed7aa;
+}
+.btnPdf:hover { background: #ffedd5; }
+
+/* ── Filtros ────────────────────────────────────────────────────────────────── */
+.filtros {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 16px 26px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.filtroGrupo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filtroGrupo label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.canalChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(201,122,58,.1);
+  border: 1px solid rgba(201,122,58,.3);
+  border-radius: 7px;
+  color: var(--caramelo);
+  font-size: 13px;
+  font-weight: 600;
+  height: 34px;
+}
+
+.dateRange {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dateInput {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--texto);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.dateInput:focus {
+  border-color: var(--caramelo);
+  box-shadow: 0 0 0 3px rgba(201,122,58,.12);
+}
+
+.dateSep {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.segControl {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  height: 34px;
+}
+
+.segBtn {
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--muted);
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.segBtn + .segBtn {
+  border-left: 1px solid var(--border);
+}
+.segBtnActive {
+  background: var(--caramelo);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btnBuscar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 18px;
+  height: 34px;
+  background: var(--caramelo);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btnBuscar:hover { opacity: 0.88; }
+.btnBuscar:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ── Área de conteúdo ───────────────────────────────────────────────────────── */
+.vazio {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.vazio i { font-size: 36px; opacity: 0.3; }
+
+.erro {
+  margin: 12px 26px 0;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 7px;
+  color: #dc2626;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* ── Cards de resumo ────────────────────────────────────────────────────────── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  padding: 18px 26px 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .cards { grid-template-columns: repeat(2, 1fr); }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.cardIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.cardLabel {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 3px;
+}
+
+.cardVal {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--texto);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.pct {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ── Tipos de pedido ────────────────────────────────────────────────────────── */
+.tipoRow {
+  display: flex;
+  gap: 10px;
+  padding: 12px 26px 0;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.tipoChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tipoChip strong {
+  color: var(--texto);
+  font-weight: 600;
+}
+
+/* ── Tabela ──────────────────────────────────────────────────────────────────── */
+.tableWrap {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 26px 26px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.table thead tr {
+  background: var(--fundo);
+}
+
+.table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.table td {
+  padding: 11px 14px;
+  color: var(--texto);
+  border-bottom: 1px solid var(--border);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover td {
+  background: var(--hover);
+}
+
+.num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  font-weight: 500;
+}
+
+.cancel {
+  color: #dc2626 !important;
+  font-weight: 600;
+}
+
+.totalRow td {
+  background: var(--caramelo) !important;
+  color: #fff !important;
+  font-weight: 700;
+  border-bottom: none !important;
+}
+
+/* ── Animação spin ───────────────────────────────────────────────────────────── */
+:global(.spin) {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
