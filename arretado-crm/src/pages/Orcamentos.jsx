@@ -26,12 +26,13 @@ const STATUS_CONFIG = {
 }
 
 const STATUS_TABS = [
-  { key: '',          label: 'Todos' },
-  { key: 'rascunho',  label: 'Rascunho' },
-  { key: 'enviado',   label: 'Enviado' },
-  { key: 'aprovado',  label: 'Aprovado' },
-  { key: 'recusado',  label: 'Recusado' },
-  { key: 'convertido',label: 'Convertido' },
+  { key: '',           label: 'Todos' },
+  { key: 'rascunho',   label: 'Rascunho' },
+  { key: 'enviado',    label: 'Enviado' },
+  { key: 'aprovado',   label: 'Aprovado' },
+  { key: 'recusado',   label: 'Recusado' },
+  { key: 'expirado',   label: 'Expirado' },
+  { key: 'convertido', label: 'Convertido' },
 ]
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -55,6 +56,7 @@ export default function Orcamentos() {
   const [showNovo,      setShowNovo]      = useState(false)
   const [showDetalhe,   setShowDetalhe]   = useState(false)
   const [showConverter, setShowConverter] = useState(false)
+  const [showWpp,       setShowWpp]       = useState(false)
   const [orcAtivo,      setOrcAtivo]      = useState(null)
 
   // ── Carregamento ──────────────────────────────────────────────────────────
@@ -95,9 +97,10 @@ export default function Orcamentos() {
   async function handleAcao(acao, orc) {
     try {
       let res
-      if (acao === 'enviar')  res = await orcamentosApi.enviar(orc.id)
-      if (acao === 'aprovar') res = await orcamentosApi.aprovar(orc.id)
-      if (acao === 'recusar') res = await orcamentosApi.recusar(orc.id)
+      if (acao === 'enviar')    res = await orcamentosApi.enviar(orc.id)
+      if (acao === 'aprovar')   res = await orcamentosApi.aprovar(orc.id)
+      if (acao === 'recusar')   res = await orcamentosApi.recusar(orc.id)
+      if (acao === 'restaurar') res = await orcamentosApi.restaurar(orc.id)
       if (acao === 'excluir') {
         await orcamentosApi.delete(orc.id)
         setShowDetalhe(false)
@@ -109,11 +112,47 @@ export default function Orcamentos() {
       if (res) {
         setOrcAtivo(res.data)
         loadOrcamentos()
-        showToast(`Orçamento ${acao === 'enviar' ? 'marcado como enviado' : acao === 'aprovar' ? 'aprovado' : 'recusado'}.`)
+        const msgs = { enviar: 'marcado como enviado', aprovar: 'aprovado', recusar: 'recusado', restaurar: 'restaurado' }
+        showToast(`Orçamento ${msgs[acao] || acao}.`)
       }
     } catch (e) {
       showToast(e?.response?.data?.detail || 'Erro ao executar ação.', 'error')
     }
+  }
+
+  async function handlePdf(orc) {
+    try {
+      const res = await orcamentosApi.pdf(orc.id)
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+    } catch {
+      showToast('Erro ao gerar PDF.', 'error')
+    }
+  }
+
+  function handleAbrirWpp(orc) {
+    if (!orc.telefone_display) {
+      if (orc.cliente) {
+        showToast(
+          `O cliente ${orc.nome_cliente_display} não tem telefone cadastrado. Atualize o cadastro antes de enviar por WhatsApp.`,
+          'error'
+        )
+      } else {
+        showToast(
+          'Orçamento sem telefone de contato. Vincule um cliente do CRM ou adicione um telefone avulso ao orçamento.',
+          'error'
+        )
+      }
+      return
+    }
+    setShowWpp(true)
+  }
+
+  function handleWppEnviado(updatedOrc) {
+    setShowWpp(false)
+    setOrcAtivo(updatedOrc)
+    loadOrcamentos()
+    showToast(`PDF ${updatedOrc.numero} enviado por WhatsApp com sucesso!`)
   }
 
   async function handleRemoverItem(itemId) {
@@ -251,6 +290,8 @@ export default function Orcamentos() {
           orc={orcAtivo}
           onClose={() => { setShowDetalhe(false); setOrcAtivo(null) }}
           onAcao={handleAcao}
+          onPdf={handlePdf}
+          onEnviarWpp={handleAbrirWpp}
           onRemoverItem={handleRemoverItem}
           onItemAdicionado={(updated) => { setOrcAtivo(updated); loadOrcamentos() }}
           onConverter={() => setShowConverter(true)}
@@ -263,6 +304,15 @@ export default function Orcamentos() {
           orc={orcAtivo}
           onClose={() => setShowConverter(false)}
           onConvertido={handleConverterSalvo}
+        />
+      )}
+
+      {/* Modal: enviar por WhatsApp */}
+      {showWpp && orcAtivo && (
+        <ModalEnviarWhatsApp
+          orc={orcAtivo}
+          onClose={() => setShowWpp(false)}
+          onEnviado={handleWppEnviado}
         />
       )}
 
@@ -547,7 +597,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
 
 // ─── Modal: Detalhe do Orçamento ──────────────────────────────────────────────
 
-function ModalDetalheOrcamento({ orc, onClose, onAcao, onRemoverItem, onItemAdicionado, onConverter }) {
+function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter }) {
   const sc = STATUS_CONFIG[orc.status] || {}
   const [produtos,  setProdutos]  = useState([])
   const [novoItem,  setNovoItem]  = useState({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' })
@@ -679,7 +729,23 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onRemoverItem, onItemAdic
       {/* Ações */}
       <div className={styles.modalActions} style={{ flexWrap: 'wrap' }}>
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+        <Btn variant="secondary" onClick={() => onPdf(orc)} title="Exportar PDF com papel timbrado">
+          <i className="ti ti-file-type-pdf" /> Exportar PDF
+        </Btn>
+        <Btn
+          variant="secondary"
+          onClick={() => onEnviarWpp(orc)}
+          className={styles.btnWpp}
+          title={orc.telefone_display ? `Enviar PDF para ${orc.telefone_display}` : 'Sem telefone de contato'}
+        >
+          <i className="ti ti-brand-whatsapp" /> Enviar por WhatsApp
+        </Btn>
         <div style={{ flex: 1 }} />
+        {orc.pode_restaurar && (
+          <Btn variant="secondary" onClick={() => onAcao('restaurar', orc)}>
+            <i className="ti ti-refresh" /> Restaurar
+          </Btn>
+        )}
         {orc.pode_recusar && (
           <Btn variant="danger" onClick={() => onAcao('recusar', orc)}>
             <i className="ti ti-x" /> Recusar
@@ -705,6 +771,65 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onRemoverItem, onItemAdic
             <i className="ti ti-calendar-plus" /> Converter em evento
           </Btn>
         )}
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Modal: Enviar por WhatsApp ───────────────────────────────────────────────
+
+function ModalEnviarWhatsApp({ orc, onClose, onEnviado }) {
+  const [mensagem, setMensagem] = useState('')
+  const [sending,  setSending]  = useState(false)
+  const [erro,     setErro]     = useState('')
+
+  async function handleEnviar() {
+    setSending(true)
+    setErro('')
+    try {
+      const res = await orcamentosApi.enviarWhatsApp(orc.id, { mensagem })
+      onEnviado(res.data)
+    } catch (e) {
+      const data = e?.response?.data
+      setErro(data?.mensagem || data?.detail || 'Erro ao enviar via WhatsApp. Verifique as credenciais Z-API em Configurações.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Modal open title="Enviar por WhatsApp" onClose={onClose}>
+      <div className={styles.wppDestinatarioCard}>
+        <i className="ti ti-brand-whatsapp" style={{ color: '#25D366', fontSize: 22 }} />
+        <div>
+          <div className={styles.wppLabel}>Destinatário</div>
+          <div className={styles.wppNome}>{orc.nome_cliente_display}</div>
+          <div className={styles.wppFone}>{orc.telefone_display}</div>
+        </div>
+      </div>
+
+      <div className={styles.wppDocCard}>
+        <i className="ti ti-file-type-pdf" style={{ color: '#DC2626', fontSize: 18 }} />
+        <span>{orc.numero}.pdf — Proposta Comercial Arretado Doces</span>
+      </div>
+
+      <div className={styles.formGroup} style={{ marginTop: 14 }}>
+        <label>Mensagem que acompanha o PDF (opcional)</label>
+        <textarea
+          rows={3}
+          value={mensagem}
+          onChange={e => setMensagem(e.target.value)}
+          placeholder={`Olá, ${orc.nome_cliente_display.split(' ')[0]}! Segue a proposta comercial conforme conversamos. Qualquer dúvida, é só chamar! 🍬`}
+        />
+      </div>
+
+      {erro && <p className={styles.erro}>{erro}</p>}
+
+      <div className={styles.modalActions}>
+        <Btn variant="ghost" onClick={onClose} disabled={sending}>Cancelar</Btn>
+        <Btn onClick={handleEnviar} loading={sending} className={styles.btnWppSend}>
+          <i className="ti ti-brand-whatsapp" /> Enviar PDF
+        </Btn>
       </div>
     </Modal>
   )

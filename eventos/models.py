@@ -139,6 +139,10 @@ class Orcamento(models.Model):
     def pode_cancelar(self):
         return self.status not in ('convertido', 'recusado', 'expirado')
 
+    @property
+    def pode_restaurar(self):
+        return self.status == 'expirado'
+
 
 class ItemOrcamento(models.Model):
     orcamento  = models.ForeignKey(Orcamento, on_delete=models.CASCADE, related_name='itens')

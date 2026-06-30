@@ -11,6 +11,7 @@ class ConfiguracaoWhatsAppSerializer(serializers.ModelSerializer):
             'notificacoes_pedido_ativo', 'aniversario_ativo',
             'reengajamento_ativo', 'dias_sem_compra',
             'mensagem_aniversario', 'mensagem_reengajamento',
+            'validade_orcamento_dias',
             'atualizado_em',
         ]
         read_only_fields = ['atualizado_em', 'whatsapp_conectado']

@@ -81,6 +81,36 @@ def enviar_texto(numero: str, texto: str) -> dict:
         raise ZAPIError(str(e)) from e
 
 
+def enviar_documento(numero: str, pdf_bytes: bytes, nome_arquivo: str, caption: str = '') -> dict:
+    import base64
+    instance, token, client_token = _credenciais()
+
+    if not instance or not token or not client_token:
+        raise ZAPIError('Z-API não configurada (verifique credenciais em Configurações → WhatsApp)')
+
+    fone = _resolver_fone(numero, instance, token, client_token)
+    url  = f'{_BASE}/{instance}/token/{token}/send-document/base64'
+    body: dict = {
+        'phone':    fone,
+        'document': base64.b64encode(pdf_bytes).decode('utf-8'),
+        'fileName': nome_arquivo,
+    }
+    if caption:
+        body['caption'] = caption
+
+    try:
+        resp = requests.post(url, json=body, headers=_headers(client_token), timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.HTTPError as e:
+        msg = f'HTTP {resp.status_code}: {resp.text[:200]}'
+        logger.error('Z-API error (documento): %s', msg)
+        raise ZAPIError(msg) from e
+    except requests.RequestException as e:
+        logger.error('Z-API connection error (documento): %s', e)
+        raise ZAPIError(str(e)) from e
+
+
 def status_conexao() -> dict:
     instance, token, client_token = _credenciais()
 

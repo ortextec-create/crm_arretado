@@ -203,6 +203,28 @@ export default function Configuracoes() {
         <p className={styles.hint}>{PLACEHOLDER_MSG}</p>
       </section>
 
+      {/* ── Orçamentos ────────────────────────────────────────── */}
+      <section className={styles.card}>
+        <div className={styles.cardHeader}>
+          <i className="ti ti-file-invoice" />
+          <h2>Orçamentos</h2>
+        </div>
+        <label className={styles.field} style={{ maxWidth: 240 }}>
+          <span>Validade padrão (dias)</span>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={form.validade_orcamento_dias}
+            onChange={e => set('validade_orcamento_dias', parseInt(e.target.value) || 30)}
+          />
+        </label>
+        <p className={styles.hint}>
+          Ao criar um orçamento sem informar a data de validade, ela será preenchida automaticamente
+          com esta quantidade de dias a partir de hoje.
+        </p>
+      </section>
+
       {/* ── Reengajamento ─────────────────────────────────────── */}
       <section className={styles.card}>
         <div className={styles.cardHeader}>

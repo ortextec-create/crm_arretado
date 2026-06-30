@@ -69,6 +69,44 @@ def notificar(telefone: str, mensagem: str, cliente=None, tipo: str = 'pedido') 
     return registro.status == 'enviado'
 
 
+def notificar_documento(telefone: str, pdf_bytes: bytes, nome_arquivo: str, caption: str = '', cliente=None) -> bool:
+    """
+    Envia PDF via WhatsApp e grava HistoricoMensagem.
+    Retorna True se enviado, False se falhar ou sem telefone.
+    Nunca lança exceção.
+    """
+    if not telefone:
+        return False
+
+    mensagem_log = f'[PDF] {nome_arquivo}'
+    if caption:
+        mensagem_log += f' — {caption}'
+
+    registro = HistoricoMensagem(
+        cliente=cliente,
+        telefone=telefone,
+        mensagem=mensagem_log,
+        tipo='orcamento',
+        status='pendente',
+    )
+
+    try:
+        result = zapi.enviar_documento(telefone, pdf_bytes, nome_arquivo, caption)
+        registro.status     = 'enviado'
+        registro.message_id = result.get('messageId', '') if isinstance(result, dict) else ''
+    except zapi.ZAPIError as e:
+        registro.status = 'falha'
+        registro.erro   = str(e)
+        logger.warning('notificar_documento: falha ao enviar para %s — %s', telefone, e)
+
+    try:
+        registro.save()
+    except Exception as e:
+        logger.error('notificar_documento: falha ao gravar HistoricoMensagem — %s', e)
+
+    return registro.status == 'enviado'
+
+
 def _fone_pedido(pedido) -> str:
     """Retorna telefone do cliente vinculado ou do campo snapshot do pedido."""
     if pedido.cliente and pedido.cliente.telefone_principal:

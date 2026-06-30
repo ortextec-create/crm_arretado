@@ -480,3 +480,63 @@
   font-size: 12px;
   margin: 6px 0;
 }
+
+/* WhatsApp */
+.btnWpp {
+  color: #25D366 !important;
+  border-color: #25D366 !important;
+}
+.btnWpp:hover {
+  background: color-mix(in srgb, #25D366 10%, var(--surface)) !important;
+}
+
+.btnWppSend {
+  background: #25D366 !important;
+  border-color: #25D366 !important;
+  color: #fff !important;
+}
+.btnWppSend:hover { background: #1ebe5d !important; }
+
+.wppDestinatarioCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #25D36640;
+  border-radius: 10px;
+  background: color-mix(in srgb, #25D366 7%, var(--surface));
+  margin-bottom: 10px;
+}
+
+.wppLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.wppNome {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--texto);
+}
+
+.wppFone {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.wppDocCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 13px;
+  color: var(--texto);
+}

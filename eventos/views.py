@@ -1,4 +1,8 @@
+import datetime
+
+from django.conf import settings
 from django.db.models import Q, Sum, Count
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
@@ -24,8 +28,6 @@ from .serializers import (
     OrcamentoCreateSerializer,
     ItemOrcamentoCreateSerializer,
 )
-
-import datetime
 
 
 class CsrfExemptMixin:
@@ -471,3 +473,86 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         item.delete()
         orc.recalcular_totais()
         return Response(OrcamentoDetailSerializer(orc).data)
+
+    @action(detail=True, methods=['post'], url_path='restaurar')
+    def restaurar(self, request, pk=None):
+        orc = self.get_object()
+        if not orc.pode_restaurar:
+            return Response({'detail': 'Apenas orçamentos expirados podem ser restaurados.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        from notificacoes.models import ConfiguracaoWhatsApp
+        dias = ConfiguracaoWhatsApp.get().validade_orcamento_dias
+        orc.status   = 'rascunho'
+        orc.validade = timezone.now().date() + datetime.timedelta(days=dias)
+        orc.save(update_fields=['status', 'validade', 'atualizado_em'])
+        return Response(OrcamentoDetailSerializer(orc).data)
+
+    @action(detail=True, methods=['post'], url_path='enviar-whatsapp')
+    def enviar_whatsapp(self, request, pk=None):
+        orc = self.get_object()
+
+        telefone = orc.telefone_display
+        if not telefone:
+            if orc.cliente:
+                return Response(
+                    {
+                        'detail': 'sem_telefone',
+                        'mensagem': (
+                            f'O cliente {orc.nome_cliente_display} não tem telefone cadastrado. '
+                            'Atualize o cadastro com um número de WhatsApp antes de enviar.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                {
+                    'detail': 'sem_cliente',
+                    'mensagem': (
+                        'Este orçamento não tem telefone de contato. '
+                        'Vincule um cliente do CRM ou adicione um telefone avulso ao orçamento.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        caption = request.data.get('mensagem', '').strip()
+
+        from .pdf_orcamento import gerar_pdf_orcamento
+        from notificacoes.servico import notificar_documento
+
+        pdf_bytes    = gerar_pdf_orcamento(orc)
+        nome_arquivo = f'{orc.numero}.pdf'
+
+        ok = notificar_documento(
+            telefone=telefone,
+            pdf_bytes=pdf_bytes,
+            nome_arquivo=nome_arquivo,
+            caption=caption,
+            cliente=orc.cliente,
+        )
+
+        if not ok:
+            return Response(
+                {'detail': 'Falha ao enviar via WhatsApp. Verifique as credenciais Z-API em Configurações.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if orc.status == 'rascunho':
+            orc.status = 'enviado'
+            orc.save(update_fields=['status', 'atualizado_em'])
+
+        return Response(OrcamentoDetailSerializer(orc).data)
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        orc = (
+            Orcamento.objects
+            .prefetch_related('itens__produto')
+            .select_related('cliente', 'evento')
+            .get(pk=pk)
+        )
+        from .pdf_orcamento import gerar_pdf_orcamento
+        pdf_bytes = gerar_pdf_orcamento(orc)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{orc.numero}.pdf"'
+        return response

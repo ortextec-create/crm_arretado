@@ -207,7 +207,7 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
             'cliente_nome_crm', 'nome_cliente_display', 'telefone_display',
             'subtotal', 'desconto', 'valor_total',
             'pode_enviar', 'pode_aprovar', 'pode_recusar',
-            'pode_converter', 'pode_cancelar',
+            'pode_converter', 'pode_cancelar', 'pode_restaurar',
             'evento', 'evento_numero',
             'criado_em', 'atualizado_em',
         ]
@@ -239,8 +239,18 @@ class OrcamentoCreateSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, validated_data):
+        import datetime
+        from django.conf import settings
+        from django.utils import timezone
+
         itens_data = validated_data.pop('itens', [])
         validated_data['numero'] = Orcamento.proximo_numero()
+
+        if not validated_data.get('validade'):
+            from notificacoes.models import ConfiguracaoWhatsApp
+            dias = ConfiguracaoWhatsApp.get().validade_orcamento_dias
+            validated_data['validade'] = timezone.now().date() + datetime.timedelta(days=dias)
+
         orcamento = Orcamento.objects.create(**validated_data)
 
         subtotal = 0

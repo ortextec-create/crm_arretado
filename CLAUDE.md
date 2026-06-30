@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 09/jun/2026.
+> Última atualização: 30/jun/2026.
 
 ---
 
@@ -48,8 +48,9 @@ arretado/                        ← raiz Django
 ├── usuarios/                    ← Gestão de usuários + RBAC
 │   └── views.py
 ├── notificacoes/                ← WhatsApp via Z-API
-│   ├── models.py                ← HistoricoMensagem
-│   ├── zapi_client.py           ← enviar_texto(), status_conexao() · resolve número canônico via phone-exists · lança ZAPIError
+│   ├── models.py                ← HistoricoMensagem · ConfiguracaoWhatsApp (singleton, inclui validade_orcamento_dias)
+│   ├── zapi_client.py           ← enviar_texto(), enviar_documento(), status_conexao() · resolve número canônico via phone-exists · lança ZAPIError
+│   ├── servico.py               ← notificar() · notificar_documento() — nunca chamar zapi_client diretamente fora daqui
 │   ├── views.py                 ← MensagemViewSet (listar, enviar, status-conexao)
 │   └── management/commands/lembrar_aniversarios.py
 ├── fichas/                      ← Catálogo, Fichas Técnicas e Precificação
@@ -105,7 +106,8 @@ arretado-crm/                    ← raiz React
 - **Cron + management commands** em vez de Celery (ex: `ifood_polling`, `lembrar_aniversarios`)
 - Número do pedido PDV: método `PedidoPDV.proximo_numero()` — sequencial com zero-fill
 - Itens do PDV: snapshot de nome e preço no momento da venda
-- **Z-API WhatsApp:** configurado via `.env` (`ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`). O cliente em `notificacoes/zapi_client.py` resolve o número canônico via `phone-exists` antes de cada envio (trata números BR de 8 e 9 dígitos), lança `ZAPIError` em caso de falha — views capturam e gravam `status='falha'` no `HistoricoMensagem`.
+- **Z-API WhatsApp:** configurado via `.env` (`ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`) com fallback para o banco (`ConfiguracaoWhatsApp`). O cliente em `notificacoes/zapi_client.py` resolve o número canônico via `phone-exists` antes de cada envio (trata números BR de 8 e 9 dígitos), lança `ZAPIError` em caso de falha. Sempre use `notificacoes/servico.py` (`notificar()` para texto, `notificar_documento()` para PDF) — nunca chame `zapi_client` diretamente em views ou signals.
+- **ConfiguracaoWhatsApp é singleton** — sempre acessado via `ConfiguracaoWhatsApp.get()`. Contém credenciais Z-API, toggles de notificação, templates de mensagem e `validade_orcamento_dias` (prazo padrão de validade de orçamentos, configurável em Configurações).
 - **fichas.ParametrosNegocio é singleton** — sempre acessado via `ParametrosNegocio.get()`, nunca instanciado diretamente
 - **FichaTecnica → pdv.Produto** é uma FK fraca via `produto_pdv_id` (IntegerField, não ForeignKey) — o produto pode existir sem ficha e vice-versa
 - **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`
@@ -140,7 +142,7 @@ arretado-crm/                    ← raiz React
 | Fase 3-ext-A | PDV Próprio (backend + frontend) | ✅ Concluída |
 | Fase 3-ext-B | Anota AI | 🔲 Pendente |
 | Fase 4 | Vinculação manual de pedidos a clientes | ✅ Concluída (`Vinculacoes.jsx`) |
-| Orçamentos | Orçamentos pré-evento (ORC-0001) + conversão em Evento | ✅ Concluída |
+| Orçamentos | Orçamentos pré-evento (ORC-0001) + conversão em Evento + envio de PDF por WhatsApp | ✅ Concluída |
 | Fase 5 | Dashboard e relatórios | ✅ Concluída (`Dashboard.jsx`) |
 | WhatsApp | Notificações via Z-API | ✅ Concluída (`notificacoes/` + `zapi_client.py`) |
 | Usuários | Gestão de usuários + RBAC | ✅ Concluída |
@@ -197,6 +199,8 @@ POST          /api/v1/eventos/orcamentos/{id}/recusar/
 POST          /api/v1/eventos/orcamentos/{id}/converter-em-evento/
 POST          /api/v1/eventos/orcamentos/{id}/itens/
 DELETE        /api/v1/eventos/orcamentos/{id}/itens/{item_id}/remover/
+GET           /api/v1/eventos/orcamentos/{id}/pdf/
+POST          /api/v1/eventos/orcamentos/{id}/enviar-whatsapp/   ← gera PDF + envia via Z-API + grava HistoricoMensagem + muda status para 'enviado'
 
 # Eventos
 GET/POST /api/v1/eventos/
@@ -284,6 +288,8 @@ systemctl restart arretado
 - Não alterar o `Sidebar.jsx` sem atualizar as rotas em `App.jsx`
 - Não implementar nada sem antes verificar se já existe no código (usar `grep` ou leitura direta dos arquivos)
 - Não usar Celery — o projeto usa cron + management commands
-- Não chamar `zapi_client.enviar_texto()` diretamente em signals ou models — sempre passar pela view ou pelo management command, que gravam o `HistoricoMensagem`
+- Não chamar `zapi_client` diretamente em signals, models ou views — sempre usar `notificacoes/servico.py` (`notificar()` para texto, `notificar_documento()` para PDF), que gravam o `HistoricoMensagem`
 - Não instanciar `ParametrosNegocio()` diretamente — sempre usar `ParametrosNegocio.get()`
+- Não instanciar `ConfiguracaoWhatsApp()` diretamente — sempre usar `ConfiguracaoWhatsApp.get()`
+- A validade padrão dos orçamentos vem de `ConfiguracaoWhatsApp.get().validade_orcamento_dias` — não usar `settings.VALIDADE_ORCAMENTO_DIAS`
 - Não fazer FK direta de `fichas` para `pdv` — a ligação entre FichaTecnica e Produto é via `produto_pdv_id` (IntegerField fraco)

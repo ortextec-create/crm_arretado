@@ -177,9 +177,12 @@ export const orcamentosApi = {
   enviar:          (id)     => api.post(`/eventos/orcamentos/${id}/enviar/`),
   aprovar:         (id)     => api.post(`/eventos/orcamentos/${id}/aprovar/`),
   recusar:         (id)     => api.post(`/eventos/orcamentos/${id}/recusar/`),
+  restaurar:       (id)     => api.post(`/eventos/orcamentos/${id}/restaurar/`),
+  pdf:             (id)     => api.get(`/eventos/orcamentos/${id}/pdf/`, { responseType: 'blob' }),
   converterEmEvento: (id, data) => api.post(`/eventos/orcamentos/${id}/converter-em-evento/`, data),
   adicionarItem:   (id, data)   => api.post(`/eventos/orcamentos/${id}/itens/`, data),
   removerItem:     (id, itemId) => api.delete(`/eventos/orcamentos/${id}/itens/${itemId}/remover/`),
+  enviarWhatsApp:  (id, data)   => api.post(`/eventos/orcamentos/${id}/enviar-whatsapp/`, data),
 }
 
 // ─── FICHAS / PRECIFICAÇÃO ────────────────────────────────────────────────────

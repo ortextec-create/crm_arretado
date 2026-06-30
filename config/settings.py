@@ -118,3 +118,7 @@ TWILIO_CONTENT_SID    = os.getenv('TWILIO_CONTENT_SID', '')
 ZAPI_INSTANCE_ID  = os.getenv('ZAPI_INSTANCE_ID', '')
 ZAPI_TOKEN        = os.getenv('ZAPI_TOKEN', '')
 ZAPI_CLIENT_TOKEN = os.getenv('ZAPI_CLIENT_TOKEN', '')
+
+# Orçamentos
+VALIDADE_ORCAMENTO_DIAS = int(os.getenv('VALIDADE_ORCAMENTO_DIAS', '30'))
+TIMBRE_PDF_PATH = BASE_DIR / 'timbre.pdf'

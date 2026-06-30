@@ -33,6 +33,9 @@ class ConfiguracaoWhatsApp(models.Model):
     # Reengajamento
     dias_sem_compra = models.PositiveIntegerField('Dias sem compra', default=30)
 
+    # Orçamentos
+    validade_orcamento_dias = models.PositiveIntegerField('Validade padrão do orçamento (dias)', default=30)
+
     # Templates (suportam {nome})
     mensagem_aniversario   = models.TextField('Mensagem de aniversário',  default=MSG_ANIVERSARIO_DEFAULT)
     mensagem_reengajamento = models.TextField('Mensagem de reengajamento', default=MSG_REENGAJAMENTO_DEFAULT)
@@ -59,6 +62,7 @@ class HistoricoMensagem(models.Model):
         ('pedido',        'Atualização de Pedido'),
         ('reengajamento', 'Reengajamento'),
         ('lembrete',      'Lembrete'),
+        ('orcamento',     'Orçamento PDF'),
     ]
 
     STATUS_CHOICES = [
