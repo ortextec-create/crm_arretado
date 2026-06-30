@@ -88,11 +88,13 @@ def enviar_documento(numero: str, pdf_bytes: bytes, nome_arquivo: str, caption: 
     if not instance or not token or not client_token:
         raise ZAPIError('Z-API não configurada (verifique credenciais em Configurações → WhatsApp)')
 
+    extensao = nome_arquivo.rsplit('.', 1)[-1].lower() if '.' in nome_arquivo else 'pdf'
     fone = _resolver_fone(numero, instance, token, client_token)
-    url  = f'{_BASE}/{instance}/token/{token}/send-document/base64'
+    url  = f'{_BASE}/{instance}/token/{token}/send-document/{extensao}'
+    b64  = base64.b64encode(pdf_bytes).decode('utf-8')
     body: dict = {
         'phone':    fone,
-        'document': base64.b64encode(pdf_bytes).decode('utf-8'),
+        'document': f'data:application/{extensao};base64,{b64}',
         'fileName': nome_arquivo,
     }
     if caption:
