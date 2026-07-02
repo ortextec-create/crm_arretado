@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV
+from .models import CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV, TaxaEntregaBairro, ConfiguracaoEntrega
 
 
 # ─── Categoria ───────────────────────────────────────────────────────────────
@@ -8,6 +8,20 @@ class CategoriaProdutoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = CategoriaProduto
         fields = ['id', 'nome', 'ordem']
+
+
+# ─── Taxa de Entrega por Bairro ───────────────────────────────────────────────
+
+class TaxaEntregaBairroSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = TaxaEntregaBairro
+        fields = ['id', 'bairro', 'taxa', 'ativo']
+
+
+class ConfiguracaoEntregaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ConfiguracaoEntrega
+        fields = ['frete_padrao']
 
 
 # ─── Produto ─────────────────────────────────────────────────────────────────
@@ -67,7 +81,7 @@ class PedidoPDVListSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'tipo',   'tipo_display',
             'pagamento', 'pagamento_display',
-            'total', 'subtotal', 'desconto', 'taxa_entrega',
+            'total', 'subtotal', 'desconto', 'taxa_entrega', 'bairro_entrega',
             'cliente', 'cliente_nome', 'cliente_telefone', 'cliente_nome_crm',
             'pode_confirmar', 'pode_cancelar', 'pode_concluir',
             'criado_em', 'atualizado_em',
@@ -91,7 +105,7 @@ class PedidoPDVCreateSerializer(serializers.ModelSerializer):
         model  = PedidoPDV
         fields = [
             'cliente', 'cliente_nome', 'cliente_telefone',
-            'tipo', 'pagamento', 'desconto', 'taxa_entrega', 'observacoes',
+            'tipo', 'pagamento', 'desconto', 'taxa_entrega', 'bairro_entrega', 'observacoes',
             'itens',
         ]
 

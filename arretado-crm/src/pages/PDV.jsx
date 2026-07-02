@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styles from './PDV.module.css'
-import { pdvApi, clientesApi } from '../api/services'
+import { pdvApi, clientesApi, taxasEntregaApi, configEntregaApi } from '../api/services'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -155,9 +155,11 @@ const PAGAMENTOS = [
 
 function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, showToast }) {
   const [form, setForm] = useState({
-    tipo: 'balcao', pagamento: 'pix', desconto: '', taxa_entrega: '',
+    tipo: 'balcao', pagamento: 'pix', desconto: '', taxa_entrega: '', bairro_entrega: '',
     cliente: '', cliente_telefone: '', observacoes: '',
   })
+  const [taxasBairro, setTaxasBairro]     = useState([])
+  const [fretePadrao, setFretePadrao]     = useState('0')
   const [itens, setItens]                 = useState([])
   const [catFilter, setCatFilter]         = useState(null)
   const [search, setSearch]               = useState('')
@@ -183,6 +185,33 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
       return [...prev, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1 }]
     })
   }
+
+  useEffect(() => {
+    taxasEntregaApi.list({ ativo: true })
+      .then(r => setTaxasBairro(r.data.results ?? r.data))
+      .catch(() => setTaxasBairro([]))
+    configEntregaApi.get()
+      .then(r => setFretePadrao(String(r.data.frete_padrao)))
+      .catch(() => {})
+  }, [])
+
+  const selecionarBairro = (bairro) => {
+    const t = taxasBairro.find(x => x.bairro === bairro)
+    setForm(f => ({ ...f, bairro_entrega: bairro, taxa_entrega: t ? t.taxa : f.taxa_entrega }))
+  }
+
+  // Ao entrar em modo delivery: tenta o bairro do endereço do cliente selecionado;
+  // sem bairro cadastrado, cai no frete padrão configurado
+  useEffect(() => {
+    if (form.tipo !== 'delivery' || form.bairro_entrega) return
+    const cliente = clientes.find(c => c.id === form.cliente)
+    const bairroCliente = cliente?.endereco_principal?.bairro
+    if (bairroCliente) {
+      const t = taxasBairro.find(x => x.bairro.toLowerCase() === bairroCliente.toLowerCase())
+      if (t) { setForm(f => ({ ...f, bairro_entrega: t.bairro, taxa_entrega: t.taxa })); return }
+    }
+    setForm(f => (f.taxa_entrega ? f : { ...f, taxa_entrega: fretePadrao }))
+  }, [form.tipo, form.cliente, form.bairro_entrega, clientes, taxasBairro, fretePadrao])
 
   const removerItem = (idx) => setItens(prev => prev.filter((_, i) => i !== idx))
 
@@ -211,6 +240,7 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
         pagamento:      form.pagamento,
         desconto:       form.desconto    || 0,
         taxa_entrega:   form.taxa_entrega || 0,
+        bairro_entrega: form.tipo === 'delivery' ? form.bairro_entrega : '',
         observacoes:    form.observacoes,
         cliente:        form.cliente || null,
         cliente_nome:   form.cliente ? '' : clienteSearch.trim(),
@@ -367,6 +397,19 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
                   </button>
                 ))}
               </div>
+              {form.tipo === 'delivery' && (
+                <select
+                  className={styles.totaisInput}
+                  style={{ width: '100%', marginTop: 8 }}
+                  value={form.bairro_entrega}
+                  onChange={e => selecionarBairro(e.target.value)}
+                >
+                  <option value="">Selecione o bairro…</option>
+                  {taxasBairro.map(t => (
+                    <option key={t.id} value={t.bairro}>{t.bairro} — R$ {Number(t.taxa).toFixed(2)}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Pagamento — botões segmentados */}
@@ -561,7 +604,10 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
               </div>
             )}
             {Number(pedido.taxa_entrega) > 0 && (
-              <div className={styles.totaisRow}><span>Taxa de entrega</span><span>{fmtMoeda(pedido.taxa_entrega)}</span></div>
+              <div className={styles.totaisRow}>
+                <span>Taxa de entrega{pedido.bairro_entrega ? ` (${pedido.bairro_entrega})` : ''}</span>
+                <span>{fmtMoeda(pedido.taxa_entrega)}</span>
+              </div>
             )}
             <div className={`${styles.totaisRow} ${styles.totaisTotal}`}>
               <span>Total</span><span>{fmtMoeda(pedido.total)}</span>

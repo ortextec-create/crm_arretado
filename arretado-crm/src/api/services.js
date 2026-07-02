@@ -77,6 +77,18 @@ export const pdvApi = {
   estatisticas:    ()                 => api.get('/pdv/pedidos/estatisticas/'),
 }
 
+export const taxasEntregaApi = {
+  list:   (params={}) => api.get('/pdv/taxas-entrega/', { params }),
+  create: (data)      => api.post('/pdv/taxas-entrega/', data),
+  update: (id, data)  => api.patch(`/pdv/taxas-entrega/${id}/`, data),
+  remove: (id)        => api.delete(`/pdv/taxas-entrega/${id}/`),
+}
+
+export const configEntregaApi = {
+  get:    ()     => api.get('/pdv/configuracao-entrega/1/'),
+  update: (data) => api.patch('/pdv/configuracao-entrega/1/', data),
+}
+
 // ─── PEDIDOS UNIFICADOS ──────────────────────────────────────────────────────
 
 export const pedidosApi = {

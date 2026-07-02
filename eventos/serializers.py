@@ -64,7 +64,7 @@ class EventoListSerializer(serializers.ModelSerializer):
             'data_evento', 'hora_evento',
             'cliente', 'cliente_nome', 'cliente_telefone',
             'cliente_nome_crm', 'nome_cliente_display', 'telefone_display',
-            'local', 'local_nome', 'endereco_avulso',
+            'local', 'local_nome', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
             'subtotal', 'desconto', 'valor_total', 'sinal_pago', 'saldo_restante',
             'pode_confirmar', 'pode_iniciar_producao', 'pode_marcar_pronto',
             'pode_entregar', 'pode_cancelar',
@@ -94,7 +94,7 @@ class EventoCreateSerializer(serializers.ModelSerializer):
         fields = [
             'cliente', 'cliente_nome', 'cliente_telefone',
             'tipo_evento', 'data_evento', 'hora_evento',
-            'tipo_entrega', 'local', 'endereco_avulso',
+            'tipo_entrega', 'local', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
             'desconto', 'sinal_pago', 'observacoes',
             'itens',
         ]
@@ -125,7 +125,7 @@ class EventoCreateSerializer(serializers.ModelSerializer):
             subtotal += total
 
         evento.subtotal    = subtotal
-        evento.valor_total = max(subtotal - evento.desconto, 0)
+        evento.valor_total = max(subtotal - evento.desconto, 0) + evento.taxa_entrega
         evento.save(update_fields=['subtotal', 'valor_total'])
         return evento
 
@@ -191,10 +191,12 @@ class ItemOrcamentoCreateSerializer(serializers.ModelSerializer):
 class OrcamentoListSerializer(serializers.ModelSerializer):
     status_display       = serializers.CharField(source='get_status_display',      read_only=True)
     tipo_evento_display  = serializers.CharField(source='get_tipo_evento_display', read_only=True)
+    tipo_entrega_display = serializers.CharField(source='get_tipo_entrega_display', read_only=True)
     nome_cliente_display = serializers.ReadOnlyField()
     telefone_display     = serializers.ReadOnlyField()
     cliente_nome_crm     = serializers.SerializerMethodField()
     evento_numero        = serializers.SerializerMethodField()
+    local_nome           = serializers.SerializerMethodField()
 
     class Meta:
         model  = Orcamento
@@ -205,6 +207,8 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
             'data_evento', 'validade',
             'cliente', 'cliente_nome', 'cliente_telefone',
             'cliente_nome_crm', 'nome_cliente_display', 'telefone_display',
+            'tipo_entrega', 'tipo_entrega_display',
+            'local', 'local_nome', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
             'subtotal', 'desconto', 'valor_total',
             'pode_enviar', 'pode_aprovar', 'pode_recusar',
             'pode_converter', 'pode_cancelar', 'pode_restaurar',
@@ -217,6 +221,9 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
 
     def get_evento_numero(self, obj):
         return obj.evento.numero if obj.evento else None
+
+    def get_local_nome(self, obj):
+        return obj.local.nome if obj.local else None
 
 
 class OrcamentoDetailSerializer(OrcamentoListSerializer):
@@ -234,9 +241,18 @@ class OrcamentoCreateSerializer(serializers.ModelSerializer):
         fields = [
             'cliente', 'cliente_nome', 'cliente_telefone',
             'tipo_evento', 'data_evento', 'validade',
+            'tipo_entrega', 'local', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
             'desconto', 'observacoes',
             'itens',
         ]
+
+    def validate(self, data):
+        if data.get('tipo_entrega') == 'entrega_local':
+            if not data.get('local') and not data.get('endereco_avulso'):
+                raise serializers.ValidationError(
+                    'Para entrega no local, informe o local cadastrado ou o endereço avulso.'
+                )
+        return data
 
     def create(self, validated_data):
         import datetime
@@ -266,7 +282,7 @@ class OrcamentoCreateSerializer(serializers.ModelSerializer):
             subtotal += total
 
         orcamento.subtotal    = subtotal
-        orcamento.valor_total = max(subtotal - orcamento.desconto, 0)
+        orcamento.valor_total = max(subtotal - orcamento.desconto, 0) + orcamento.taxa_entrega
         orcamento.save(update_fields=['subtotal', 'valor_total'])
         return orcamento
 

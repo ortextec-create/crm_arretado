@@ -166,6 +166,8 @@ def _gerar_conteudo(orc) -> bytes:
     n_sub = len(table_data) - 1  # índice da linha subtotal
     if float(orc.desconto) > 0:
         table_data.append(['', '', 'Desconto', f'− {_brl(orc.desconto)}'])
+    if float(orc.taxa_entrega) > 0:
+        table_data.append(['', '', 'Taxa de entrega', _brl(orc.taxa_entrega)])
     table_data.append(['', '', 'TOTAL', _brl(orc.valor_total)])
     n_total = len(table_data) - 1  # índice da linha TOTAL
 

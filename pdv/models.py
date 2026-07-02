@@ -33,6 +33,42 @@ class CategoriaProduto(models.Model):
         return self.nome
 
 
+class TaxaEntregaBairro(models.Model):
+    bairro        = models.CharField(max_length=100, unique=True)
+    taxa          = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    ativo         = models.BooleanField(default=True, db_index=True)
+    criado_em     = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = 'Taxa de Entrega por Bairro'
+        verbose_name_plural = 'Taxas de Entrega por Bairro'
+        ordering            = ['bairro']
+
+    def __str__(self):
+        return f'{self.bairro} — R$ {self.taxa}'
+
+
+class ConfiguracaoEntrega(models.Model):
+    """Singleton — sempre acessado via ConfiguracaoEntrega.get()."""
+    frete_padrao  = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text='Taxa de entrega usada quando nenhum bairro cadastrado for selecionado'
+    )
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Configuração de Entrega'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return f'Frete padrão: R$ {self.frete_padrao}'
+
+
 class Produto(models.Model):
     SEGMENTO_CHOICES = [
         ('unidade_pequena', 'Unidade Pequena'),
@@ -120,10 +156,11 @@ class PedidoPDV(models.Model):
     tipo      = models.CharField(max_length=20, choices=TIPO_CHOICES,   default='balcao')
     pagamento = models.CharField(max_length=20, choices=PAGAMENTO_CHOICES, blank=True, default='')
 
-    subtotal     = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    desconto     = models.DecimalField(max_digits=8,  decimal_places=2, default=0)
-    taxa_entrega = models.DecimalField(max_digits=8,  decimal_places=2, default=0)
-    total        = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    subtotal       = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    desconto       = models.DecimalField(max_digits=8,  decimal_places=2, default=0)
+    taxa_entrega   = models.DecimalField(max_digits=8,  decimal_places=2, default=0)
+    bairro_entrega = models.CharField(max_length=100, blank=True, default='')
+    total          = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     observacoes  = models.TextField(blank=True, default='')
 

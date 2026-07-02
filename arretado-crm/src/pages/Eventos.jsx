@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { eventosApi, locaisEventoApi, clientesApi } from '../api/services'
-import { pdvApi } from '../api/services'
+import { pdvApi, taxasEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast } from '../components/ui'
 import styles from './Eventos.module.css'
 
@@ -447,10 +447,13 @@ function ModalNovoEvento({ onClose, onSaved }) {
   const [buscandoCliente, setBuscandoCliente] = useState(false)
 
   // Entrega
-  const [tipoEntrega, setTipoEntrega] = useState('retirada_loja')
-  const [locais,      setLocais]      = useState([])
-  const [localSel,    setLocalSel]    = useState('')
-  const [endAvulso,   setEndAvulso]   = useState('')
+  const [tipoEntrega,   setTipoEntrega]   = useState('retirada_loja')
+  const [locais,        setLocais]        = useState([])
+  const [localSel,      setLocalSel]      = useState('')
+  const [endAvulso,     setEndAvulso]     = useState('')
+  const [taxasBairro,   setTaxasBairro]   = useState([])
+  const [bairroEntrega, setBairroEntrega] = useState('')
+  const [taxaEntrega,   setTaxaEntrega]   = useState('0')
 
   // Itens
   const [categorias, setCategorias] = useState([])
@@ -472,7 +475,24 @@ function ModalNovoEvento({ onClose, onSaved }) {
     locaisEventoApi.list({ ativo: 'true' }).then(r => setLocais(r.data.results ?? r.data)).catch(() => {})
     pdvApi.listCategorias().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
     pdvApi.listProdutos({ ativo: 'true' }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
+    taxasEntregaApi.list({ ativo: true }).then(r => setTaxasBairro(r.data.results ?? r.data)).catch(() => {})
   }, [])
+
+  // Preenche a taxa automaticamente a partir do bairro do local cadastrado
+  useEffect(() => {
+    if (tipoEntrega !== 'entrega_local' || !localSel) return
+    const local = locais.find(l => String(l.id) === String(localSel))
+    if (!local?.bairro) return
+    setBairroEntrega(local.bairro)
+    const t = taxasBairro.find(x => x.bairro.toLowerCase() === local.bairro.toLowerCase())
+    if (t) setTaxaEntrega(t.taxa)
+  }, [localSel, locais, taxasBairro, tipoEntrega])
+
+  const selecionarBairroAvulso = (bairro) => {
+    setBairroEntrega(bairro)
+    const t = taxasBairro.find(x => x.bairro === bairro)
+    if (t) setTaxaEntrega(t.taxa)
+  }
 
   // Busca de cliente
   useEffect(() => {
@@ -511,7 +531,8 @@ function ModalNovoEvento({ onClose, onSaved }) {
   }
 
   const subtotal = carrinho.reduce((s, i) => s + Number(i.preco_unit) * i.quantidade, 0)
-  const total    = Math.max(subtotal - Number(desconto || 0), 0)
+  const total    = Math.max(subtotal - Number(desconto || 0), 0) +
+                   (tipoEntrega === 'entrega_local' ? Number(taxaEntrega || 0) : 0)
 
   const handleSalvar = async () => {
     setError('')
@@ -529,6 +550,8 @@ function ModalNovoEvento({ onClose, onSaved }) {
         tipo_entrega:     tipoEntrega,
         local:            tipoEntrega === 'entrega_local' && localSel ? Number(localSel) : null,
         endereco_avulso:  tipoEntrega === 'entrega_local' && !localSel ? endAvulso : '',
+        bairro_entrega:   tipoEntrega === 'entrega_local' ? bairroEntrega : '',
+        taxa_entrega:     tipoEntrega === 'entrega_local' ? Number(taxaEntrega || 0) : 0,
         desconto:         Number(desconto || 0),
         sinal_pago:       Number(sinal || 0),
         observacoes,
@@ -668,11 +691,30 @@ function ModalNovoEvento({ onClose, onSaved }) {
                   </select>
                 </div>
                 {!localSel && (
-                  <div className={`${styles.formGroup} ${styles.fullRow}`}>
-                    <label>Endereço do local</label>
-                    <input value={endAvulso} onChange={e => setEndAvulso(e.target.value)} placeholder="Rua, número, bairro…" />
-                  </div>
+                  <>
+                    <div className={`${styles.formGroup} ${styles.fullRow}`}>
+                      <label>Endereço do local</label>
+                      <input value={endAvulso} onChange={e => setEndAvulso(e.target.value)} placeholder="Rua, número, bairro…" />
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Bairro (para calcular a taxa)</label>
+                      <select value={bairroEntrega} onChange={e => selecionarBairroAvulso(e.target.value)}>
+                        <option value="">Selecione o bairro…</option>
+                        {taxasBairro.map(t => (
+                          <option key={t.id} value={t.bairro}>{t.bairro} — R$ {Number(t.taxa).toFixed(2)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
+                <div className={styles.formGroup}>
+                  <label>Taxa de entrega (R$)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={taxaEntrega}
+                    onChange={e => setTaxaEntrega(e.target.value)}
+                  />
+                </div>
               </>
             )}
           </div>
@@ -778,6 +820,11 @@ function ModalNovoEvento({ onClose, onSaved }) {
               <div className={styles.resumoLinha}>
                 <span>Desconto</span><span>− {fmt(Number(desconto || 0))}</span>
               </div>
+              {tipoEntrega === 'entrega_local' && Number(taxaEntrega || 0) > 0 && (
+                <div className={styles.resumoLinha}>
+                  <span>Taxa de entrega</span><span>{fmt(Number(taxaEntrega || 0))}</span>
+                </div>
+              )}
               <div className={`${styles.resumoLinha} ${styles.resumoTotal}`}>
                 <span>Total</span><span>{fmt(total)}</span>
               </div>
@@ -953,6 +1000,12 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
             <div className={styles.finLinha}><span>Subtotal</span><span>{fmt(evento.subtotal)}</span></div>
             {Number(evento.desconto) > 0 && (
               <div className={styles.finLinha}><span>Desconto</span><span>− {fmt(evento.desconto)}</span></div>
+            )}
+            {Number(evento.taxa_entrega) > 0 && (
+              <div className={styles.finLinha}>
+                <span>Taxa de entrega{evento.bairro_entrega ? ` (${evento.bairro_entrega})` : ''}</span>
+                <span>{fmt(evento.taxa_entrega)}</span>
+              </div>
             )}
             <div className={`${styles.finLinha} ${styles.finTotal}`}><span>Total</span><span>{fmt(evento.valor_total)}</span></div>
             <div className={styles.finLinha}><span>Sinal pago</span><span>{fmt(evento.sinal_pago)}</span></div>

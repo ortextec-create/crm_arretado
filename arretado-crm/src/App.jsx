@@ -8,6 +8,8 @@ import Clientes from './pages/Clientes'
 import ClienteDetail from './pages/ClienteDetail'
 import Tags from './pages/Tags'
 import Usuarios from './pages/Usuarios'
+import TaxasEntrega from './pages/TaxasEntrega'
+import Locais from './pages/Locais'
 import IFood from './pages/IFood'
 import PDV from './pages/PDV'
 import CatalogoPDV from './pages/CatalogoPDV'
@@ -49,6 +51,7 @@ export default function App() {
             <Route path="clientes/:id" element={<ClienteDetail />} />
             <Route path="tags" element={<Tags />} />
             <Route path="usuarios" element={<Usuarios />} />
+            <Route path="taxas-entrega" element={<TaxasEntrega />} />
             <Route path="integracoes/ifood" element={<IFood />} />
             <Route path="integracoes/anotaai" element={<Placeholder title="Anota AI" />} />
             <Route path="integracoes/pdv" element={<PDV />} />
@@ -57,6 +60,7 @@ export default function App() {
             <Route path="/vinculacoes" element={<Vinculacoes />} />
             <Route path="eventos" element={<Eventos />} />
             <Route path="orcamentos" element={<Orcamentos />} />
+            <Route path="locais-evento" element={<Locais />} />
             <Route path="notificacoes" element={<Notificacoes />} />
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="fichas-tecnicas" element={<FichasTecnicas />} />

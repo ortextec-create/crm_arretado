@@ -43,6 +43,11 @@ class Orcamento(models.Model):
         ('outro',       'Outro'),
     ]
 
+    TIPO_ENTREGA_CHOICES = [
+        ('retirada_loja',   'Retirada na loja'),
+        ('entrega_local',   'Entrega no local da festa'),
+    ]
+
     numero           = models.CharField(max_length=20, unique=True, db_index=True)
 
     cliente          = models.ForeignKey(
@@ -63,6 +68,21 @@ class Orcamento(models.Model):
         max_length=20, choices=STATUS_CHOICES,
         default='rascunho', db_index=True,
     )
+
+    # Entrega
+    tipo_entrega     = models.CharField(max_length=20, choices=TIPO_ENTREGA_CHOICES, default='retirada_loja')
+    local            = models.ForeignKey(
+        'LocalEvento',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='orcamentos',
+    )
+    endereco_avulso  = models.CharField(
+        max_length=400, blank=True, default='',
+        help_text='Endereço livre quando não for usar um local cadastrado'
+    )
+    bairro_entrega   = models.CharField(max_length=100, blank=True, default='')
+    taxa_entrega     = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
     subtotal         = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     desconto         = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -104,7 +124,7 @@ class Orcamento(models.Model):
 
     def recalcular_totais(self):
         self.subtotal    = sum(i.preco_total for i in self.itens.all())
-        self.valor_total = max(self.subtotal - self.desconto, 0)
+        self.valor_total = max(self.subtotal - self.desconto, 0) + self.taxa_entrega
         self.save(update_fields=['subtotal', 'valor_total', 'atualizado_em'])
 
     @property
@@ -261,6 +281,8 @@ class Evento(models.Model):
         max_length=400, blank=True, default='',
         help_text='Endereço livre quando não for usar um local cadastrado'
     )
+    bairro_entrega    = models.CharField(max_length=100, blank=True, default='')
+    taxa_entrega      = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
     # Status
     status = models.CharField(
@@ -308,7 +330,7 @@ class Evento(models.Model):
     # ── Financeiro ────────────────────────────────────────────────────────
     def recalcular_totais(self):
         self.subtotal   = sum(i.preco_total for i in self.itens.all())
-        self.valor_total = max(self.subtotal - self.desconto, 0)
+        self.valor_total = max(self.subtotal - self.desconto, 0) + self.taxa_entrega
         self.save(update_fields=['subtotal', 'valor_total', 'atualizado_em'])
 
     @property

@@ -389,10 +389,12 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Informe a data do evento para converter.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        tipo_entrega    = request.data.get('tipo_entrega', 'retirada_loja')
+        tipo_entrega    = request.data.get('tipo_entrega', orc.tipo_entrega)
         hora_evento     = request.data.get('hora_evento') or None
-        local_id        = request.data.get('local') or None
-        endereco_avulso = request.data.get('endereco_avulso', '')
+        local_id        = request.data.get('local', orc.local_id)
+        endereco_avulso = request.data.get('endereco_avulso', orc.endereco_avulso)
+        bairro_entrega  = request.data.get('bairro_entrega', orc.bairro_entrega)
+        taxa_entrega    = request.data.get('taxa_entrega', orc.taxa_entrega)
         sinal_pago      = request.data.get('sinal_pago', 0)
 
         evento = Evento.objects.create(
@@ -406,6 +408,8 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             tipo_entrega=tipo_entrega,
             local_id=local_id,
             endereco_avulso=endereco_avulso,
+            bairro_entrega=bairro_entrega,
+            taxa_entrega=taxa_entrega,
             status='orcamento',
             subtotal=orc.subtotal,
             desconto=orc.desconto,

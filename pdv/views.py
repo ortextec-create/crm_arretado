@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from .models import CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV
+from .models import CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV, TaxaEntregaBairro, ConfiguracaoEntrega
 from notificacoes.servico import notificar, _fone_pedido
 
 
@@ -17,6 +17,8 @@ from .serializers import (
     PedidoPDVDetailSerializer,
     PedidoPDVCreateSerializer,
     ItemPedidoPDVCreateSerializer,
+    TaxaEntregaBairroSerializer,
+    ConfiguracaoEntregaSerializer,
 )
 
 
@@ -30,6 +32,41 @@ class CategoriaProdutoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = CategoriaProduto.objects.all()
     serializer_class   = CategoriaProdutoSerializer
     permission_classes = [AllowAny]
+
+
+# ─── Taxas de Entrega por Bairro ─────────────────────────────────────────────
+
+class TaxaEntregaBairroViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+    queryset           = TaxaEntregaBairro.objects.all()
+    serializer_class   = TaxaEntregaBairroSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs    = super().get_queryset()
+        ativo = self.request.query_params.get('ativo')
+        if ativo == 'true':
+            qs = qs.filter(ativo=True)
+        elif ativo == 'false':
+            qs = qs.filter(ativo=False)
+        return qs
+
+
+class ConfiguracaoEntregaViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
+    permission_classes = [AllowAny]
+    serializer_class   = ConfiguracaoEntregaSerializer
+
+    def get_object(self):
+        return ConfiguracaoEntrega.get()
+
+    def retrieve(self, request, pk=None):
+        return Response(self.get_serializer(self.get_object()).data)
+
+    def partial_update(self, request, pk=None):
+        config     = self.get_object()
+        serializer = ConfiguracaoEntregaSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 # ─── Produtos ────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { orcamentosApi, clientesApi, pdvApi } from '../api/services'
+import { orcamentosApi, clientesApi, pdvApi, locaisEventoApi, taxasEntregaApi, configEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast } from '../components/ui'
 import styles from './Orcamentos.module.css'
 
@@ -327,12 +327,17 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
   const EMPTY = {
     cliente: '', cliente_nome: '', cliente_telefone: '',
     tipo_evento: '', data_evento: '', validade: '',
+    tipo_entrega: 'retirada_loja', local: '', endereco_avulso: '',
+    bairro_entrega: '', taxa_entrega: '0',
     desconto: '0', observacoes: '', itens: [],
   }
-  const [form,     setForm]     = useState(EMPTY)
-  const [produtos, setProdutos] = useState([])
-  const [saving,   setSaving]   = useState(false)
-  const [erro,     setErro]     = useState('')
+  const [form,        setForm]        = useState(EMPTY)
+  const [produtos,    setProdutos]    = useState([])
+  const [locais,      setLocais]      = useState([])
+  const [taxasBairro, setTaxasBairro] = useState([])
+  const [fretePadrao, setFretePadrao] = useState('0')
+  const [saving,      setSaving]      = useState(false)
+  const [erro,        setErro]        = useState('')
 
   // Busca de cliente CRM
   const [buscaCliente,    setBuscaCliente]    = useState('')
@@ -346,7 +351,36 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
 
   useEffect(() => {
     pdvApi.listProdutos({ ativo: 'true', page_size: 500 }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
+    locaisEventoApi.list({ ativo: 'true' }).then(r => setLocais(r.data.results ?? r.data)).catch(() => {})
+    taxasEntregaApi.list({ ativo: true }).then(r => setTaxasBairro(r.data.results ?? r.data)).catch(() => {})
+    configEntregaApi.get().then(r => setFretePadrao(String(r.data.frete_padrao))).catch(() => {})
   }, [])
+
+  // Preenche a taxa automaticamente a partir do bairro do local cadastrado
+  useEffect(() => {
+    if (form.tipo_entrega !== 'entrega_local' || !form.local) return
+    const local = locais.find(l => String(l.id) === String(form.local))
+    if (!local?.bairro) return
+    const t = taxasBairro.find(x => x.bairro.toLowerCase() === local.bairro.toLowerCase())
+    setForm(f => ({ ...f, bairro_entrega: local.bairro, taxa_entrega: t ? String(t.taxa) : f.taxa_entrega }))
+  }, [form.local, form.tipo_entrega, locais, taxasBairro])
+
+  // Ao entrar em modo entrega: tenta o bairro do endereço do cliente selecionado;
+  // sem bairro cadastrado, cai no frete padrão configurado
+  useEffect(() => {
+    if (form.tipo_entrega !== 'entrega_local' || form.local || form.bairro_entrega) return
+    const bairroCliente = clienteSel?.endereco_principal?.bairro
+    if (bairroCliente) {
+      const t = taxasBairro.find(x => x.bairro.toLowerCase() === bairroCliente.toLowerCase())
+      if (t) { setForm(f => ({ ...f, bairro_entrega: t.bairro, taxa_entrega: String(t.taxa) })); return }
+    }
+    setForm(f => (f.taxa_entrega && f.taxa_entrega !== '0' ? f : { ...f, taxa_entrega: fretePadrao }))
+  }, [form.tipo_entrega, form.local, form.bairro_entrega, clienteSel, taxasBairro, fretePadrao])
+
+  function selecionarBairroAvulso(bairro) {
+    const t = taxasBairro.find(x => x.bairro === bairro)
+    setForm(f => ({ ...f, bairro_entrega: bairro, taxa_entrega: t ? String(t.taxa) : f.taxa_entrega }))
+  }
 
   useEffect(() => {
     if (!buscaCliente || buscaCliente.length < 2) { setClienteOptions([]); return }
@@ -400,9 +434,10 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
     setForm(f => ({ ...f, itens: f.itens.filter((_, i) => i !== idx) }))
   }
 
-  const subtotal   = form.itens.reduce((s, i) => s + i.preco_total, 0)
-  const desconto   = parseFloat(form.desconto) || 0
-  const valorTotal = Math.max(subtotal - desconto, 0)
+  const subtotal     = form.itens.reduce((s, i) => s + i.preco_total, 0)
+  const desconto     = parseFloat(form.desconto) || 0
+  const taxaEntrega  = form.tipo_entrega === 'entrega_local' ? (parseFloat(form.taxa_entrega) || 0) : 0
+  const valorTotal   = Math.max(subtotal - desconto, 0) + taxaEntrega
 
   async function handleSalvar() {
     if (!form.cliente && !form.cliente_nome) { setErro('Informe o cliente ou nome do cliente.'); return }
@@ -415,6 +450,11 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
         tipo_evento:      form.tipo_evento || '',
         data_evento:      form.data_evento || null,
         validade:         form.validade || null,
+        tipo_entrega:     form.tipo_entrega,
+        local:            form.tipo_entrega === 'entrega_local' && form.local ? Number(form.local) : null,
+        endereco_avulso:  form.tipo_entrega === 'entrega_local' && !form.local ? form.endereco_avulso : '',
+        bairro_entrega:   form.tipo_entrega === 'entrega_local' ? form.bairro_entrega : '',
+        taxa_entrega:     taxaEntrega,
         desconto:         desconto,
         observacoes:      form.observacoes,
         itens: form.itens.map(i => ({
@@ -508,6 +548,54 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
           <input type="number" min="0" step="0.01" value={form.desconto} onChange={e => set('desconto', e.target.value)} />
         </div>
 
+        {/* Entrega */}
+        <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+          <label>Tipo de entrega</label>
+          <div className={styles.radioGroup}>
+            <label className={`${styles.radioCard} ${form.tipo_entrega === 'retirada_loja' ? styles.radioCardActive : ''}`}>
+              <input type="radio" value="retirada_loja" checked={form.tipo_entrega === 'retirada_loja'} onChange={e => set('tipo_entrega', e.target.value)} />
+              <i className="ti ti-building-store" /> Retirada na loja
+            </label>
+            <label className={`${styles.radioCard} ${form.tipo_entrega === 'entrega_local' ? styles.radioCardActive : ''}`}>
+              <input type="radio" value="entrega_local" checked={form.tipo_entrega === 'entrega_local'} onChange={e => set('tipo_entrega', e.target.value)} />
+              <i className="ti ti-truck-delivery" /> Entrega no local
+            </label>
+          </div>
+        </div>
+
+        {form.tipo_entrega === 'entrega_local' && (
+          <>
+            <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+              <label>Local cadastrado</label>
+              <select value={form.local} onChange={e => set('local', e.target.value)}>
+                <option value="">— Endereço avulso —</option>
+                {locais.map(l => <option key={l.id} value={l.id}>{l.nome} — {l.bairro}</option>)}
+              </select>
+            </div>
+            {!form.local && (
+              <>
+                <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                  <label>Endereço do local</label>
+                  <input value={form.endereco_avulso} onChange={e => set('endereco_avulso', e.target.value)} placeholder="Rua, número, bairro…" />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Bairro (para calcular a taxa)</label>
+                  <select value={form.bairro_entrega} onChange={e => selecionarBairroAvulso(e.target.value)}>
+                    <option value="">Selecione o bairro…</option>
+                    {taxasBairro.map(t => (
+                      <option key={t.id} value={t.bairro}>{t.bairro} — R$ {Number(t.taxa).toFixed(2)}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            <div className={styles.formGroup}>
+              <label>Taxa de entrega (R$)</label>
+              <input type="number" min="0" step="0.01" value={form.taxa_entrega} onChange={e => set('taxa_entrega', e.target.value)} />
+            </div>
+          </>
+        )}
+
         {/* Observações */}
         <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
           <label>Observações</label>
@@ -581,6 +669,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
         <div className={styles.totais}>
           <span>Subtotal: <strong>{fmt(subtotal)}</strong></span>
           {desconto > 0 && <span className={styles.desconto}>— Desconto: <strong>{fmt(desconto)}</strong></span>}
+          {taxaEntrega > 0 && <span>+ Taxa de entrega: <strong>{fmt(taxaEntrega)}</strong></span>}
           <span className={styles.totalFinal}>Total: <strong>{fmt(valorTotal)}</strong></span>
         </div>
       </div>
@@ -642,6 +731,13 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
           {orc.tipo_evento && <div className={styles.detRow}><i className="ti ti-calendar-event" /> {TIPO_EVENTO_LABELS[orc.tipo_evento] || orc.tipo_evento}</div>}
           {orc.data_evento && <div className={styles.detRow}><i className="ti ti-calendar" /> Data prevista: {fmtData(orc.data_evento)}</div>}
           {orc.validade && <div className={styles.detRow}><i className="ti ti-clock" /> Válido até: {fmtData(orc.validade)}</div>}
+          {orc.tipo_entrega === 'entrega_local' && (
+            <div className={styles.detRow}>
+              <i className="ti ti-truck-delivery" />
+              {orc.local_nome || orc.endereco_avulso || 'Entrega no local'}
+              {orc.bairro_entrega ? ` — ${orc.bairro_entrega}` : ''}
+            </div>
+          )}
           {orc.observacoes && <div className={styles.detRow}><i className="ti ti-notes" /> {orc.observacoes}</div>}
         </div>
         <div className={styles.detStatus}>
@@ -722,6 +818,7 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
 
         <div className={styles.totais}>
           {parseFloat(orc.desconto) > 0 && <span>Desconto: <strong>-{fmt(orc.desconto)}</strong></span>}
+          {parseFloat(orc.taxa_entrega) > 0 && <span>Taxa de entrega: <strong>{fmt(orc.taxa_entrega)}</strong></span>}
           <span className={styles.totalFinal}>Total: <strong>{fmt(orc.valor_total)}</strong></span>
         </div>
       </div>
@@ -841,14 +938,29 @@ function ModalConverterEvento({ orc, onClose, onConvertido }) {
   const [form,    setForm]    = useState({
     data_evento:     orc.data_evento || '',
     hora_evento:     '',
-    tipo_entrega:    'retirada_loja',
-    endereco_avulso: '',
+    tipo_entrega:    orc.tipo_entrega || 'retirada_loja',
+    local:           orc.local || '',
+    endereco_avulso: orc.endereco_avulso || '',
+    bairro_entrega:  orc.bairro_entrega || '',
+    taxa_entrega:    String(orc.taxa_entrega || '0'),
     sinal_pago:      '0',
   })
+  const [locais,      setLocais]      = useState([])
+  const [taxasBairro, setTaxasBairro] = useState([])
   const [saving, setSaving] = useState(false)
   const [erro,   setErro]   = useState('')
 
+  useEffect(() => {
+    locaisEventoApi.list({ ativo: 'true' }).then(r => setLocais(r.data.results ?? r.data)).catch(() => {})
+    taxasEntregaApi.list({ ativo: true }).then(r => setTaxasBairro(r.data.results ?? r.data)).catch(() => {})
+  }, [])
+
   function set(field, value) { setForm(f => ({ ...f, [field]: value })) }
+
+  function selecionarBairroAvulso(bairro) {
+    const t = taxasBairro.find(x => x.bairro === bairro)
+    setForm(f => ({ ...f, bairro_entrega: bairro, taxa_entrega: t ? String(t.taxa) : f.taxa_entrega }))
+  }
 
   async function handleConverter() {
     if (!form.data_evento) { setErro('Informe a data do evento.'); return }
@@ -858,7 +970,10 @@ function ModalConverterEvento({ orc, onClose, onConvertido }) {
         data_evento:     form.data_evento,
         hora_evento:     form.hora_evento || null,
         tipo_entrega:    form.tipo_entrega,
-        endereco_avulso: form.endereco_avulso,
+        local:           form.tipo_entrega === 'entrega_local' && form.local ? Number(form.local) : null,
+        endereco_avulso: form.tipo_entrega === 'entrega_local' && !form.local ? form.endereco_avulso : '',
+        bairro_entrega:  form.tipo_entrega === 'entrega_local' ? form.bairro_entrega : '',
+        taxa_entrega:    form.tipo_entrega === 'entrega_local' ? (parseFloat(form.taxa_entrega) || 0) : 0,
         sinal_pago:      parseFloat(form.sinal_pago) || 0,
       }
       const res = await orcamentosApi.converterEmEvento(orc.id, payload)
@@ -897,10 +1012,36 @@ function ModalConverterEvento({ orc, onClose, onConvertido }) {
           <input type="number" min="0" step="0.01" value={form.sinal_pago} onChange={e => set('sinal_pago', e.target.value)} />
         </div>
         {form.tipo_entrega === 'entrega_local' && (
-          <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
-            <label>Endereço de entrega</label>
-            <input value={form.endereco_avulso} onChange={e => set('endereco_avulso', e.target.value)} placeholder="Endereço completo" />
-          </div>
+          <>
+            <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+              <label>Local cadastrado</label>
+              <select value={form.local} onChange={e => set('local', e.target.value)}>
+                <option value="">— Endereço avulso —</option>
+                {locais.map(l => <option key={l.id} value={l.id}>{l.nome} — {l.bairro}</option>)}
+              </select>
+            </div>
+            {!form.local && (
+              <>
+                <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                  <label>Endereço de entrega</label>
+                  <input value={form.endereco_avulso} onChange={e => set('endereco_avulso', e.target.value)} placeholder="Endereço completo" />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Bairro (para calcular a taxa)</label>
+                  <select value={form.bairro_entrega} onChange={e => selecionarBairroAvulso(e.target.value)}>
+                    <option value="">Selecione o bairro…</option>
+                    {taxasBairro.map(t => (
+                      <option key={t.id} value={t.bairro}>{t.bairro} — R$ {Number(t.taxa).toFixed(2)}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            <div className={styles.formGroup}>
+              <label>Taxa de entrega (R$)</label>
+              <input type="number" min="0" step="0.01" value={form.taxa_entrega} onChange={e => set('taxa_entrega', e.target.value)} />
+            </div>
+          </>
         )}
       </div>
       {erro && <p className={styles.erro}>{erro}</p>}

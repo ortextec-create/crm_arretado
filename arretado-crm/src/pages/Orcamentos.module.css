@@ -540,3 +540,24 @@
   font-size: 13px;
   color: var(--texto);
 }
+
+/* ── Radio cards (tipo de entrega) ───────────────────────────────────────── */
+.radioGroup { display: flex; gap: 12px; }
+
+.radioCard {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--texto);
+  transition: all 0.14s;
+}
+.radioCard:hover       { border-color: var(--caramelo); }
+.radioCardActive       { border-color: var(--caramelo); background: rgba(184,115,10,0.04); }
+.radioCard input       { display: none; }
+.radioCard i           { font-size: 18px; color: var(--caramelo); flex-shrink: 0; }
