@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 30/jun/2026.
+> Última atualização: 02/jul/2026.
 
 ---
 
@@ -40,10 +40,14 @@ arretado/                        ← raiz Django
 │   ├── models.py                ← PedidoUnificado
 │   └── apps.py                  ← registra signals do iFood e PDV no ready()
 ├── pdv/                         ← Fase 3-ext-A: PDV próprio
-│   ├── models.py                ← CategoriaProduto, Produto (+ segmento/foto/disponibilidades), PedidoPDV, ItemPedidoPDV
+│   ├── models.py                ← CategoriaProduto, Produto (+ segmento/foto/disponibilidades), PedidoPDV, ItemPedidoPDV,
+│   │                               TaxaEntregaBairro (bairro→taxa), ConfiguracaoEntrega (singleton, frete padrão)
+│   ├── urls.py                  ← inclui taxas-entrega/ e configuracao-entrega/
 │   └── signals.py               ← espelha PedidoPDV → PedidoUnificado
 ├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos
 │   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento
+│   │                               (Orcamento e Evento têm tipo_entrega/local/endereco_avulso/bairro_entrega/taxa_entrega — ver FRETE.md)
+│   ├── pdf_orcamento.py          ← gera PDF (ReportLab) — inclui linha "Taxa de entrega" quando houver
 │   └── views.py                 ← OrcamentoViewSet (converter-em-evento) + EventoViewSet
 ├── usuarios/                    ← Gestão de usuários + RBAC
 │   └── views.py
@@ -67,7 +71,8 @@ arretado-crm/                    ← raiz React
     │   ├── client.js            ← axios base
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
     │                               eventosApi, locaisEventoApi, orcamentosApi,
-    │                               notificacoesApi, usuariosApi, authApi, fichasApi
+    │                               notificacoesApi, usuariosApi, authApi, fichasApi,
+    │                               taxasEntregaApi, configEntregaApi
     ├── pages/
     │   ├── Login.jsx
     │   ├── Dashboard.jsx
@@ -83,6 +88,8 @@ arretado-crm/                    ← raiz React
     │   ├── CentralPrecos.jsx    ← precificação (matérias, ajuste linear, semáforo, parâmetros)
     │   ├── Eventos.jsx
     │   ├── Orcamentos.jsx
+    │   ├── Locais.jsx           ← cadastro de Locais de Evento (LocalEvento)
+    │   ├── TaxasEntrega.jsx     ← cadastro de taxas por bairro + frete padrão (ver FRETE.md)
     │   ├── Notificacoes.jsx
     │   ├── Configuracoes.jsx
     │   └── Vinculacoes.jsx
@@ -111,6 +118,8 @@ arretado-crm/                    ← raiz React
 - **fichas.ParametrosNegocio é singleton** — sempre acessado via `ParametrosNegocio.get()`, nunca instanciado diretamente
 - **FichaTecnica → pdv.Produto** é uma FK fraca via `produto_pdv_id` (IntegerField, não ForeignKey) — o produto pode existir sem ficha e vice-versa
 - **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`
+- **pdv.ConfiguracaoEntrega é singleton** — sempre acessado via `ConfiguracaoEntrega.get()`. Guarda o `frete_padrao` usado quando a entrega é por bairro mas nenhum bairro cadastrado foi selecionado
+- **`pdv.TaxaEntregaBairro`** é a tabela configurável de bairro→taxa usada por PDV e Orçamentos/Eventos. Nunca hardcodar valor de frete no código — ver `FRETE.md` para o funcionamento completo do sistema de entrega
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -147,6 +156,7 @@ arretado-crm/                    ← raiz React
 | WhatsApp | Notificações via Z-API | ✅ Concluída (`notificacoes/` + `zapi_client.py`) |
 | Usuários | Gestão de usuários + RBAC | ✅ Concluída |
 | Catálogo & Precificação | App `fichas/` + 3 telas de frontend | ✅ Concluída · dados importados em prod |
+| Frete por Bairro | Cálculo de taxa de entrega por bairro no PDV e Orçamentos/Eventos + frete padrão configurável + cadastro de Locais de Evento | ✅ Concluída (ver `FRETE.md`) |
 
 ---
 
@@ -190,6 +200,10 @@ GET/POST /api/v1/pdv/categorias/
 POST     /api/v1/pdv/pedidos/{id}/confirmar/
 POST     /api/v1/pdv/pedidos/{id}/concluir/
 
+# Frete (ver FRETE.md)
+GET/POST/PATCH/DELETE /api/v1/pdv/taxas-entrega/[{id}/]     ← cadastro de bairro→taxa
+GET/PATCH             /api/v1/pdv/configuracao-entrega/1/   ← singleton, campo frete_padrao
+
 # Orçamentos
 GET/POST      /api/v1/eventos/orcamentos/
 GET/PATCH     /api/v1/eventos/orcamentos/{id}/
@@ -203,11 +217,12 @@ GET           /api/v1/eventos/orcamentos/{id}/pdf/
 POST          /api/v1/eventos/orcamentos/{id}/enviar-whatsapp/   ← gera PDF + envia via Z-API + grava HistoricoMensagem + muda status para 'enviado'
 
 # Eventos
-GET/POST /api/v1/eventos/
-GET/POST /api/v1/eventos/locais/
-POST     /api/v1/eventos/{id}/confirmar/
-POST     /api/v1/eventos/{id}/entregar/
-GET      /api/v1/eventos/agenda/
+GET/POST              /api/v1/eventos/
+GET/POST              /api/v1/eventos/locais/
+GET/PATCH/DELETE      /api/v1/eventos/locais/{id}/
+POST                  /api/v1/eventos/{id}/confirmar/
+POST                  /api/v1/eventos/{id}/entregar/
+GET                   /api/v1/eventos/agenda/
 
 # Notificações WhatsApp
 GET  /api/v1/notificacoes/mensagens/
@@ -293,3 +308,6 @@ systemctl restart arretado
 - Não instanciar `ConfiguracaoWhatsApp()` diretamente — sempre usar `ConfiguracaoWhatsApp.get()`
 - A validade padrão dos orçamentos vem de `ConfiguracaoWhatsApp.get().validade_orcamento_dias` — não usar `settings.VALIDADE_ORCAMENTO_DIAS`
 - Não fazer FK direta de `fichas` para `pdv` — a ligação entre FichaTecnica e Produto é via `produto_pdv_id` (IntegerField fraco)
+- Não instanciar `ConfiguracaoEntrega()` diretamente — sempre usar `ConfiguracaoEntrega.get()`
+- Não hardcodar valor de taxa de entrega no código — sempre vem de `TaxaEntregaBairro` ou do `frete_padrao` de `ConfiguracaoEntrega`
+- Ao sugerir automaticamente o bairro/taxa de entrega, o bairro do **Local de Evento** (quando selecionado) tem prioridade sobre o bairro do endereço do cliente — nunca inverter essa ordem (ver `FRETE.md`)
