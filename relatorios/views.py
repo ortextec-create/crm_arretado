@@ -24,7 +24,7 @@ class RelatorioIFoodView(CsrfExemptMixin, views.APIView):
         formato = params.get('formato', 'json')
         agrupamento = params.get('agrupamento', 'dia')
 
-        hoje = timezone.now().date()
+        hoje = timezone.localtime(timezone.now()).date()
         try:
             data_inicio = date.fromisoformat(params['data_inicio']) if params.get('data_inicio') else hoje - timedelta(days=29)
         except ValueError:

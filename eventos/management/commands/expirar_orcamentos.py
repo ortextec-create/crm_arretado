@@ -18,7 +18,7 @@ class Command(BaseCommand):
     help = 'Expira orçamentos com validade vencida'
 
     def handle(self, *args, **options):
-        hoje = timezone.now().date()
+        hoje = timezone.localtime(timezone.now()).date()
         qs   = Orcamento.objects.filter(
             status__in=('rascunho', 'enviado'),
             validade__lt=hoje,

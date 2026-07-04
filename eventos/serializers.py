@@ -265,7 +265,7 @@ class OrcamentoCreateSerializer(serializers.ModelSerializer):
         if not validated_data.get('validade'):
             from notificacoes.models import ConfiguracaoWhatsApp
             dias = ConfiguracaoWhatsApp.get().validade_orcamento_dias
-            validated_data['validade'] = timezone.now().date() + datetime.timedelta(days=dias)
+            validated_data['validade'] = timezone.localtime(timezone.now()).date() + datetime.timedelta(days=dias)
 
         orcamento = Orcamento.objects.create(**validated_data)
 

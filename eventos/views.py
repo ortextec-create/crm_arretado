@@ -108,7 +108,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
         # Filtro: apenas futuros
         if params.get('futuros') == 'true':
-            qs = qs.filter(data_evento__gte=timezone.now().date())
+            qs = qs.filter(data_evento__gte=timezone.localtime(timezone.now()).date())
 
         return qs
 
@@ -219,7 +219,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         """
         mes = request.query_params.get('mes')
         if not mes:
-            hoje = timezone.now().date()
+            hoje = timezone.localtime(timezone.now()).date()
             mes  = hoje.strftime('%Y-%m')
 
         try:
@@ -255,7 +255,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='estatisticas')
     def estatisticas(self, request):
-        hoje  = timezone.now().date()
+        hoje  = timezone.localtime(timezone.now()).date()
         mes   = hoje.replace(day=1)
 
         # Total de eventos do mês
@@ -487,7 +487,7 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         from notificacoes.models import ConfiguracaoWhatsApp
         dias = ConfiguracaoWhatsApp.get().validade_orcamento_dias
         orc.status   = 'rascunho'
-        orc.validade = timezone.now().date() + datetime.timedelta(days=dias)
+        orc.validade = timezone.localtime(timezone.now()).date() + datetime.timedelta(days=dias)
         orc.save(update_fields=['status', 'validade', 'atualizado_em'])
         return Response(OrcamentoDetailSerializer(orc).data)
 

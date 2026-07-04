@@ -83,7 +83,7 @@ class ConfiguracaoIFoodViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'configurado': False})
 
         pendentes    = PedidoIFood.objects.filter(status='PLACED').count()
-        hoje         = timezone.now().date()
+        hoje         = timezone.localtime(timezone.now()).date()
         pedidos_hoje = PedidoIFood.objects.filter(ifood_criado_em__date=hoje).count()
 
         return Response({
@@ -310,8 +310,8 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='estatisticas')
     def estatisticas(self, request):
-        hoje = timezone.now().date()
-        mes  = timezone.now().replace(day=1).date()
+        hoje = timezone.localtime(timezone.now()).date()
+        mes  = timezone.localtime(timezone.now()).replace(day=1).date()
 
         qs_hoje = PedidoIFood.objects.filter(ifood_criado_em__date=hoje)
         qs_mes  = PedidoIFood.objects.filter(ifood_criado_em__date__gte=mes)

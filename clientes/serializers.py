@@ -75,6 +75,13 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['criado_em', 'atualizado_em']
 
+    def to_internal_value(self, data):
+        data = data.copy()
+        for campo in ('cpf', 'email', 'data_nascimento', 'sexo'):
+            if data.get(campo) == '':
+                data[campo] = None
+        return super().to_internal_value(data)
+
     def validate_cpf(self, value):
         if value:
             qs = Cliente.objects.filter(cpf=value)

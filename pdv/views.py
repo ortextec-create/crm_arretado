@@ -239,7 +239,7 @@ class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     def estatisticas(self, request):
         from django.utils import timezone
         from datetime import timedelta
-        hoje = timezone.now().date()
+        hoje = timezone.localtime(timezone.now()).date()
         mes_inicio = hoje.replace(day=1)
 
         base = PedidoPDV.objects.exclude(status='cancelado')
