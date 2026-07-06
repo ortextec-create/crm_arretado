@@ -95,6 +95,19 @@
   margin: 8px 0 0;
 }
 
+.subLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 18px 0 10px;
+}
+
+.subLabel:first-child {
+  margin-top: 0;
+}
+
 /* ── Toggle ─────────────────────────────────────────────── */
 .toggle {
   display: flex;

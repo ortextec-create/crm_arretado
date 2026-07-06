@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento
+from .models import LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento, Contrato, ConfiguracaoContrato
 
 
 # ─── Local de Evento ──────────────────────────────────────────────────────────
@@ -292,3 +292,42 @@ class OrcamentoCreateSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+# ─── Contrato ─────────────────────────────────────────────────────────────────
+
+class ContratoSerializer(serializers.ModelSerializer):
+    status_display  = serializers.CharField(source='get_status_display', read_only=True)
+    orcamento_numero = serializers.CharField(source='orcamento.numero', read_only=True)
+
+    class Meta:
+        model  = Contrato
+        fields = [
+            'id', 'numero', 'orcamento', 'orcamento_numero', 'evento', 'cliente',
+            'status', 'status_display',
+            'contratante_nome', 'contratante_nacionalidade', 'contratante_profissao',
+            'contratante_rg', 'contratante_rg_orgao_emissor', 'contratante_cpf',
+            'contratante_estado_civil', 'contratante_endereco',
+            'data_evento', 'hora_evento', 'local_evento',
+            'valor_total', 'percentual_sinal', 'valor_sinal', 'data_quitacao',
+            'criado_em', 'atualizado_em',
+        ]
+        read_only_fields = fields
+
+
+class ConfiguracaoContratoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ConfiguracaoContrato
+        fields = [
+            'id',
+            'razao_social_contratada', 'cnpj_contratada', 'endereco_contratada',
+            'representante_nome', 'representante_nacionalidade', 'representante_estado_civil',
+            'representante_profissao', 'representante_rg', 'representante_cpf', 'representante_endereco',
+            'percentual_sinal', 'prazo_quitacao_dias', 'multa_inadimplencia_pct', 'juros_mora_pct_mes',
+            'prazo_personalizacao_dias', 'prazo_aumento_quantidade_dias', 'prazo_aviso_rescisao_dias',
+            'multa_rescisao_acima_60_dias_pct', 'multa_rescisao_30_60_dias_pct',
+            'multa_rescisao_abaixo_30_dias_pct', 'multa_rescisao_abaixo_7_dias_pct',
+            'prazo_devolucao_dias', 'foro_comarca', 'foro_estado',
+            'atualizado_em',
+        ]
+        read_only_fields = ['id', 'atualizado_em']

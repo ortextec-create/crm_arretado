@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 02/jul/2026.
+> Última atualização: 06/jul/2026.
 
 ---
 
@@ -25,11 +25,12 @@ Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, cat
 ```
 arretado/                        ← raiz Django
 ├── config/
-│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/
+│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, relatorios
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/relatorios/
 │   └── wsgi.py
 ├── clientes/                    ← Fase 1: CRM de clientes
-│   ├── models.py                ← Cliente, Endereço, TagCliente
+│   ├── models.py                ← Cliente (inclui rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil —
+│   │                               opcionais no cadastro, exigidos na emissão de Contrato, ver Contrato.md), Endereço, TagCliente
 │   └── views.py                 ← inclui action `historico` (GET /api/v1/clientes/{id}/historico/)
 ├── ifood/                       ← Fase 2: integração iFood
 │   ├── models.py                ← ConfiguracaoIFood, PedidoIFood, ItemPedidoIFood, EventoPollingIFood
@@ -44,11 +45,15 @@ arretado/                        ← raiz Django
 │   │                               TaxaEntregaBairro (bairro→taxa), ConfiguracaoEntrega (singleton, frete padrão)
 │   ├── urls.py                  ← inclui taxas-entrega/ e configuracao-entrega/
 │   └── signals.py               ← espelha PedidoPDV → PedidoUnificado
-├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos
-│   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento
+├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos + contratos
+│   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento,
+│   │                               Contrato (snapshot, CTR-0001...), ConfiguracaoContrato (singleton — ver Contrato.md)
 │   │                               (Orcamento e Evento têm tipo_entrega/local/endereco_avulso/bairro_entrega/taxa_entrega — ver FRETE.md)
-│   ├── pdf_orcamento.py          ← gera PDF (ReportLab) — inclui linha "Taxa de entrega" quando houver
-│   └── views.py                 ← OrcamentoViewSet (converter-em-evento) + EventoViewSet
+│   ├── pdf_orcamento.py          ← gera PDF (ReportLab, canvas cru, 1 página) — inclui linha "Taxa de entrega" quando houver
+│   ├── pdf_contrato.py           ← gera PDF do contrato (ReportLab Platypus, multi-página) — texto e cláusulas vêm de
+│   │                               ConfiguracaoContrato.get() + snapshot do Contrato, nunca hardcoded
+│   └── views.py                 ← OrcamentoViewSet (converter-em-evento, gerar-contrato) + EventoViewSet +
+│                                    ContratoViewSet (só leitura + pdf/enviar-whatsapp) + ConfiguracaoContratoViewSet
 ├── usuarios/                    ← Gestão de usuários + RBAC
 │   └── views.py
 ├── notificacoes/                ← WhatsApp via Z-API
@@ -63,6 +68,9 @@ arretado/                        ← raiz Django
 │   │                               SnapshotPrecosViewSet, AjusteLinearView, DesfazerAjusteView
 │   ├── urls.py                  ← router + ajuste-linear/ + desfazer-ajuste/<id>/
 │   └── management/commands/importar_planilha.py  ← popula BD a partir do .xlsx
+├── relatorios/                  ← Relatórios consolidados por canal
+│   ├── views.py                 ← RelatorioIFoodView (resumo + agrupado por dia/mês, export Excel/PDF)
+│   └── urls.py                  ← ifood/ (mais canais a adicionar conforme necessário)
 └── manage.py
 
 arretado-crm/                    ← raiz React
@@ -70,7 +78,7 @@ arretado-crm/                    ← raiz React
     ├── api/
     │   ├── client.js            ← axios base
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
-    │                               eventosApi, locaisEventoApi, orcamentosApi,
+    │                               eventosApi, locaisEventoApi, orcamentosApi, contratosApi, configContratoApi,
     │                               notificacoesApi, usuariosApi, authApi, fichasApi,
     │                               taxasEntregaApi, configEntregaApi
     ├── pages/
@@ -86,8 +94,9 @@ arretado-crm/                    ← raiz React
     │   ├── Catalogo.jsx         ← catálogo geral (grid de cards, foto, segmento, canais)
     │   ├── FichasTecnicas.jsx   ← composição de ingredientes por produto
     │   ├── CentralPrecos.jsx    ← precificação (matérias, ajuste linear, semáforo, parâmetros)
+    │   ├── Relatorios.jsx       ← relatório consolidado iFood (resumo, gráfico por período, export Excel/PDF)
     │   ├── Eventos.jsx
-    │   ├── Orcamentos.jsx
+    │   ├── Orcamentos.jsx       ← inclui botão "Emitir Contrato" (status='aprovado') + ModalEmitirContrato
     │   ├── Locais.jsx           ← cadastro de Locais de Evento (LocalEvento)
     │   ├── TaxasEntrega.jsx     ← cadastro de taxas por bairro + frete padrão (ver FRETE.md)
     │   ├── Notificacoes.jsx
@@ -120,6 +129,9 @@ arretado-crm/                    ← raiz React
 - **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`
 - **pdv.ConfiguracaoEntrega é singleton** — sempre acessado via `ConfiguracaoEntrega.get()`. Guarda o `frete_padrao` usado quando a entrega é por bairro mas nenhum bairro cadastrado foi selecionado
 - **`pdv.TaxaEntregaBairro`** é a tabela configurável de bairro→taxa usada por PDV e Orçamentos/Eventos. Nunca hardcodar valor de frete no código — ver `FRETE.md` para o funcionamento completo do sistema de entrega
+- **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`
+- **`eventos.Contrato`** é um snapshot gravado no momento da emissão (mesma filosofia de `ItemOrcamento`/`SnapshotPrecos`) — `valor_total`/`percentual_sinal`/`valor_sinal`/`data_quitacao` nunca são recalculados ao reabrir/reimprimir um contrato já emitido
+- **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só é permitida com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente preenchidos (podem estar vazios no cadastro normal — são exigidos só neste momento) — ver `Contrato.md`
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -157,6 +169,8 @@ arretado-crm/                    ← raiz React
 | Usuários | Gestão de usuários + RBAC | ✅ Concluída |
 | Catálogo & Precificação | App `fichas/` + 3 telas de frontend | ✅ Concluída · dados importados em prod |
 | Frete por Bairro | Cálculo de taxa de entrega por bairro no PDV e Orçamentos/Eventos + frete padrão configurável + cadastro de Locais de Evento | ✅ Concluída (ver `FRETE.md`) |
+| Relatórios | Relatório consolidado iFood (resumo, agrupamento por dia/mês, export Excel/PDF) — app `relatorios/` | ✅ Concluída (apenas canal iFood por enquanto) |
+| Contrato | Emissão de Contrato de Aquisição de Produtos a partir de Orçamento aprovado (PDF com cláusulas configuráveis + envio por WhatsApp) | ✅ Concluída (ver `Contrato.md`) |
 
 ---
 
@@ -169,7 +183,8 @@ arretado-crm/                    ← raiz React
    - Curto prazo: impressora térmica TCP/IP (Django imprime via socket ESC/POS) + caixa registradora pelo mesmo cabo
    - Médio prazo: NFC-e (nota fiscal — SEFAZ-PI)
    - Longo prazo: TEF integrado
-5. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
+5. **Relatórios cobrem só iFood** — `relatorios/` tem apenas `RelatorioIFoodView`; expandir para PDV e Eventos/Orçamentos seguindo o mesmo padrão (resumo + agrupado + export Excel/PDF)
+6. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
    ```
    ZAPI_INSTANCE_ID=3F44AD8FFA071145A7847A94F00847F6
    ZAPI_TOKEN=664FD7CD1788EFA5660A875F
@@ -215,6 +230,14 @@ POST          /api/v1/eventos/orcamentos/{id}/itens/
 DELETE        /api/v1/eventos/orcamentos/{id}/itens/{item_id}/remover/
 GET           /api/v1/eventos/orcamentos/{id}/pdf/
 POST          /api/v1/eventos/orcamentos/{id}/enviar-whatsapp/   ← gera PDF + envia via Z-API + grava HistoricoMensagem + muda status para 'enviado'
+POST          /api/v1/eventos/orcamentos/{id}/gerar-contrato/    ← só com status='aprovado' · body: cpf/rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil/endereco_avulso
+
+# Contratos (ver Contrato.md)
+GET           /api/v1/eventos/contratos/                        ← só leitura (contrato só é criado via gerar-contrato/ acima)
+GET           /api/v1/eventos/contratos/{id}/
+GET           /api/v1/eventos/contratos/{id}/pdf/
+POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/
+GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton
 
 # Eventos
 GET/POST              /api/v1/eventos/
@@ -242,6 +265,9 @@ GET/PATCH        /api/v1/fichas/parametros/1/
 POST             /api/v1/fichas/ajuste-linear/
 POST             /api/v1/fichas/desfazer-ajuste/{snapshot_id}/
 GET              /api/v1/fichas/snapshots/
+
+# Relatórios
+GET /api/v1/relatorios/ifood/                    ← query params: data_inicio, data_fim, agrupamento (dia|mes), formato (json|excel|pdf)
 ```
 
 ---
@@ -311,3 +337,7 @@ systemctl restart arretado
 - Não instanciar `ConfiguracaoEntrega()` diretamente — sempre usar `ConfiguracaoEntrega.get()`
 - Não hardcodar valor de taxa de entrega no código — sempre vem de `TaxaEntregaBairro` ou do `frete_padrao` de `ConfiguracaoEntrega`
 - Ao sugerir automaticamente o bairro/taxa de entrega, o bairro do **Local de Evento** (quando selecionado) tem prioridade sobre o bairro do endereço do cliente — nunca inverter essa ordem (ver `FRETE.md`)
+- Não instanciar `ConfiguracaoContrato()` diretamente — sempre usar `ConfiguracaoContrato.get()`
+- Não criar `ItemContrato` — o PDF do contrato lê os itens direto de `contrato.orcamento.itens`
+- Não permitir `gerar-contrato/` em orçamento que não esteja `status == 'aprovado'`, nem sem CPF/RG/nacionalidade/profissão/estado civil preenchidos
+- Ao mesclar o PDF do contrato com o timbre (`pdf_contrato.py::_mesclar_timbre`), reler o `PdfReader` do timbre a cada página — reutilizar o mesmo objeto entre iterações faz o `pypdf` duplicar o conteúdo da primeira página em todas (só aparece em PDFs multi-página; `pdf_orcamento.py` nunca bateu nisso por ser sempre 1 página)

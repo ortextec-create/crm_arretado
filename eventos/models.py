@@ -456,3 +456,136 @@ def sincronizar_evento(evento):
         origem_id=evento.pk,
         defaults=defaults,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuração de Contrato (singleton) — ver Contrato.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ConfiguracaoContrato(models.Model):
+    """Singleton — sempre acessado via ConfiguracaoContrato.get(). Nada pode ficar
+    hardcoded no gerador de PDF, pois o CRM é revendável a outros clientes."""
+
+    # CONTRATADA
+    razao_social_contratada = models.CharField(max_length=200, blank=True, default='Arretado Doces')
+    cnpj_contratada          = models.CharField(max_length=20,  blank=True, default='29.977.080/0001-11')
+    endereco_contratada      = models.CharField(
+        max_length=400, blank=True,
+        default='Avenida João Antônio Leitão, nº 3733, Bairro Piçarreira, CEP 64.055-400, Teresina/PI',
+    )
+
+    # Representante da CONTRATADA
+    representante_nome          = models.CharField(max_length=200, blank=True, default='Edvan Lima Silva')
+    representante_nacionalidade = models.CharField(max_length=50,  blank=True, default='brasileiro')
+    representante_estado_civil  = models.CharField(max_length=20,  blank=True, default='casado')
+    representante_profissao     = models.CharField(max_length=100, blank=True, default='biomédico')
+    representante_rg            = models.CharField(max_length=20,  blank=True, default='3158399 SSP-PB')
+    representante_cpf           = models.CharField(max_length=14,  blank=True, default='081.465.044-93')
+    representante_endereco      = models.CharField(
+        max_length=400, blank=True,
+        default='Rua Vereador Edmundo Genuíno de Oliveira, nº 2945, apto 101, Bairro São Cristóvão, '
+                'CEP 64.055-030, Teresina/PI',
+    )
+
+    # Financeiro
+    percentual_sinal      = models.DecimalField(max_digits=5, decimal_places=2, default=50)
+    prazo_quitacao_dias   = models.PositiveIntegerField(default=7, help_text='Dias antes do evento')
+    multa_inadimplencia_pct = models.DecimalField(max_digits=5, decimal_places=2, default=20)
+    juros_mora_pct_mes    = models.DecimalField(max_digits=5, decimal_places=2, default=1)
+
+    # Prazos
+    prazo_personalizacao_dias      = models.PositiveIntegerField(default=15)
+    prazo_aumento_quantidade_dias  = models.PositiveIntegerField(default=15)
+    prazo_aviso_rescisao_dias      = models.PositiveIntegerField(default=30)
+
+    # Multas de rescisão (por faixa de antecedência)
+    multa_rescisao_acima_60_dias_pct   = models.DecimalField(max_digits=5, decimal_places=2, default=15)
+    multa_rescisao_30_60_dias_pct      = models.DecimalField(max_digits=5, decimal_places=2, default=25)
+    multa_rescisao_abaixo_30_dias_pct  = models.DecimalField(max_digits=5, decimal_places=2, default=30)
+    multa_rescisao_abaixo_7_dias_pct   = models.DecimalField(max_digits=5, decimal_places=2, default=40)
+
+    prazo_devolucao_dias = models.PositiveIntegerField(default=30)
+
+    # Foro
+    foro_comarca = models.CharField(max_length=100, blank=True, default='Teresina')
+    foro_estado  = models.CharField(max_length=100, blank=True, default='Piauí')
+
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Configuração de Contrato'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return f'Config. Contrato — {self.razao_social_contratada}'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Contrato — emitido a partir de um Orçamento aprovado (ver Contrato.md)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Contrato(models.Model):
+
+    STATUS_CHOICES = [
+        ('gerado',    'Gerado'),
+        ('enviado',   'Enviado'),
+        ('cancelado', 'Cancelado'),
+    ]
+
+    numero    = models.CharField(max_length=20, unique=True, db_index=True)
+    orcamento = models.ForeignKey(Orcamento, on_delete=models.PROTECT, related_name='contratos')
+    evento    = models.ForeignKey(Evento, null=True, blank=True, on_delete=models.SET_NULL, related_name='contratos')
+    cliente   = models.ForeignKey(Cliente, null=True, blank=True, on_delete=models.SET_NULL, related_name='contratos')
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='gerado', db_index=True)
+
+    # ── Snapshot CONTRATANTE (no momento da emissão) ──
+    contratante_nome          = models.CharField(max_length=200)
+    contratante_nacionalidade = models.CharField(max_length=50)
+    contratante_profissao     = models.CharField(max_length=100, blank=True, default='')
+    contratante_rg            = models.CharField(max_length=20,  blank=True, default='')
+    contratante_rg_orgao_emissor = models.CharField(max_length=20, blank=True, default='')
+    contratante_cpf           = models.CharField(max_length=14)
+    contratante_estado_civil  = models.CharField(max_length=20, blank=True, default='')
+    contratante_endereco      = models.CharField(max_length=400)
+
+    # ── Snapshot do evento (herdado de Orcamento/Evento) ──
+    data_evento  = models.DateField()
+    hora_evento  = models.TimeField(null=True, blank=True)
+    local_evento = models.CharField(max_length=400, blank=True, default='')
+
+    # ── Financeiro (snapshot da config no momento da emissão) ──
+    valor_total      = models.DecimalField(max_digits=10, decimal_places=2)
+    percentual_sinal = models.DecimalField(max_digits=5, decimal_places=2)
+    valor_sinal      = models.DecimalField(max_digits=10, decimal_places=2)
+    data_quitacao    = models.DateField()
+
+    criado_em     = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = 'Contrato'
+        verbose_name_plural = 'Contratos'
+        ordering            = ['-criado_em']
+
+    def __str__(self):
+        return f'{self.numero} — {self.contratante_nome}'
+
+    @classmethod
+    def proximo_numero(cls):
+        ultimo = cls.objects.order_by('-id').first()
+        if not ultimo:
+            return 'CTR-0001'
+        try:
+            seq = int(ultimo.numero.split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            seq = cls.objects.count() + 1
+        return f'CTR-{seq:04d}'
+
+    @property
+    def pode_enviar(self):
+        return self.status in ('gerado', 'enviado')

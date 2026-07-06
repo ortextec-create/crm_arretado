@@ -67,6 +67,7 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nome', 'iniciais', 'cpf', 'email', 'data_nascimento', 'sexo',
             'telefone_principal', 'telefone_secundario',
+            'rg', 'rg_orgao_emissor', 'nacionalidade', 'profissao', 'estado_civil',
             'status', 'observacoes',
             'ifood_customer_id', 'anotaai_customer_id',
             'tem_integracao_ifood', 'tem_integracao_anotaai',

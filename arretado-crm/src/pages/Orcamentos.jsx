@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { orcamentosApi, clientesApi, pdvApi, locaisEventoApi, taxasEntregaApi, configEntregaApi } from '../api/services'
+import { orcamentosApi, contratosApi, clientesApi, pdvApi, locaisEventoApi, taxasEntregaApi, configEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast } from '../components/ui'
 import styles from './Orcamentos.module.css'
 
@@ -57,6 +57,7 @@ export default function Orcamentos() {
   const [showDetalhe,   setShowDetalhe]   = useState(false)
   const [showConverter, setShowConverter] = useState(false)
   const [showWpp,       setShowWpp]       = useState(false)
+  const [showContrato,  setShowContrato]  = useState(false)
   const [orcAtivo,      setOrcAtivo]      = useState(null)
 
   // ── Carregamento ──────────────────────────────────────────────────────────
@@ -295,6 +296,7 @@ export default function Orcamentos() {
           onRemoverItem={handleRemoverItem}
           onItemAdicionado={(updated) => { setOrcAtivo(updated); loadOrcamentos() }}
           onConverter={() => setShowConverter(true)}
+          onEmitirContrato={() => setShowContrato(true)}
         />
       )}
 
@@ -313,6 +315,15 @@ export default function Orcamentos() {
           orc={orcAtivo}
           onClose={() => setShowWpp(false)}
           onEnviado={handleWppEnviado}
+        />
+      )}
+
+      {/* Modal: emitir contrato */}
+      {showContrato && orcAtivo && (
+        <ModalEmitirContrato
+          orc={orcAtivo}
+          onClose={() => setShowContrato(false)}
+          onGerado={() => loadOrcamentos()}
         />
       )}
 
@@ -686,7 +697,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
 
 // ─── Modal: Detalhe do Orçamento ──────────────────────────────────────────────
 
-function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter }) {
+function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter, onEmitirContrato }) {
   const sc = STATUS_CONFIG[orc.status] || {}
   const [produtos,  setProdutos]  = useState([])
   const [novoItem,  setNovoItem]  = useState({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' })
@@ -866,6 +877,11 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
         {orc.pode_converter && (
           <Btn onClick={onConverter} style={{ background: 'var(--caramelo)' }}>
             <i className="ti ti-calendar-plus" /> Converter em evento
+          </Btn>
+        )}
+        {orc.status === 'aprovado' && (
+          <Btn onClick={onEmitirContrato} style={{ background: 'var(--caramelo)' }}>
+            <i className="ti ti-file-signature" /> Emitir Contrato
           </Btn>
         )}
       </div>
@@ -1049,6 +1065,198 @@ function ModalConverterEvento({ orc, onClose, onConvertido }) {
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={handleConverter} loading={saving}>
           <i className="ti ti-calendar-plus" /> Criar evento
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Modal: Emitir Contrato ───────────────────────────────────────────────────
+
+const ESTADO_CIVIL_OPTS = [
+  ['solteiro',      'Solteiro(a)'],
+  ['casado',        'Casado(a)'],
+  ['divorciado',    'Divorciado(a)'],
+  ['viuvo',         'Viúvo(a)'],
+  ['uniao_estavel', 'União Estável'],
+]
+
+function ModalEmitirContrato({ orc, onClose, onGerado }) {
+  const [loadingCliente,       setLoadingCliente]       = useState(true)
+  const [temEnderecoPrincipal, setTemEnderecoPrincipal] = useState(false)
+  const [form, setForm] = useState({
+    cpf: '', rg: '', rg_orgao_emissor: '', nacionalidade: 'brasileira',
+    profissao: '', estado_civil: '', endereco_avulso: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [erro,   setErro]   = useState('')
+  const [contrato, setContrato] = useState(null)
+
+  const [mensagem,   setMensagem]   = useState('')
+  const [sendingWpp, setSendingWpp] = useState(false)
+  const [erroWpp,    setErroWpp]    = useState('')
+
+  useEffect(() => {
+    if (!orc.cliente) { setLoadingCliente(false); return }
+    clientesApi.get(orc.cliente)
+      .then(r => {
+        const c = r.data
+        setForm(f => ({
+          ...f,
+          cpf:              c.cpf || '',
+          rg:               c.rg || '',
+          rg_orgao_emissor: c.rg_orgao_emissor || '',
+          nacionalidade:    c.nacionalidade || 'brasileira',
+          profissao:        c.profissao || '',
+          estado_civil:     c.estado_civil || '',
+        }))
+        setTemEnderecoPrincipal((c.enderecos || []).some(e => e.principal))
+      })
+      .finally(() => setLoadingCliente(false))
+  }, [orc.cliente])
+
+  function set(field, value) { setForm(f => ({ ...f, [field]: value })) }
+
+  async function handleGerar() {
+    if (!form.cpf || !form.rg || !form.nacionalidade || !form.profissao || !form.estado_civil) {
+      setErro('Preencha CPF, RG, nacionalidade, profissão e estado civil do CONTRATANTE.')
+      return
+    }
+    if (!temEnderecoPrincipal && !form.endereco_avulso) {
+      setErro('O cliente não tem endereço principal cadastrado — informe um endereço para o contrato.')
+      return
+    }
+    setSaving(true); setErro('')
+    try {
+      const res = await orcamentosApi.gerarContrato(orc.id, form)
+      setContrato(res.data)
+      onGerado?.(res.data)
+    } catch (e) {
+      const data = e?.response?.data
+      const msg = data?.mensagem || (data?.campos_faltando ? `Faltam: ${data.campos_faltando.join(', ')}` : data?.detail)
+      setErro(msg || 'Erro ao emitir contrato.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleVerPdf() {
+    try {
+      const res = await contratosApi.pdf(contrato.id)
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+    } catch {
+      setErro('Erro ao gerar PDF do contrato.')
+    }
+  }
+
+  async function handleEnviarWpp() {
+    setSendingWpp(true); setErroWpp('')
+    try {
+      const res = await contratosApi.enviarWhatsApp(contrato.id, { mensagem })
+      setContrato(res.data)
+    } catch (e) {
+      const data = e?.response?.data
+      setErroWpp(data?.mensagem || data?.detail || 'Erro ao enviar via WhatsApp.')
+    } finally {
+      setSendingWpp(false)
+    }
+  }
+
+  if (loadingCliente) {
+    return (
+      <Modal open title="Emitir Contrato" onClose={onClose}>
+        <div className={styles.spinnerWrap}><Spinner /></div>
+      </Modal>
+    )
+  }
+
+  if (contrato) {
+    return (
+      <Modal open title={`Contrato ${contrato.numero}`} onClose={onClose}>
+        <p className={styles.converterDesc}>
+          Contrato gerado com sucesso para <strong>{contrato.contratante_nome}</strong>.
+        </p>
+        <div className={styles.wppDocCard}>
+          <i className="ti ti-file-type-pdf" style={{ color: '#DC2626', fontSize: 18 }} />
+          <span>{contrato.numero}.pdf — Contrato de Aquisição de Produtos</span>
+        </div>
+        <div className={styles.formGroup} style={{ marginTop: 14 }}>
+          <label>Mensagem que acompanha o PDF (opcional)</label>
+          <textarea
+            rows={3}
+            value={mensagem}
+            onChange={e => setMensagem(e.target.value)}
+            placeholder="Segue o contrato para assinatura. Qualquer dúvida, é só chamar!"
+          />
+        </div>
+        {erroWpp && <p className={styles.erro}>{erroWpp}</p>}
+        <div className={styles.modalActions}>
+          <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+          <Btn variant="secondary" onClick={handleVerPdf}>
+            <i className="ti ti-file-type-pdf" /> Ver PDF
+          </Btn>
+          {contrato.status === 'enviado' ? (
+            <span className={styles.badgeLg} style={{ background: '#05966922', color: '#059669' }}>Enviado</span>
+          ) : (
+            <Btn onClick={handleEnviarWpp} loading={sendingWpp} className={styles.btnWppSend}>
+              <i className="ti ti-brand-whatsapp" /> Enviar por WhatsApp
+            </Btn>
+          )}
+        </div>
+      </Modal>
+    )
+  }
+
+  return (
+    <Modal open title="Emitir Contrato" onClose={onClose}>
+      <p className={styles.converterDesc}>
+        Complete os dados do CONTRATANTE para gerar o contrato do orçamento <strong>{orc.numero}</strong>.
+      </p>
+      <div className={styles.formGrid}>
+        <div className={styles.formGroup}>
+          <label>CPF *</label>
+          <input value={form.cpf} onChange={e => set('cpf', e.target.value)} placeholder="000.000.000-00" />
+        </div>
+        <div className={styles.formGroup}>
+          <label>RG *</label>
+          <input value={form.rg} onChange={e => set('rg', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Órgão emissor</label>
+          <input value={form.rg_orgao_emissor} onChange={e => set('rg_orgao_emissor', e.target.value)} placeholder="SSP-PI" />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Nacionalidade *</label>
+          <input value={form.nacionalidade} onChange={e => set('nacionalidade', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Profissão *</label>
+          <input value={form.profissao} onChange={e => set('profissao', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Estado civil *</label>
+          <select value={form.estado_civil} onChange={e => set('estado_civil', e.target.value)}>
+            <option value="">— Selecione —</option>
+            {ESTADO_CIVIL_OPTS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        {!temEnderecoPrincipal && (
+          <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+            <label>Endereço do CONTRATANTE * (cliente sem endereço principal cadastrado)</label>
+            <input
+              value={form.endereco_avulso}
+              onChange={e => set('endereco_avulso', e.target.value)}
+              placeholder="Rua, número, bairro, cidade/estado"
+            />
+          </div>
+        )}
+      </div>
+      {erro && <p className={styles.erro}>{erro}</p>}
+      <div className={styles.modalActions}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={handleGerar} loading={saving}>
+          <i className="ti ti-file-signature" /> Gerar contrato
         </Btn>
       </div>
     </Modal>

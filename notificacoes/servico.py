@@ -69,7 +69,7 @@ def notificar(telefone: str, mensagem: str, cliente=None, tipo: str = 'pedido') 
     return registro.status == 'enviado'
 
 
-def notificar_documento(telefone: str, pdf_bytes: bytes, nome_arquivo: str, caption: str = '', cliente=None) -> bool:
+def notificar_documento(telefone: str, pdf_bytes: bytes, nome_arquivo: str, caption: str = '', cliente=None, tipo: str = 'orcamento') -> bool:
     """
     Envia PDF via WhatsApp e grava HistoricoMensagem.
     Retorna True se enviado, False se falhar ou sem telefone.
@@ -86,7 +86,7 @@ def notificar_documento(telefone: str, pdf_bytes: bytes, nome_arquivo: str, capt
         cliente=cliente,
         telefone=telefone,
         mensagem=mensagem_log,
-        tipo='orcamento',
+        tipo=tipo,
         status='pendente',
     )
 

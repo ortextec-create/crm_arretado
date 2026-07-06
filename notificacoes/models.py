@@ -63,6 +63,7 @@ class HistoricoMensagem(models.Model):
         ('reengajamento', 'Reengajamento'),
         ('lembrete',      'Lembrete'),
         ('orcamento',     'Orçamento PDF'),
+        ('contrato',      'Contrato PDF'),
     ]
 
     STATUS_CHOICES = [

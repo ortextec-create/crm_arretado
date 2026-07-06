@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { configWhatsappApi, notificacoesApi } from '../api/services'
+import { configWhatsappApi, notificacoesApi, configContratoApi } from '../api/services'
 import styles from './Configuracoes.module.css'
 
 const PLACEHOLDER_MSG = '{nome} será substituído pelo primeiro nome do cliente.'
@@ -41,6 +41,9 @@ export default function Configuracoes() {
   const [toast,     setToast]     = useState(null)
   const pollRef = useRef(null)
 
+  const [formContrato,   setFormContrato]   = useState(null)
+  const [savingContrato, setSavingContrato] = useState(false)
+
   const showToast = (msg, type = 'ok') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
@@ -67,13 +70,24 @@ export default function Configuracoes() {
     }
   }, [])
 
+  const loadContrato = useCallback(async () => {
+    try {
+      const { data } = await configContratoApi.get()
+      setFormContrato(data)
+    } catch {
+      showToast('Erro ao carregar configurações de contrato.', 'err')
+    }
+  }, [])
+
   useEffect(() => {
     load()
+    loadContrato()
     pollRef.current = setInterval(refreshConn, 30_000)
     return () => clearInterval(pollRef.current)
-  }, [load, refreshConn])
+  }, [load, loadContrato, refreshConn])
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }))
+  const setContrato = (field, value) => setFormContrato(f => ({ ...f, [field]: value }))
 
   const salvar = async () => {
     setSaving(true)
@@ -85,6 +99,19 @@ export default function Configuracoes() {
       showToast('Erro ao salvar configurações.', 'err')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const salvarContrato = async () => {
+    setSavingContrato(true)
+    try {
+      const { data } = await configContratoApi.update(formContrato)
+      setFormContrato(data)
+      showToast('Configurações de contrato salvas com sucesso.')
+    } catch {
+      showToast('Erro ao salvar configurações de contrato.', 'err')
+    } finally {
+      setSavingContrato(false)
     }
   }
 
@@ -256,6 +283,238 @@ export default function Configuracoes() {
         </label>
         <p className={styles.hint}>{PLACEHOLDER_MSG}</p>
       </section>
+
+      {/* ── Contrato ──────────────────────────────────────────── */}
+      {formContrato && (
+        <section className={styles.card}>
+          <div className={styles.cardHeader}>
+            <i className="ti ti-file-signature" />
+            <h2>Contrato</h2>
+          </div>
+
+          <p className={styles.subLabel}>Dados da CONTRATADA</p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Razão social</span>
+              <input
+                type="text"
+                value={formContrato.razao_social_contratada}
+                onChange={e => setContrato('razao_social_contratada', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>CNPJ</span>
+              <input
+                type="text"
+                value={formContrato.cnpj_contratada}
+                onChange={e => setContrato('cnpj_contratada', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Endereço</span>
+              <input
+                type="text"
+                value={formContrato.endereco_contratada}
+                onChange={e => setContrato('endereco_contratada', e.target.value)}
+              />
+            </label>
+          </div>
+
+          <p className={styles.subLabel}>Representante legal</p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Nome</span>
+              <input
+                type="text"
+                value={formContrato.representante_nome}
+                onChange={e => setContrato('representante_nome', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Nacionalidade</span>
+              <input
+                type="text"
+                value={formContrato.representante_nacionalidade}
+                onChange={e => setContrato('representante_nacionalidade', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Estado civil</span>
+              <input
+                type="text"
+                value={formContrato.representante_estado_civil}
+                onChange={e => setContrato('representante_estado_civil', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Profissão</span>
+              <input
+                type="text"
+                value={formContrato.representante_profissao}
+                onChange={e => setContrato('representante_profissao', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>RG</span>
+              <input
+                type="text"
+                value={formContrato.representante_rg}
+                onChange={e => setContrato('representante_rg', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>CPF</span>
+              <input
+                type="text"
+                value={formContrato.representante_cpf}
+                onChange={e => setContrato('representante_cpf', e.target.value)}
+              />
+            </label>
+          </div>
+          <label className={styles.field} style={{ marginTop: 14 }}>
+            <span>Endereço do representante</span>
+            <input
+              type="text"
+              value={formContrato.representante_endereco}
+              onChange={e => setContrato('representante_endereco', e.target.value)}
+            />
+          </label>
+
+          <p className={styles.subLabel}>Condições financeiras</p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Sinal (%)</span>
+              <input
+                type="number" min={0} max={100} step="0.01"
+                value={formContrato.percentual_sinal}
+                onChange={e => setContrato('percentual_sinal', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Quitação (dias antes do evento)</span>
+              <input
+                type="number" min={0}
+                value={formContrato.prazo_quitacao_dias}
+                onChange={e => setContrato('prazo_quitacao_dias', parseInt(e.target.value) || 0)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Multa por inadimplência (%)</span>
+              <input
+                type="number" min={0} step="0.01"
+                value={formContrato.multa_inadimplencia_pct}
+                onChange={e => setContrato('multa_inadimplencia_pct', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Juros de mora (% ao mês)</span>
+              <input
+                type="number" min={0} step="0.01"
+                value={formContrato.juros_mora_pct_mes}
+                onChange={e => setContrato('juros_mora_pct_mes', e.target.value)}
+              />
+            </label>
+          </div>
+
+          <p className={styles.subLabel}>Prazos (dias)</p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Personalização</span>
+              <input
+                type="number" min={0}
+                value={formContrato.prazo_personalizacao_dias}
+                onChange={e => setContrato('prazo_personalizacao_dias', parseInt(e.target.value) || 0)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Aumento de quantidade</span>
+              <input
+                type="number" min={0}
+                value={formContrato.prazo_aumento_quantidade_dias}
+                onChange={e => setContrato('prazo_aumento_quantidade_dias', parseInt(e.target.value) || 0)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Aviso prévio de rescisão</span>
+              <input
+                type="number" min={0}
+                value={formContrato.prazo_aviso_rescisao_dias}
+                onChange={e => setContrato('prazo_aviso_rescisao_dias', parseInt(e.target.value) || 0)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Devolução de valores</span>
+              <input
+                type="number" min={0}
+                value={formContrato.prazo_devolucao_dias}
+                onChange={e => setContrato('prazo_devolucao_dias', parseInt(e.target.value) || 0)}
+              />
+            </label>
+          </div>
+
+          <p className={styles.subLabel}>Multas de rescisão (por antecedência)</p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Acima de 60 dias (%)</span>
+              <input
+                type="number" min={0} step="0.01"
+                value={formContrato.multa_rescisao_acima_60_dias_pct}
+                onChange={e => setContrato('multa_rescisao_acima_60_dias_pct', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Entre 30 e 60 dias (%)</span>
+              <input
+                type="number" min={0} step="0.01"
+                value={formContrato.multa_rescisao_30_60_dias_pct}
+                onChange={e => setContrato('multa_rescisao_30_60_dias_pct', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Menos de 30 dias (%)</span>
+              <input
+                type="number" min={0} step="0.01"
+                value={formContrato.multa_rescisao_abaixo_30_dias_pct}
+                onChange={e => setContrato('multa_rescisao_abaixo_30_dias_pct', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Menos de 7 dias / pós-produção (%)</span>
+              <input
+                type="number" min={0} step="0.01"
+                value={formContrato.multa_rescisao_abaixo_7_dias_pct}
+                onChange={e => setContrato('multa_rescisao_abaixo_7_dias_pct', e.target.value)}
+              />
+            </label>
+          </div>
+
+          <p className={styles.subLabel}>Foro</p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Comarca</span>
+              <input
+                type="text"
+                value={formContrato.foro_comarca}
+                onChange={e => setContrato('foro_comarca', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Estado</span>
+              <input
+                type="text"
+                value={formContrato.foro_estado}
+                onChange={e => setContrato('foro_estado', e.target.value)}
+              />
+            </label>
+          </div>
+
+          <button className={styles.btnTest} onClick={salvarContrato} disabled={savingContrato}>
+            {savingContrato
+              ? <><i className="ti ti-loader-2" /> Salvando…</>
+              : <><i className="ti ti-device-floppy" /> Salvar dados do contrato</>}
+          </button>
+        </section>
+      )}
     </div>
   )
 }

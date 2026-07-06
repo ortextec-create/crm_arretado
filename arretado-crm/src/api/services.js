@@ -195,6 +195,21 @@ export const orcamentosApi = {
   adicionarItem:   (id, data)   => api.post(`/eventos/orcamentos/${id}/itens/`, data),
   removerItem:     (id, itemId) => api.delete(`/eventos/orcamentos/${id}/itens/${itemId}/remover/`),
   enviarWhatsApp:  (id, data)   => api.post(`/eventos/orcamentos/${id}/enviar-whatsapp/`, data),
+  gerarContrato:   (id, data)   => api.post(`/eventos/orcamentos/${id}/gerar-contrato/`, data),
+}
+
+// ─── CONTRATOS ───────────────────────────────────────────────────────────────
+
+export const contratosApi = {
+  list:           (params) => api.get('/eventos/contratos/', { params }),
+  detail:         (id)     => api.get(`/eventos/contratos/${id}/`),
+  pdf:            (id)     => api.get(`/eventos/contratos/${id}/pdf/`, { responseType: 'blob' }),
+  enviarWhatsApp: (id, data) => api.post(`/eventos/contratos/${id}/enviar-whatsapp/`, data),
+}
+
+export const configContratoApi = {
+  get:    ()     => api.get('/eventos/configuracao-contrato/1/'),
+  update: (data) => api.patch('/eventos/configuracao-contrato/1/', data),
 }
 
 // ─── FICHAS / PRECIFICAÇÃO ────────────────────────────────────────────────────

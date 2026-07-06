@@ -1,15 +1,19 @@
 import datetime
+from decimal import Decimal
 
 from django.conf import settings
 from django.db.models import Q, Sum, Count
 from django.http import HttpResponse
 from django.utils import timezone
-from rest_framework import viewsets, status, filters
+from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from .models import LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento
+from .models import (
+    LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento,
+    Contrato, ConfiguracaoContrato,
+)
 from notificacoes.servico import notificar, _fone_pedido
 
 
@@ -27,6 +31,8 @@ from .serializers import (
     OrcamentoDetailSerializer,
     OrcamentoCreateSerializer,
     ItemOrcamentoCreateSerializer,
+    ContratoSerializer,
+    ConfiguracaoContratoSerializer,
 )
 
 
@@ -560,3 +566,191 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'inline; filename="{orc.numero}.pdf"'
         return response
+
+    @action(detail=True, methods=['post'], url_path='gerar-contrato')
+    def gerar_contrato(self, request, pk=None):
+        orc = self.get_object()
+
+        if orc.status != 'aprovado':
+            return Response(
+                {'detail': 'Só é possível emitir contrato de um orçamento aprovado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cliente = orc.cliente
+        if not cliente:
+            return Response(
+                {
+                    'detail': 'sem_cliente',
+                    'mensagem': (
+                        'Este orçamento não está vinculado a um cliente do CRM. '
+                        'Vincule um cliente antes de emitir o contrato.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not orc.data_evento:
+            return Response(
+                {
+                    'detail': 'sem_data_evento',
+                    'mensagem': 'Este orçamento não tem a data do evento definida. Preencha-a antes de emitir o contrato.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Campos do CONTRATANTE — opcionais no cadastro, exigidos aqui (ver Contrato.md)
+        campos_atualizaveis = ['cpf', 'rg', 'rg_orgao_emissor', 'nacionalidade', 'profissao', 'estado_civil']
+        campos_obrigatorios = ['cpf', 'rg', 'nacionalidade', 'profissao', 'estado_civil']
+
+        dados_cliente = {c: request.data[c] for c in campos_atualizaveis if request.data.get(c)}
+        if dados_cliente:
+            from clientes.serializers import ClienteDetailSerializer
+            serializer = ClienteDetailSerializer(cliente, data=dados_cliente, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+
+        faltando = [c for c in campos_obrigatorios if not getattr(cliente, c)]
+        if faltando:
+            return Response(
+                {
+                    'detail': 'dados_incompletos',
+                    'campos_faltando': faltando,
+                    'mensagem': (
+                        'Complete os dados do CONTRATANTE (CPF, RG, nacionalidade, profissão e estado '
+                        'civil) para emitir o contrato.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        endereco_avulso    = (request.data.get('endereco_avulso') or '').strip()
+        endereco_principal = cliente.enderecos.filter(principal=True).first()
+        if endereco_principal:
+            contratante_endereco = endereco_principal.endereco_completo
+        elif endereco_avulso:
+            contratante_endereco = endereco_avulso
+        else:
+            return Response(
+                {
+                    'detail': 'sem_endereco',
+                    'mensagem': (
+                        'O cliente não tem endereço principal cadastrado. Informe um endereço avulso '
+                        'para o contrato.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        local_evento = orc.local.endereco_completo if orc.local else orc.endereco_avulso
+
+        cfg              = ConfiguracaoContrato.get()
+        percentual_sinal = cfg.percentual_sinal
+        valor_sinal      = (orc.valor_total * percentual_sinal / Decimal('100')).quantize(Decimal('0.01'))
+        data_quitacao    = orc.data_evento - datetime.timedelta(days=cfg.prazo_quitacao_dias)
+
+        contrato = Contrato.objects.create(
+            numero=Contrato.proximo_numero(),
+            orcamento=orc,
+            cliente=cliente,
+            contratante_nome=cliente.nome,
+            contratante_nacionalidade=cliente.nacionalidade,
+            contratante_profissao=cliente.profissao,
+            contratante_rg=cliente.rg,
+            contratante_rg_orgao_emissor=cliente.rg_orgao_emissor,
+            contratante_cpf=cliente.cpf,
+            contratante_estado_civil=cliente.estado_civil,
+            contratante_endereco=contratante_endereco,
+            data_evento=orc.data_evento,
+            hora_evento=None,
+            local_evento=local_evento,
+            valor_total=orc.valor_total,
+            percentual_sinal=percentual_sinal,
+            valor_sinal=valor_sinal,
+            data_quitacao=data_quitacao,
+        )
+
+        return Response(ContratoSerializer(contrato).data, status=status.HTTP_201_CREATED)
+
+
+# ─── Contrato ──────────────────────────────────────────────────────────────────
+
+class ContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Somente leitura via API — Contrato só é criado através de
+    OrcamentoViewSet.gerar_contrato (nunca via POST direto neste ViewSet)."""
+    queryset           = Contrato.objects.select_related('orcamento', 'cliente', 'evento').all()
+    serializer_class   = ContratoSerializer
+    permission_classes = [AllowAny]
+    filter_backends    = [filters.OrderingFilter]
+    ordering           = ['-criado_em']
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        contrato = self.get_object()
+        from .pdf_contrato import gerar_pdf_contrato
+        pdf_bytes = gerar_pdf_contrato(contrato)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{contrato.numero}.pdf"'
+        return response
+
+    @action(detail=True, methods=['post'], url_path='enviar-whatsapp')
+    def enviar_whatsapp(self, request, pk=None):
+        contrato = self.get_object()
+
+        telefone = contrato.cliente.telefone_principal if contrato.cliente else ''
+        if not telefone:
+            return Response(
+                {
+                    'detail': 'sem_telefone',
+                    'mensagem': 'Este contrato não tem telefone de contato vinculado.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        caption = request.data.get('mensagem', '').strip()
+
+        from .pdf_contrato import gerar_pdf_contrato
+        from notificacoes.servico import notificar_documento
+
+        pdf_bytes    = gerar_pdf_contrato(contrato)
+        nome_arquivo = f'{contrato.numero}.pdf'
+
+        ok = notificar_documento(
+            telefone=telefone,
+            pdf_bytes=pdf_bytes,
+            nome_arquivo=nome_arquivo,
+            caption=caption,
+            cliente=contrato.cliente,
+            tipo='contrato',
+        )
+
+        if not ok:
+            return Response(
+                {'detail': 'Falha ao enviar via WhatsApp. Verifique as credenciais Z-API em Configurações.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        contrato.status = 'enviado'
+        contrato.save(update_fields=['status', 'atualizado_em'])
+
+        return Response(ContratoSerializer(contrato).data)
+
+
+# ─── Configuração de Contrato (singleton) ─────────────────────────────────────
+
+class ConfiguracaoContratoViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
+    permission_classes = [AllowAny]
+    serializer_class   = ConfiguracaoContratoSerializer
+
+    def get_object(self):
+        return ConfiguracaoContrato.get()
+
+    def retrieve(self, request, pk=None):
+        return Response(self.get_serializer(self.get_object()).data)
+
+    def partial_update(self, request, pk=None):
+        config     = self.get_object()
+        serializer = ConfiguracaoContratoSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

@@ -16,6 +16,14 @@ class Cliente(models.Model):
         ('bloqueado', 'Bloqueado'),
     ]
 
+    ESTADO_CIVIL_CHOICES = [
+        ('solteiro', 'Solteiro(a)'),
+        ('casado', 'Casado(a)'),
+        ('divorciado', 'Divorciado(a)'),
+        ('viuvo', 'Viúvo(a)'),
+        ('uniao_estavel', 'União Estável'),
+    ]
+
     # Dados pessoais
     nome = models.CharField(max_length=150)
     cpf = models.CharField(
@@ -32,6 +40,13 @@ class Cliente(models.Model):
     # Contato
     telefone_principal = models.CharField(max_length=20)
     telefone_secundario = models.CharField(max_length=20, null=True, blank=True)
+
+    # Dados do CONTRATANTE (opcionais no cadastro, exigidos na emissão de Contrato — ver Contrato.md)
+    rg = models.CharField(max_length=20, blank=True, default='')
+    rg_orgao_emissor = models.CharField(max_length=20, blank=True, default='')
+    nacionalidade = models.CharField(max_length=50, blank=True, default='brasileira')
+    profissao = models.CharField(max_length=100, blank=True, default='')
+    estado_civil = models.CharField(max_length=20, choices=ESTADO_CIVIL_CHOICES, blank=True, default='')
 
     # Controle
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ativo')
