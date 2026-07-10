@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 08/jul/2026.
+> Última atualização: 10/jul/2026.
 
 ---
 
@@ -48,12 +48,16 @@ arretado/                        ← raiz Django
 ├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos + contratos
 │   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento,
 │   │                               Contrato (snapshot, CTR-0001...), ConfiguracaoContrato (singleton — ver Contrato.md),
-│   │                               ImagemInspiracao (galeria de imagens de referência do cliente, FK → Orcamento)
+│   │                               ImagemInspiracao (galeria de imagens de referência do cliente, FK → Orcamento),
+│   │                               PagamentoEvento (parcelas de pagamento do Evento, FK → Evento — Evento.sinal_pago
+│   │                               é sempre derivado da soma dos pagamentos com status='pago', via
+│   │                               Evento.recalcular_sinal_pago(), nunca gravado direto)
 │   │                               (Orcamento e Evento têm tipo_entrega/local/endereco_avulso/bairro_entrega/taxa_entrega — ver FRETE.md)
 │   ├── pdf_orcamento.py          ← gera PDF (ReportLab, canvas cru, 1 página) — inclui linha "Taxa de entrega" quando houver
 │   ├── pdf_contrato.py           ← gera PDF do contrato (ReportLab Platypus, multi-página) — texto e cláusulas vêm de
 │   │                               ConfiguracaoContrato.get() + snapshot do Contrato, nunca hardcoded
-│   └── views.py                 ← OrcamentoViewSet (converter-em-evento, gerar-contrato, imagens/) + EventoViewSet +
+│   └── views.py                 ← OrcamentoViewSet (converter-em-evento, gerar-contrato, imagens/, itens/{id}/editar/,
+│                                    update() restrito a status rascunho/enviado) + EventoViewSet (pagamentos/, pagamentos/{id}/remover/) +
 │                                    ContratoViewSet (só leitura + pdf/enviar-whatsapp) + ConfiguracaoContratoViewSet
 ├── usuarios/                    ← Gestão de usuários + RBAC
 │   └── views.py
@@ -135,7 +139,9 @@ arretado-crm/                    ← raiz React
 - **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só é permitida com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente preenchidos (podem estar vazios no cadastro normal — são exigidos só neste momento) — ver `Contrato.md`
 - **`eventos.ImagemInspiracao`** é a galeria de imagens de referência (uso interno da equipe, nunca entra no PDF/WhatsApp do orçamento) anexada ao `Orcamento` inteiro (não por item). `Evento` **não duplica** essas imagens — `EventoDetailSerializer.imagens_inspiracao` é um `SerializerMethodField` que lê direto de `evento.orcamento_origem.imagens_inspiracao` (mesma filosofia de nunca duplicar o que a relação já entrega, como o Contrato faz com os itens do Orçamento)
 - **`MEDIA_URL`/`MEDIA_ROOT`** estão configurados em `config/settings.py` (`/media/`, `BASE_DIR / 'media'`) desde a feature de Imagens de Inspiração — é o único `ImageField` do projeto de fato exercitado em produção. Em prod, o Nginx tem um `location /media/ { alias .../media/; }` próprio (não é servido pelo Django/Gunicorn) — qualquer novo `ImageField`/`FileField` já pode reaproveitar essa infra, não precisa recriar
-- **Cuidado com `prefetch_related` + criação de objeto relacionado na mesma request**: se uma view faz `self.get_object()` sobre um queryset com `prefetch_related('algo')` e, na mesma request, cria/deleta um objeto relacionado via `Model.objects.create(fk=obj, ...)` (sem passar pelo manager `obj.algo`), o cache do prefetch fica stale e `obj.algo.all()` (inclusive dentro do serializer) não reflete a mudança. Sempre que fizer isso, chamar `obj.refresh_from_db()` antes de serializar a resposta (foi o que corrigiu `adicionar_imagens`/`remover_imagem` no `OrcamentoViewSet` — o mesmo padrão de `adicionar_item`/`remover_item` pode estar sujeito ao mesmo problema, não verificado)
+- **Cuidado com `prefetch_related` + criação de objeto relacionado na mesma request**: se uma view faz `self.get_object()` sobre um queryset com `prefetch_related('algo')` e, na mesma request, cria/deleta um objeto relacionado via `Model.objects.create(fk=obj, ...)` (sem passar pelo manager `obj.algo`), o cache do prefetch fica stale e `obj.algo.all()` (inclusive dentro do serializer) não reflete a mudança. Sempre que fizer isso, chamar `obj.refresh_from_db()` antes de serializar a resposta (foi o que corrigiu `adicionar_imagens`/`remover_imagem` no `OrcamentoViewSet` e `adicionar_pagamento` no `EventoViewSet` — o mesmo padrão de `adicionar_item`/`remover_item` pode estar sujeito ao mesmo problema, não verificado)
+- **`eventos.PagamentoEvento`** registra as parcelas de pagamento de um `Evento` (valor/forma_pagamento/status/data_pagamento/observação). `Evento.sinal_pago` **nunca** é gravado direto — é sempre recalculado via `Evento.recalcular_sinal_pago()` (soma dos pagamentos com `status='pago'`), chamado após criar/remover um `PagamentoEvento` (`POST/DELETE /eventos/{id}/pagamentos/...`). O sinal informado na criação do Evento ou na conversão de Orçamento em Evento (`sinal_pago` no body) também vira um `PagamentoEvento` inicial (forma `outro`, status `pago`) em vez de setar o campo diretamente
+- **Edição de Orçamento**: `OrcamentoViewSet.update()` só permite `PATCH/PUT` quando `status` é `rascunho` ou `enviado` (400 caso contrário); mesma restrição vale para editar item (`PATCH /eventos/orcamentos/{id}/itens/{item_id}/editar/`). Depois de aprovado/enviado além desses estágios, o orçamento é imutável (mesma filosofia do `Contrato` como snapshot)
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -228,12 +234,13 @@ GET/PATCH             /api/v1/pdv/configuracao-entrega/1/   ← singleton, campo
 
 # Orçamentos
 GET/POST      /api/v1/eventos/orcamentos/
-GET/PATCH     /api/v1/eventos/orcamentos/{id}/
+GET/PATCH     /api/v1/eventos/orcamentos/{id}/                          ← PATCH só permitido com status rascunho/enviado
 POST          /api/v1/eventos/orcamentos/{id}/enviar/
 POST          /api/v1/eventos/orcamentos/{id}/aprovar/
 POST          /api/v1/eventos/orcamentos/{id}/recusar/
-POST          /api/v1/eventos/orcamentos/{id}/converter-em-evento/
+POST          /api/v1/eventos/orcamentos/{id}/converter-em-evento/      ← body opcional "sinal_pago" vira 1º PagamentoEvento
 POST          /api/v1/eventos/orcamentos/{id}/itens/
+PATCH         /api/v1/eventos/orcamentos/{id}/itens/{item_id}/editar/   ← só com status rascunho/enviado
 DELETE        /api/v1/eventos/orcamentos/{id}/itens/{item_id}/remover/
 POST          /api/v1/eventos/orcamentos/{id}/imagens/                  ← multipart, campo "imagens" (um ou mais arquivos)
 DELETE        /api/v1/eventos/orcamentos/{id}/imagens/{imagem_id}/remover/
@@ -249,11 +256,13 @@ POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/
 GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton
 
 # Eventos
-GET/POST              /api/v1/eventos/
+GET/POST              /api/v1/eventos/                                  ← POST aceita "sinal_pago" opcional (vira 1º PagamentoEvento)
 GET/POST              /api/v1/eventos/locais/
 GET/PATCH/DELETE      /api/v1/eventos/locais/{id}/
 POST                  /api/v1/eventos/{id}/confirmar/
 POST                  /api/v1/eventos/{id}/entregar/
+POST                  /api/v1/eventos/{id}/pagamentos/                  ← cria PagamentoEvento + recalcula sinal_pago
+DELETE                /api/v1/eventos/{id}/pagamentos/{pagamento_id}/remover/
 GET                   /api/v1/eventos/agenda/
 
 # Notificações WhatsApp
@@ -359,4 +368,6 @@ Infra já configurada em produção (não precisa recriar):
 - Não criar `ImagemInspiracao` por item de Orçamento — a galeria pertence ao Orçamento inteiro (decisão já confirmada com o usuário)
 - Não incluir as imagens de `ImagemInspiracao` no PDF do orçamento nem na mensagem de WhatsApp — é uso interno da equipe, nunca client-facing
 - Não duplicar `ImagemInspiracao` para o Evento na conversão — o Evento só **lê** via `orcamento_origem`, nunca copia as imagens
+- Não gravar `Evento.sinal_pago` diretamente — sempre criar/remover um `PagamentoEvento` e chamar `evento.recalcular_sinal_pago()`
+- Não permitir `PATCH/PUT` em `Orcamento` (nem editar item) quando `status` não for `rascunho` ou `enviado`
 - **Nunca rodar `npm run build`/`vite build` na VPS sem avisar antes** — o Nginx serve o frontend direto de `arretado-crm/dist/` (`root` no vhost), então qualquer build "de teste" já sobrescreve o que está em produção. Não existe build isolado nesse projeto; tratar todo `build` como deploy real
