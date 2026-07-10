@@ -190,6 +190,19 @@ class ItemOrcamento(models.Model):
         super().save(*args, **kwargs)
 
 
+class ImagemInspiracao(models.Model):
+    orcamento  = models.ForeignKey(Orcamento, on_delete=models.CASCADE, related_name='imagens_inspiracao')
+    imagem     = models.ImageField(upload_to='orcamentos/inspiracao/%Y/%m/')
+    criado_em  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Imagem de Inspiração'
+        ordering     = ['criado_em']
+
+    def __str__(self):
+        return f'Inspiração {self.orcamento.numero} #{self.pk}'
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Local do Evento
 # ─────────────────────────────────────────────────────────────────────────────
@@ -337,6 +350,14 @@ class Evento(models.Model):
     def saldo_restante(self):
         return max(self.valor_total - self.sinal_pago, 0)
 
+    def recalcular_sinal_pago(self):
+        from django.db.models import Sum
+        total_pago = self.pagamentos.filter(status='pago').aggregate(
+            t=Sum('valor')
+        )['t'] or 0
+        self.sinal_pago = total_pago
+        self.save(update_fields=['sinal_pago', 'atualizado_em'])
+
     # ── Permissões de transição ───────────────────────────────────────────
     @property
     def pode_confirmar(self):
@@ -402,6 +423,42 @@ class ItemEvento(models.Model):
     def save(self, *args, **kwargs):
         self.preco_total = self.preco_unit * self.quantidade
         super().save(*args, **kwargs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pagamento do Evento
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PagamentoEvento(models.Model):
+
+    FORMA_CHOICES = [
+        ('pix',      'Pix'),
+        ('dinheiro', 'Dinheiro'),
+        ('cartao',   'Cartão'),
+        ('outro',    'Outro'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pago',     'Pago'),
+        ('pendente', 'Pendente'),
+    ]
+
+    evento          = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='pagamentos')
+    valor           = models.DecimalField(max_digits=10, decimal_places=2)
+    forma_pagamento = models.CharField(max_length=20, choices=FORMA_CHOICES, default='outro')
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pago')
+    data_pagamento  = models.DateField(default=timezone.now)
+    observacao      = models.CharField(max_length=300, blank=True, default='')
+
+    criado_em       = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Pagamento de Evento'
+        verbose_name_plural  = 'Pagamentos de Evento'
+        ordering             = ['data_pagamento', 'criado_em']
+
+    def __str__(self):
+        return f'{self.evento.numero} — {self.get_forma_pagamento_display()} — R$ {self.valor}'
 
 
 # ─────────────────────────────────────────────────────────────────────────────

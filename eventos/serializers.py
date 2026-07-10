@@ -1,5 +1,9 @@
+from django.utils import timezone
 from rest_framework import serializers
-from .models import LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento, Contrato, ConfiguracaoContrato
+from .models import (
+    LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
+    ImagemInspiracao, Contrato, ConfiguracaoContrato,
+)
 
 
 # ─── Local de Evento ──────────────────────────────────────────────────────────
@@ -78,12 +82,39 @@ class EventoListSerializer(serializers.ModelSerializer):
         return obj.local.nome if obj.local else None
 
 
+class PagamentoEventoSerializer(serializers.ModelSerializer):
+    forma_pagamento_display = serializers.CharField(source='get_forma_pagamento_display', read_only=True)
+    status_display          = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model  = PagamentoEvento
+        fields = [
+            'id', 'valor', 'forma_pagamento', 'forma_pagamento_display',
+            'status', 'status_display', 'data_pagamento', 'observacao', 'criado_em',
+        ]
+
+
 class EventoDetailSerializer(EventoListSerializer):
     itens = ItemEventoSerializer(many=True, read_only=True)
     local_detalhe = LocalEventoSerializer(source='local', read_only=True)
+    pagamentos = PagamentoEventoSerializer(many=True, read_only=True)
+    imagens_inspiracao = serializers.SerializerMethodField()
+    tem_orcamento_origem = serializers.SerializerMethodField()
 
     class Meta(EventoListSerializer.Meta):
-        fields = EventoListSerializer.Meta.fields + ['itens', 'local_detalhe', 'observacoes']
+        fields = EventoListSerializer.Meta.fields + [
+            'itens', 'local_detalhe', 'pagamentos',
+            'imagens_inspiracao', 'tem_orcamento_origem', 'observacoes',
+        ]
+
+    def get_imagens_inspiracao(self, obj):
+        origem = getattr(obj, 'orcamento_origem', None)
+        if not origem:
+            return []
+        return ImagemInspiracaoSerializer(origem.imagens_inspiracao.all(), many=True).data
+
+    def get_tem_orcamento_origem(self, obj):
+        return bool(getattr(obj, 'orcamento_origem', None))
 
 
 class EventoCreateSerializer(serializers.ModelSerializer):
@@ -109,6 +140,7 @@ class EventoCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         itens_data = validated_data.pop('itens', [])
+        sinal_pago = validated_data.pop('sinal_pago', 0) or 0
         validated_data['numero'] = Evento.proximo_numero()
         evento = Evento.objects.create(**validated_data)
 
@@ -127,6 +159,19 @@ class EventoCreateSerializer(serializers.ModelSerializer):
         evento.subtotal    = subtotal
         evento.valor_total = max(subtotal - evento.desconto, 0) + evento.taxa_entrega
         evento.save(update_fields=['subtotal', 'valor_total'])
+
+        # Sinal informado na criação vira o primeiro PagamentoEvento — sinal_pago é
+        # sempre derivado da soma dos pagamentos (ver recalcular_sinal_pago), nunca gravado direto.
+        if sinal_pago:
+            PagamentoEvento.objects.create(
+                evento=evento,
+                valor=sinal_pago,
+                forma_pagamento='outro',
+                status='pago',
+                data_pagamento=timezone.localtime(timezone.now()).date(),
+                observacao='Sinal informado na criação do evento.',
+            )
+            evento.recalcular_sinal_pago()
         return evento
 
     def update(self, instance, validated_data):
@@ -188,6 +233,12 @@ class ItemOrcamentoCreateSerializer(serializers.ModelSerializer):
         return data
 
 
+class ImagemInspiracaoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ImagemInspiracao
+        fields = ['id', 'imagem', 'criado_em']
+
+
 class OrcamentoListSerializer(serializers.ModelSerializer):
     status_display       = serializers.CharField(source='get_status_display',      read_only=True)
     tipo_evento_display  = serializers.CharField(source='get_tipo_evento_display', read_only=True)
@@ -228,9 +279,10 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
 
 class OrcamentoDetailSerializer(OrcamentoListSerializer):
     itens = ItemOrcamentoSerializer(many=True, read_only=True)
+    imagens_inspiracao = ImagemInspiracaoSerializer(many=True, read_only=True)
 
     class Meta(OrcamentoListSerializer.Meta):
-        fields = OrcamentoListSerializer.Meta.fields + ['itens', 'observacoes']
+        fields = OrcamentoListSerializer.Meta.fields + ['itens', 'imagens_inspiracao', 'observacoes']
 
 
 class OrcamentoCreateSerializer(serializers.ModelSerializer):
@@ -290,6 +342,7 @@ class OrcamentoCreateSerializer(serializers.ModelSerializer):
         validated_data.pop('itens', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        instance.valor_total = max(instance.subtotal - instance.desconto, 0) + instance.taxa_entrega
         instance.save()
         return instance
 

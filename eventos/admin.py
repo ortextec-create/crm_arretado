@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import LocalEvento, Evento, ItemEvento
+from .models import LocalEvento, Evento, ItemEvento, PagamentoEvento
 
 
 @admin.register(LocalEvento)
@@ -17,6 +17,12 @@ class ItemEventoInline(admin.TabularInline):
     readonly_fields = ('preco_total',)
 
 
+class PagamentoEventoInline(admin.TabularInline):
+    model  = PagamentoEvento
+    extra  = 0
+    fields = ('valor', 'forma_pagamento', 'status', 'data_pagamento', 'observacao')
+
+
 @admin.register(Evento)
 class EventoAdmin(admin.ModelAdmin):
     list_display    = ('numero', 'status', 'tipo_evento', 'data_evento',
@@ -24,8 +30,8 @@ class EventoAdmin(admin.ModelAdmin):
     list_filter     = ('status', 'tipo_evento', 'tipo_entrega')
     search_fields   = ('numero', 'cliente_nome', 'cliente__nome')
     ordering        = ('data_evento', 'hora_evento')
-    inlines         = [ItemEventoInline]
-    readonly_fields = ('subtotal', 'valor_total', 'saldo_restante', 'criado_em', 'atualizado_em')
+    inlines         = [ItemEventoInline, PagamentoEventoInline]
+    readonly_fields = ('subtotal', 'valor_total', 'sinal_pago', 'saldo_restante', 'criado_em', 'atualizado_em')
 
     fieldsets = (
         ('Identificação', {

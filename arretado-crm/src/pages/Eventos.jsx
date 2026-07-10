@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { eventosApi, locaisEventoApi, clientesApi } from '../api/services'
 import { pdvApi, taxasEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast } from '../components/ui'
@@ -43,6 +43,21 @@ const STATUS_TABS = [
   { key: 'pronto',     label: 'Pronto' },
   { key: 'entregue',   label: 'Entregue' },
 ]
+
+// Sequência do stepper de status do modal de detalhe (exclui 'cancelado', tratado à parte)
+const STATUS_STEPS = ['orcamento', 'confirmado', 'em_producao', 'pronto', 'entregue']
+
+const FORMA_PAGAMENTO_LABELS = {
+  pix:      'Pix',
+  dinheiro: 'Dinheiro',
+  cartao:   'Cartão',
+  outro:    'Outro',
+}
+
+const PAGAMENTO_STATUS_LABELS = {
+  pago:     'Pago',
+  pendente: 'Pendente',
+}
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtData = (d) => {
@@ -889,6 +904,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
 function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
+  const [abaAtiva,    setAbaAtiva]    = useState('itens')
   const [addingItem,  setAddingItem]  = useState(false)
   const [produtos,    setProdutos]    = useState([])
   const [catSel,      setCatSel]      = useState('')
@@ -896,6 +912,15 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
   const [categorias,  setCategorias]  = useState([])
   const [carrinho,    setCarrinho]    = useState([])
   const [savingItems, setSavingItems] = useState(false)
+  const [lightboxImg, setLightboxImg] = useState(null)
+
+  // Pagamentos
+  const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
+  const [savingPagamento,      setSavingPagamento]      = useState(false)
+  const [pagamentoForm,        setPagamentoForm]        = useState({
+    valor: '', forma_pagamento: 'pix', status: 'pago',
+    data_pagamento: new Date().toISOString().slice(0, 10), observacao: '',
+  })
 
   // CORRIGIDO: usa pdvApi.listProdutos() e pdvApi.listCategorias()
   useEffect(() => {
@@ -956,6 +981,46 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
     }
   }
 
+  const salvarPagamento = async () => {
+    const valor = parseFloat(pagamentoForm.valor)
+    if (!valor || valor <= 0) {
+      onToast({ message: 'Informe um valor válido para o pagamento.', type: 'error' })
+      return
+    }
+    setSavingPagamento(true)
+    try {
+      await eventosApi.adicionarPagamento(evento.id, {
+        valor,
+        forma_pagamento: pagamentoForm.forma_pagamento,
+        status:          pagamentoForm.status,
+        data_pagamento:  pagamentoForm.data_pagamento,
+        observacao:      pagamentoForm.observacao,
+      })
+      setPagamentoForm({
+        valor: '', forma_pagamento: 'pix', status: 'pago',
+        data_pagamento: new Date().toISOString().slice(0, 10), observacao: '',
+      })
+      setRegistrandoPagamento(false)
+      await onItemAdded()
+      onToast({ message: 'Pagamento registrado!', type: 'success' })
+    } catch {
+      onToast({ message: 'Erro ao registrar pagamento.', type: 'error' })
+    } finally {
+      setSavingPagamento(false)
+    }
+  }
+
+  const removerPagamento = async (pagamentoId) => {
+    if (!window.confirm('Remover este pagamento? O saldo do evento será recalculado.')) return
+    try {
+      await eventosApi.removerPagamento(evento.id, pagamentoId)
+      await onItemAdded()
+      onToast({ message: 'Pagamento removido.', type: 'success' })
+    } catch {
+      onToast({ message: 'Erro ao remover pagamento.', type: 'error' })
+    }
+  }
+
   const ACOES = [
     { key: 'confirmar',        label: 'Confirmar',         icon: 'ti-check',          show: evento.pode_confirmar,        variant: 'primary' },
     { key: 'iniciar_producao', label: 'Iniciar produção',  icon: 'ti-chef-hat',       show: evento.pode_iniciar_producao, variant: 'primary' },
@@ -965,20 +1030,46 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
   ]
 
   const cfg = STATUS_CONFIG[evento.status] || {}
+  const stepIdx = STATUS_STEPS.indexOf(evento.status)
+  const podeEditarItens = evento.status === 'orcamento' || evento.status === 'confirmado'
+
+  const nItens      = evento.itens?.length ?? 0
+  const nPagamentos = evento.pagamentos?.length ?? 0
+  const nImagens     = evento.imagens_inspiracao?.length ?? 0
 
   return (
-    <Modal open title={`Evento ${evento.numero}`} onClose={onClose} wide>
-      <div className={styles.detalheLayout}>
+    <Modal open title={`Evento ${evento.numero}`} onClose={onClose} width={920}>
+      {/* Stepper de status (ou badge de cancelado) */}
+      {evento.status === 'cancelado' ? (
+        <div className={styles.statusCanceladoBadge}>
+          <i className="ti ti-ban" /> Evento cancelado
+        </div>
+      ) : (
+        <div className={styles.statusStepper}>
+          {STATUS_STEPS.map((s, i) => (
+            <Fragment key={s}>
+              <div
+                className={`${styles.statusStepItem}
+                  ${i === stepIdx ? styles.stepAtivo : ''}
+                  ${i < stepIdx ? styles.stepConcluido : ''}`}
+              >
+                <span className={styles.statusStepDot}>{i < stepIdx ? <i className="ti ti-check" /> : i + 1}</span>
+                <span>{STATUS_CONFIG[s]?.label}</span>
+              </div>
+              {i < STATUS_STEPS.length - 1 && <div className={styles.statusStepSep} />}
+            </Fragment>
+          ))}
+        </div>
+      )}
 
-        {/* Coluna esquerda: informações */}
-        <div className={styles.detalheInfo}>
-          <div className={styles.detalheHeader}>
-            <span className={styles.badge} style={{ '--badge-color': cfg.color }}>{cfg.label}</span>
-            <span className={styles.detalheTipo}>
-              <i className={`ti ${TIPO_EVENTO_ICONS[evento.tipo_evento] || 'ti-calendar'}`} />
-              {evento.tipo_evento_display}
-            </span>
-          </div>
+      <div className={styles.detalheLayoutV2}>
+
+        {/* Sidebar: dados + financeiro + ações */}
+        <div className={styles.detalheSidebar}>
+          <span className={styles.detalheTipo}>
+            <i className={`ti ${TIPO_EVENTO_ICONS[evento.tipo_evento] || 'ti-calendar'}`} />
+            {evento.tipo_evento_display}
+          </span>
 
           <div className={styles.infoGrid}>
             <InfoRow icon="ti-calendar" label="Data"     value={fmtData(evento.data_evento)} />
@@ -996,27 +1087,27 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
           </div>
 
           {/* Financeiro */}
-          <div className={styles.financeiroBox}>
-            <div className={styles.finLinha}><span>Subtotal</span><span>{fmt(evento.subtotal)}</span></div>
+          <div className={styles.financeiroCard}>
+            <div className={styles.financeiroLinha}><span>Subtotal</span><span>{fmt(evento.subtotal)}</span></div>
             {Number(evento.desconto) > 0 && (
-              <div className={styles.finLinha}><span>Desconto</span><span>− {fmt(evento.desconto)}</span></div>
+              <div className={styles.financeiroLinha}><span>Desconto</span><span>− {fmt(evento.desconto)}</span></div>
             )}
             {Number(evento.taxa_entrega) > 0 && (
-              <div className={styles.finLinha}>
+              <div className={styles.financeiroLinha}>
                 <span>Taxa de entrega{evento.bairro_entrega ? ` (${evento.bairro_entrega})` : ''}</span>
                 <span>{fmt(evento.taxa_entrega)}</span>
               </div>
             )}
-            <div className={`${styles.finLinha} ${styles.finTotal}`}><span>Total</span><span>{fmt(evento.valor_total)}</span></div>
-            <div className={styles.finLinha}><span>Sinal pago</span><span>{fmt(evento.sinal_pago)}</span></div>
-            <div className={`${styles.finLinha} ${Number(evento.saldo_restante) > 0 ? styles.finSaldoPendente : styles.finSaldoQuitado}`}>
+            <div className={`${styles.financeiroLinha} ${styles.financeiroTotal}`}><span>Total</span><span>{fmt(evento.valor_total)}</span></div>
+            <div className={styles.financeiroLinha}><span>Sinal pago</span><span>{fmt(evento.sinal_pago)}</span></div>
+            <div className={`${styles.financeiroLinha} ${styles.financeiroTotal} ${Number(evento.saldo_restante) > 0 ? styles.saldoPendente : styles.saldoQuitado}`}>
               <span>Saldo restante</span>
               <span>{Number(evento.saldo_restante) > 0 ? fmt(evento.saldo_restante) : '✓ Quitado'}</span>
             </div>
           </div>
 
           {/* Ações de status */}
-          <div className={styles.acoesBox}>
+          <div className={styles.acoesWrap}>
             {ACOES.filter(a => a.show).map(a => (
               <Btn
                 key={a.key}
@@ -1030,85 +1121,239 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
           </div>
         </div>
 
-        {/* Coluna direita: itens */}
-        <div className={styles.detalheItens}>
-          <div className={styles.itensHeader}>
-            <h4>Itens do evento</h4>
-            {evento.status in { orcamento: 1, confirmado: 1 } && !addingItem && (
-              <Btn variant="ghost" onClick={() => setAddingItem(true)}>
-                <i className="ti ti-plus" /> Adicionar itens
-              </Btn>
-            )}
+        {/* Área principal: abas */}
+        <div className={styles.detalheMain}>
+          <div className={styles.tabsNav}>
+            <button className={`${styles.tabBtn} ${abaAtiva === 'itens' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('itens')}>
+              Itens ({nItens})
+            </button>
+            <button className={`${styles.tabBtn} ${abaAtiva === 'pagamentos' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('pagamentos')}>
+              Pagamentos ({nPagamentos})
+            </button>
+            <button className={`${styles.tabBtn} ${abaAtiva === 'imagens' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('imagens')}>
+              Imagens ({nImagens})
+            </button>
           </div>
 
-          {(!evento.itens || evento.itens.length === 0) ? (
-            <p className={styles.semItens}>Nenhum item adicionado.</p>
-          ) : (
-            <div className={styles.itensList}>
-              {evento.itens.map(item => (
-                <div key={item.id} className={styles.itemRow}>
-                  <div className={styles.itemInfo}>
-                    <span className={styles.itemNome}>{item.nome}</span>
-                    {item.observacao && <span className={styles.itemObs}>{item.observacao}</span>}
-                  </div>
-                  <div className={styles.itemNums}>
-                    <span className={styles.itemQty}>{item.quantidade}×</span>
-                    <span className={styles.itemPreco}>{fmt(item.preco_unit)}</span>
-                    <span className={styles.itemTotal}>{fmt(item.preco_total)}</span>
-                    {evento.status in { orcamento: 1, confirmado: 1 } && (
-                      <button className={styles.removeItem} onClick={() => removerItem(item.id)}>
-                        <i className="ti ti-trash" />
-                      </button>
-                    )}
-                  </div>
+          {/* ── Aba: Itens ──────────────────────────────────────────────── */}
+          {abaAtiva === 'itens' && (
+            <>
+              <div className={styles.itensHeader}>
+                <h4>Itens do evento</h4>
+                {podeEditarItens && !addingItem && (
+                  <Btn variant="ghost" onClick={() => setAddingItem(true)}>
+                    <i className="ti ti-plus" /> Adicionar itens
+                  </Btn>
+                )}
+              </div>
+
+              {nItens === 0 ? (
+                <p className={styles.semItens}>Nenhum item adicionado.</p>
+              ) : (
+                <div className={styles.itensList}>
+                  {evento.itens.map(item => (
+                    <div key={item.id} className={styles.itemRow}>
+                      <div className={styles.itemInfo}>
+                        <span className={styles.itemNome}>{item.nome}</span>
+                        {item.observacao && <span className={styles.itemObs}>{item.observacao}</span>}
+                      </div>
+                      <div className={styles.itemNums}>
+                        <span className={styles.itemQty}>{item.quantidade}×</span>
+                        <span className={styles.itemPreco}>{fmt(item.preco_unit)}</span>
+                        <span className={styles.itemTotal}>{fmt(item.preco_total)}</span>
+                        {podeEditarItens && (
+                          <button className={styles.removeItem} onClick={() => removerItem(item.id)}>
+                            <i className="ti ti-trash" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+
+              {/* Painel de adicionar itens inline */}
+              {addingItem && (
+                <div className={styles.addItemsPanel}>
+                  <div className={styles.catalogoToolbar}>
+                    <input placeholder="Buscar…" value={buscaProd} onChange={e => setBuscaProd(e.target.value)} />
+                    <select value={catSel} onChange={e => setCatSel(e.target.value)}>
+                      <option value="">Todas</option>
+                      {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                  <div className={styles.produtosListSmall}>
+                    {prodsFiltrados.map(p => {
+                      const noCarrinho = carrinho.find(i => i.produto === p.id)
+                      return (
+                        <div key={p.id} className={styles.produtoCardSm}>
+                          <span>{p.nome}</span>
+                          <span className={styles.produtoPreco}>{fmt(p.preco)}</span>
+                          {noCarrinho ? (
+                            <div className={styles.qtyControl}>
+                              <button onClick={() => setQty(p.id, noCarrinho.quantidade - 1)}>−</button>
+                              <span>{noCarrinho.quantidade}</span>
+                              <button onClick={() => setQty(p.id, noCarrinho.quantidade + 1)}>+</button>
+                            </div>
+                          ) : (
+                            <button className={styles.addBtn} onClick={() => addCarrinho(p)}>+</button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {carrinho.length > 0 && (
+                    <Btn onClick={salvarItens} disabled={savingItems}>
+                      {savingItems ? <Spinner size={14} /> : <i className="ti ti-check" />}
+                      {savingItems ? 'Salvando…' : `Salvar ${carrinho.length} item(s)`}
+                    </Btn>
+                  )}
+                  <Btn variant="ghost" onClick={() => { setAddingItem(false); setCarrinho([]) }}>
+                    Cancelar
+                  </Btn>
+                </div>
+              )}
+            </>
           )}
 
-          {/* Painel de adicionar itens inline */}
-          {addingItem && (
-            <div className={styles.addItemsPanel}>
-              <div className={styles.catalogoToolbar}>
-                <input placeholder="Buscar…" value={buscaProd} onChange={e => setBuscaProd(e.target.value)} />
-                <select value={catSel} onChange={e => setCatSel(e.target.value)}>
-                  <option value="">Todas</option>
-                  {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
+          {/* ── Aba: Pagamentos ─────────────────────────────────────────── */}
+          {abaAtiva === 'pagamentos' && (
+            <>
+              <div className={styles.itensHeader}>
+                <h4>Pagamentos</h4>
+                {!registrandoPagamento && (
+                  <Btn variant="ghost" onClick={() => setRegistrandoPagamento(true)}>
+                    <i className="ti ti-plus" /> Registrar pagamento
+                  </Btn>
+                )}
               </div>
-              <div className={styles.produtosListSmall}>
-                {prodsFiltrados.map(p => {
-                  const noCarrinho = carrinho.find(i => i.produto === p.id)
-                  return (
-                    <div key={p.id} className={styles.produtoCardSm}>
-                      <span>{p.nome}</span>
-                      <span className={styles.produtoPreco}>{fmt(p.preco)}</span>
-                      {noCarrinho ? (
-                        <div className={styles.qtyControl}>
-                          <button onClick={() => setQty(p.id, noCarrinho.quantidade - 1)}>−</button>
-                          <span>{noCarrinho.quantidade}</span>
-                          <button onClick={() => setQty(p.id, noCarrinho.quantidade + 1)}>+</button>
-                        </div>
-                      ) : (
-                        <button className={styles.addBtn} onClick={() => addCarrinho(p)}>+</button>
-                      )}
+
+              {nPagamentos === 0 ? (
+                <p className={styles.semItens}>Nenhum pagamento registrado.</p>
+              ) : (
+                <div className={styles.itensList}>
+                  {evento.pagamentos.map(pg => (
+                    <div key={pg.id} className={styles.pagamentoRow}>
+                      <div className={styles.itemInfo}>
+                        <span className={styles.itemNome}>
+                          {pg.forma_pagamento_display} · {fmtData(pg.data_pagamento)}
+                        </span>
+                        {pg.observacao && <span className={styles.itemObs}>{pg.observacao}</span>}
+                      </div>
+                      <div className={styles.itemNums}>
+                        <span
+                          className={styles.badge}
+                          style={{ '--badge-color': pg.status === 'pago' ? '#059669' : '#D97706' }}
+                        >
+                          {pg.status_display}
+                        </span>
+                        <span className={styles.itemTotal}>{fmt(pg.valor)}</span>
+                        <button className={styles.removeItem} onClick={() => removerPagamento(pg.id)}>
+                          <i className="ti ti-trash" />
+                        </button>
+                      </div>
                     </div>
-                  )
-                })}
-              </div>
-              {carrinho.length > 0 && (
-                <Btn onClick={salvarItens} disabled={savingItems}>
-                  {savingItems ? <Spinner size={14} /> : <i className="ti ti-check" />}
-                  {savingItems ? 'Salvando…' : `Salvar ${carrinho.length} item(s)`}
-                </Btn>
+                  ))}
+                </div>
               )}
-              <Btn variant="ghost" onClick={() => { setAddingItem(false); setCarrinho([]) }}>
-                Cancelar
-              </Btn>
-            </div>
+
+              {registrandoPagamento && (
+                <div className={styles.addItemsPanel}>
+                  <div className={styles.formGridPagamento}>
+                    <div className={styles.formGroup}>
+                      <label>Valor (R$) *</label>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={pagamentoForm.valor}
+                        onChange={e => setPagamentoForm(f => ({ ...f, valor: e.target.value }))}
+                      />
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Forma de pagamento</label>
+                      <select
+                        value={pagamentoForm.forma_pagamento}
+                        onChange={e => setPagamentoForm(f => ({ ...f, forma_pagamento: e.target.value }))}
+                      >
+                        {Object.entries(FORMA_PAGAMENTO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Status</label>
+                      <select
+                        value={pagamentoForm.status}
+                        onChange={e => setPagamentoForm(f => ({ ...f, status: e.target.value }))}
+                      >
+                        {Object.entries(PAGAMENTO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Data</label>
+                      <input
+                        type="date"
+                        value={pagamentoForm.data_pagamento}
+                        onChange={e => setPagamentoForm(f => ({ ...f, data_pagamento: e.target.value }))}
+                      />
+                    </div>
+                    <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                      <label>Observação</label>
+                      <input
+                        value={pagamentoForm.observacao}
+                        onChange={e => setPagamentoForm(f => ({ ...f, observacao: e.target.value }))}
+                        placeholder="Ex: Pix referente à 2ª parcela"
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Btn onClick={salvarPagamento} disabled={savingPagamento}>
+                      {savingPagamento ? <Spinner size={14} /> : <i className="ti ti-check" />}
+                      {savingPagamento ? 'Salvando…' : 'Salvar pagamento'}
+                    </Btn>
+                    <Btn variant="ghost" onClick={() => setRegistrandoPagamento(false)}>
+                      Cancelar
+                    </Btn>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Aba: Imagens de Inspiração ──────────────────────────────── */}
+          {abaAtiva === 'imagens' && (
+            <>
+              <div className={styles.itensHeader}>
+                <h4>Imagens de Inspiração</h4>
+              </div>
+              <p className={styles.imagensAviso}>
+                <i className="ti ti-lock" /> Uso interno — nunca aparece em PDFs ou WhatsApp.
+              </p>
+              {nImagens === 0 ? (
+                <p className={styles.semItens}>
+                  {evento.tem_orcamento_origem
+                    ? 'Nenhuma imagem anexada ao orçamento de origem.'
+                    : 'Este evento não tem imagens de inspiração porque não veio de um orçamento.'}
+                </p>
+              ) : (
+                <div className={styles.imagensInspiracaoGrid}>
+                  {evento.imagens_inspiracao.map(img => (
+                    <div key={img.id} className={styles.imagemInspiracaoThumb}>
+                      <img src={img.imagem} alt="Inspiração" onClick={() => setLightboxImg(img.imagem)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
+
+      {lightboxImg && (
+        <div className={styles.lightboxOverlay} onClick={() => setLightboxImg(null)}>
+          <button className={styles.lightboxClose} onClick={() => setLightboxImg(null)} aria-label="Fechar">
+            <i className="ti ti-x" />
+          </button>
+          <img className={styles.lightboxImg} src={lightboxImg} alt="Inspiração ampliada" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
     </Modal>
   )
 }

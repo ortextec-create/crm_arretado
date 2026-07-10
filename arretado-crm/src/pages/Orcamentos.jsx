@@ -55,6 +55,7 @@ export default function Orcamentos() {
 
   const [showNovo,      setShowNovo]      = useState(false)
   const [showDetalhe,   setShowDetalhe]   = useState(false)
+  const [showEditar,    setShowEditar]    = useState(false)
   const [showConverter, setShowConverter] = useState(false)
   const [showWpp,       setShowWpp]       = useState(false)
   const [showContrato,  setShowContrato]  = useState(false)
@@ -183,6 +184,13 @@ export default function Orcamentos() {
     showToast(`Evento ${evento.numero} criado com sucesso!`)
   }
 
+  function handleEditarSalvo(orc) {
+    setShowEditar(false)
+    setOrcAtivo(orc)
+    loadOrcamentos()
+    showToast(`Orçamento ${orc.numero} atualizado.`)
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -297,6 +305,16 @@ export default function Orcamentos() {
           onItemAdicionado={(updated) => { setOrcAtivo(updated); loadOrcamentos() }}
           onConverter={() => setShowConverter(true)}
           onEmitirContrato={() => setShowContrato(true)}
+          onEditar={() => setShowEditar(true)}
+        />
+      )}
+
+      {/* Modal: editar orçamento */}
+      {showEditar && orcAtivo && (
+        <ModalEditarOrcamento
+          orc={orcAtivo}
+          onClose={() => setShowEditar(false)}
+          onSalvo={handleEditarSalvo}
         />
       )}
 
@@ -697,11 +715,16 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
 
 // ─── Modal: Detalhe do Orçamento ──────────────────────────────────────────────
 
-function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter, onEmitirContrato }) {
+function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter, onEmitirContrato, onEditar }) {
   const sc = STATUS_CONFIG[orc.status] || {}
   const [produtos,  setProdutos]  = useState([])
   const [novoItem,  setNovoItem]  = useState({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' })
   const [addingItem, setAddingItem] = useState(false)
+  const [uploadingImagens, setUploadingImagens] = useState(false)
+  const [lightboxImg, setLightboxImg] = useState(null)
+  const [editingItemId, setEditingItemId] = useState(null)
+  const [editItemForm,  setEditItemForm]  = useState({ preco_unit: '', quantidade: '1' })
+  const [savingItem,    setSavingItem]    = useState(false)
 
   useEffect(() => {
     pdvApi.listProdutos({ ativo: 'true', page_size: 500 }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
@@ -728,6 +751,52 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
       onItemAdicionado(res.data)
       setNovoItem({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' })
     } catch { /* silencioso */ } finally { setAddingItem(false) }
+  }
+
+  function handleEditItemStart(item) {
+    setEditingItemId(item.id)
+    setEditItemForm({ preco_unit: String(item.preco_unit), quantidade: String(item.quantidade) })
+  }
+
+  function handleEditItemCancel() {
+    setEditingItemId(null)
+  }
+
+  async function handleEditItemSalvar(item) {
+    setSavingItem(true)
+    try {
+      const res = await orcamentosApi.editarItem(orc.id, item.id, {
+        produto:    item.produto || null,
+        nome:       item.nome,
+        preco_unit: parseFloat(editItemForm.preco_unit) || 0,
+        quantidade: parseInt(editItemForm.quantidade) || 1,
+        observacao: item.observacao,
+      })
+      onItemAdicionado(res.data)
+      setEditingItemId(null)
+    } catch { /* silencioso */ } finally { setSavingItem(false) }
+  }
+
+  async function handleAddImagens(e) {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    setUploadingImagens(true)
+    try {
+      const formData = new FormData()
+      files.forEach(f => formData.append('imagens', f))
+      const res = await orcamentosApi.adicionarImagens(orc.id, formData)
+      onItemAdicionado(res.data)
+    } catch { /* silencioso */ } finally {
+      setUploadingImagens(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleRemoverImagem(imgId) {
+    try {
+      const res = await orcamentosApi.removerImagem(orc.id, imgId)
+      onItemAdicionado(res.data)
+    } catch { /* silencioso */ }
   }
 
   const podeEditar = orc.status === 'rascunho' || orc.status === 'enviado'
@@ -774,17 +843,61 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
               </tr>
             </thead>
             <tbody>
-              {orc.itens.map(item => (
-                <tr key={item.id}>
-                  <td>{item.nome}</td>
-                  <td className={styles.tdCenter}>{item.quantidade}</td>
-                  <td className={styles.tdRight}>{fmt(item.preco_unit)}</td>
-                  <td className={`${styles.tdRight} ${styles.tdTotal}`}>{fmt(item.preco_total)}</td>
-                  {podeEditar && (
-                    <td><button className={styles.btnRemove} onClick={() => onRemoverItem(item.id)}><i className="ti ti-trash" /></button></td>
-                  )}
-                </tr>
-              ))}
+              {orc.itens.map(item => {
+                const editando = editingItemId === item.id
+                if (editando) {
+                  const qty   = parseInt(editItemForm.quantidade) || 0
+                  const price = parseFloat(editItemForm.preco_unit) || 0
+                  return (
+                    <tr key={item.id}>
+                      <td>{item.nome}</td>
+                      <td className={styles.tdCenter}>
+                        <input
+                          type="number" min="1"
+                          value={editItemForm.quantidade}
+                          onChange={e => setEditItemForm(f => ({ ...f, quantidade: e.target.value }))}
+                          className={styles.inputQtd}
+                        />
+                      </td>
+                      <td className={styles.tdRight}>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={editItemForm.preco_unit}
+                          onChange={e => setEditItemForm(f => ({ ...f, preco_unit: e.target.value }))}
+                          className={styles.inputPreco}
+                        />
+                      </td>
+                      <td className={`${styles.tdRight} ${styles.tdTotal}`}>{fmt(qty * price)}</td>
+                      <td style={{ display: 'flex', gap: 4 }}>
+                        <button className={styles.btnRemove} onClick={() => handleEditItemSalvar(item)} disabled={savingItem} title="Salvar">
+                          <i className="ti ti-check" />
+                        </button>
+                        <button className={styles.btnRemove} onClick={handleEditItemCancel} disabled={savingItem} title="Cancelar">
+                          <i className="ti ti-x" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                }
+                return (
+                  <tr key={item.id}>
+                    <td>{item.nome}</td>
+                    <td className={styles.tdCenter}>{item.quantidade}</td>
+                    <td className={styles.tdRight}>{fmt(item.preco_unit)}</td>
+                    <td className={`${styles.tdRight} ${styles.tdTotal}`}>{fmt(item.preco_total)}</td>
+                    {podeEditar && (
+                      <td style={{ display: 'flex', gap: 4 }}>
+                        <button className={styles.btnRemove} onClick={() => handleEditItemStart(item)} title="Editar item">
+                          <i className="ti ti-pencil" />
+                        </button>
+                        <button className={styles.btnRemove} onClick={() => onRemoverItem(item.id)} title="Remover item">
+                          <i className="ti ti-trash" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         ) : (
@@ -834,9 +947,48 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
         </div>
       </div>
 
+      {/* Imagens de Inspiração */}
+      <div className={styles.imagensSection}>
+        <h3 className={styles.itensTitulo}>Imagens de Inspiração</h3>
+        {orc.imagens_inspiracao && orc.imagens_inspiracao.length > 0 ? (
+          <div className={styles.imagensGrid}>
+            {orc.imagens_inspiracao.map(img => (
+              <div key={img.id} className={styles.imagemThumb}>
+                <img src={img.imagem} alt="Inspiração" onClick={() => setLightboxImg(img.imagem)} />
+                <button
+                  className={styles.imagemRemoverBtn}
+                  onClick={() => handleRemoverImagem(img.id)}
+                  title="Remover imagem"
+                >
+                  <i className="ti ti-x" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className={styles.semItens}>Nenhuma imagem anexada.</p>
+        )}
+        <label className={styles.uploadImagemBtn}>
+          <i className="ti ti-photo-plus" /> {uploadingImagens ? 'Enviando...' : 'Adicionar imagens'}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleAddImagens}
+            disabled={uploadingImagens}
+            style={{ display: 'none' }}
+          />
+        </label>
+      </div>
+
       {/* Ações */}
       <div className={styles.modalActions} style={{ flexWrap: 'wrap' }}>
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+        {podeEditar && (
+          <Btn variant="secondary" onClick={onEditar} title="Editar dados do orçamento">
+            <i className="ti ti-edit" /> Editar
+          </Btn>
+        )}
         <Btn variant="secondary" onClick={() => onPdf(orc)} title="Exportar PDF com papel timbrado">
           <i className="ti ti-file-type-pdf" /> Exportar PDF
         </Btn>
@@ -884,6 +1036,250 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
             <i className="ti ti-file-signature" /> Emitir Contrato
           </Btn>
         )}
+      </div>
+
+      {lightboxImg && (
+        <div className={styles.lightboxOverlay} onClick={() => setLightboxImg(null)}>
+          <button className={styles.lightboxClose} onClick={() => setLightboxImg(null)} aria-label="Fechar">
+            <i className="ti ti-x" />
+          </button>
+          <img className={styles.lightboxImg} src={lightboxImg} alt="Inspiração ampliada" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// ─── Modal: Editar Orçamento ──────────────────────────────────────────────────
+
+function ModalEditarOrcamento({ orc, onClose, onSalvo }) {
+  const [form, setForm] = useState({
+    cliente_nome:     orc.cliente ? '' : (orc.cliente_nome || ''),
+    cliente_telefone: orc.cliente ? '' : (orc.cliente_telefone || ''),
+    tipo_evento:      orc.tipo_evento || '',
+    data_evento:      orc.data_evento || '',
+    validade:         orc.validade || '',
+    tipo_entrega:     orc.tipo_entrega || 'retirada_loja',
+    local:            orc.local || '',
+    endereco_avulso:  orc.endereco_avulso || '',
+    bairro_entrega:   orc.bairro_entrega || '',
+    taxa_entrega:     String(orc.taxa_entrega || '0'),
+    desconto:         String(orc.desconto || '0'),
+    observacoes:      orc.observacoes || '',
+  })
+  const [locais,      setLocais]      = useState([])
+  const [taxasBairro, setTaxasBairro] = useState([])
+  const [saving,      setSaving]      = useState(false)
+  const [erro,        setErro]        = useState('')
+
+  // Busca de cliente CRM
+  const [buscaCliente,    setBuscaCliente]    = useState('')
+  const [clienteOptions,  setClienteOptions]  = useState([])
+  const [clienteSel,      setClienteSel]      = useState(
+    orc.cliente
+      ? { id: orc.cliente, nome: orc.cliente_nome_crm || orc.nome_cliente_display, telefone_principal: orc.telefone_display }
+      : null
+  )
+  const [buscandoCliente, setBuscandoCliente] = useState(false)
+
+  useEffect(() => {
+    locaisEventoApi.list({ ativo: 'true' }).then(r => setLocais(r.data.results ?? r.data)).catch(() => {})
+    taxasEntregaApi.list({ ativo: true }).then(r => setTaxasBairro(r.data.results ?? r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!buscaCliente || buscaCliente.length < 2) { setClienteOptions([]); return }
+    setBuscandoCliente(true)
+    const t = setTimeout(async () => {
+      try {
+        const r = await clientesApi.list({ search: buscaCliente, status: 'ativo' })
+        setClienteOptions(r.data.results ?? r.data)
+      } finally { setBuscandoCliente(false) }
+    }, 350)
+    return () => clearTimeout(t)
+  }, [buscaCliente])
+
+  function set(field, value) { setForm(f => ({ ...f, [field]: value })) }
+
+  function handleClienteSel(c) {
+    setClienteSel(c)
+    set('cliente_nome', '')
+    set('cliente_telefone', '')
+    setClienteOptions([])
+    setBuscaCliente('')
+  }
+
+  function handleClienteClear() {
+    setClienteSel(null)
+  }
+
+  function selecionarBairroAvulso(bairro) {
+    const t = taxasBairro.find(x => x.bairro === bairro)
+    setForm(f => ({ ...f, bairro_entrega: bairro, taxa_entrega: t ? String(t.taxa) : f.taxa_entrega }))
+  }
+
+  async function handleSalvar() {
+    if (!clienteSel && !form.cliente_nome) { setErro('Informe o cliente ou nome do cliente.'); return }
+    setSaving(true); setErro('')
+    try {
+      const payload = {
+        cliente:          clienteSel ? clienteSel.id : null,
+        cliente_nome:     clienteSel ? '' : form.cliente_nome,
+        cliente_telefone: clienteSel ? '' : form.cliente_telefone,
+        tipo_evento:      form.tipo_evento || '',
+        data_evento:      form.data_evento || null,
+        validade:         form.validade || null,
+        tipo_entrega:     form.tipo_entrega,
+        local:            form.tipo_entrega === 'entrega_local' && form.local ? Number(form.local) : null,
+        endereco_avulso:  form.tipo_entrega === 'entrega_local' && !form.local ? form.endereco_avulso : '',
+        bairro_entrega:   form.tipo_entrega === 'entrega_local' ? form.bairro_entrega : '',
+        taxa_entrega:     form.tipo_entrega === 'entrega_local' ? (parseFloat(form.taxa_entrega) || 0) : 0,
+        desconto:         parseFloat(form.desconto) || 0,
+        observacoes:      form.observacoes,
+      }
+      const res = await orcamentosApi.update(orc.id, payload)
+      onSalvo(res.data)
+    } catch (e) {
+      const errs = e?.response?.data
+      setErro(typeof errs === 'string' ? errs : (errs?.detail || JSON.stringify(errs)))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open title={`Editar Orçamento ${orc.numero}`} onClose={onClose} wide>
+      <div className={styles.formGrid}>
+        {/* Cliente */}
+        <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+          <label>Cliente do CRM</label>
+          {clienteSel ? (
+            <div className={styles.clienteSelecionado}>
+              <i className="ti ti-user" />
+              <span>{clienteSel.nome}</span>
+              {clienteSel.telefone_principal && (
+                <span className={styles.clienteTel}>{clienteSel.telefone_principal}</span>
+              )}
+              <button onClick={handleClienteClear}><i className="ti ti-x" /></button>
+            </div>
+          ) : (
+            <div className={styles.clienteBusca}>
+              <i className="ti ti-search" />
+              <input
+                placeholder="Digite o nome ou telefone para buscar…"
+                value={buscaCliente}
+                onChange={e => setBuscaCliente(e.target.value)}
+              />
+              {buscandoCliente && <Spinner size={14} />}
+              {clienteOptions.length > 0 && (
+                <div className={styles.clienteDropdown}>
+                  {clienteOptions.map(c => (
+                    <button key={c.id} onClick={() => handleClienteSel(c)}>
+                      <strong>{c.nome}</strong>
+                      {c.telefone_principal && <span>{c.telefone_principal}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {!clienteSel && (
+          <>
+            <div className={styles.formGroup}>
+              <label>Nome do cliente *</label>
+              <input value={form.cliente_nome} onChange={e => set('cliente_nome', e.target.value)} placeholder="Nome completo" />
+            </div>
+            <div className={styles.formGroup}>
+              <label>Telefone</label>
+              <input value={form.cliente_telefone} onChange={e => set('cliente_telefone', e.target.value)} placeholder="(86) 9 0000-0000" />
+            </div>
+          </>
+        )}
+
+        {/* Tipo evento */}
+        <div className={styles.formGroup}>
+          <label>Tipo de evento</label>
+          <select value={form.tipo_evento} onChange={e => set('tipo_evento', e.target.value)}>
+            <option value="">— Não definido —</option>
+            {Object.entries(TIPO_EVENTO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+
+        {/* Datas */}
+        <div className={styles.formGroup}>
+          <label>Data prevista do evento</label>
+          <input type="date" value={form.data_evento} onChange={e => set('data_evento', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Validade do orçamento</label>
+          <input type="date" value={form.validade} onChange={e => set('validade', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Desconto (R$)</label>
+          <input type="number" min="0" step="0.01" value={form.desconto} onChange={e => set('desconto', e.target.value)} />
+        </div>
+
+        {/* Entrega */}
+        <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+          <label>Tipo de entrega</label>
+          <div className={styles.radioGroup}>
+            <label className={`${styles.radioCard} ${form.tipo_entrega === 'retirada_loja' ? styles.radioCardActive : ''}`}>
+              <input type="radio" value="retirada_loja" checked={form.tipo_entrega === 'retirada_loja'} onChange={e => set('tipo_entrega', e.target.value)} />
+              <i className="ti ti-building-store" /> Retirada na loja
+            </label>
+            <label className={`${styles.radioCard} ${form.tipo_entrega === 'entrega_local' ? styles.radioCardActive : ''}`}>
+              <input type="radio" value="entrega_local" checked={form.tipo_entrega === 'entrega_local'} onChange={e => set('tipo_entrega', e.target.value)} />
+              <i className="ti ti-truck-delivery" /> Entrega no local
+            </label>
+          </div>
+        </div>
+
+        {form.tipo_entrega === 'entrega_local' && (
+          <>
+            <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+              <label>Local cadastrado</label>
+              <select value={form.local} onChange={e => set('local', e.target.value)}>
+                <option value="">— Endereço avulso —</option>
+                {locais.map(l => <option key={l.id} value={l.id}>{l.nome} — {l.bairro}</option>)}
+              </select>
+            </div>
+            {!form.local && (
+              <>
+                <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                  <label>Endereço do local</label>
+                  <input value={form.endereco_avulso} onChange={e => set('endereco_avulso', e.target.value)} placeholder="Rua, número, bairro…" />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Bairro (para calcular a taxa)</label>
+                  <select value={form.bairro_entrega} onChange={e => selecionarBairroAvulso(e.target.value)}>
+                    <option value="">Selecione o bairro…</option>
+                    {taxasBairro.map(t => (
+                      <option key={t.id} value={t.bairro}>{t.bairro} — R$ {Number(t.taxa).toFixed(2)}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            <div className={styles.formGroup}>
+              <label>Taxa de entrega (R$)</label>
+              <input type="number" min="0" step="0.01" value={form.taxa_entrega} onChange={e => set('taxa_entrega', e.target.value)} />
+            </div>
+          </>
+        )}
+
+        {/* Observações */}
+        <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+          <label>Observações</label>
+          <textarea rows={2} value={form.observacoes} onChange={e => set('observacoes', e.target.value)} />
+        </div>
+      </div>
+
+      {erro && <p className={styles.erro}>{erro}</p>}
+
+      <div className={styles.modalActions}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={handleSalvar} loading={saving}>Salvar alterações</Btn>
       </div>
     </Modal>
   )

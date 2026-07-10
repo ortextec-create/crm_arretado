@@ -174,6 +174,8 @@ export const eventosApi = {
   cancelar:        (id)     => api.post(`/eventos/${id}/cancelar/`),
   adicionarItem:   (id, data)   => api.post(`/eventos/${id}/itens/`, data),
   removerItem:     (id, itemId) => api.delete(`/eventos/${id}/itens/${itemId}/remover/`),
+  adicionarPagamento: (id, data)      => api.post(`/eventos/${id}/pagamentos/`, data),
+  removerPagamento:   (id, pagamentoId) => api.delete(`/eventos/${id}/pagamentos/${pagamentoId}/remover/`),
   agenda:          (mes)   => api.get('/eventos/agenda/', { params: { mes } }),
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
 }
@@ -193,7 +195,12 @@ export const orcamentosApi = {
   pdf:             (id)     => api.get(`/eventos/orcamentos/${id}/pdf/`, { responseType: 'blob' }),
   converterEmEvento: (id, data) => api.post(`/eventos/orcamentos/${id}/converter-em-evento/`, data),
   adicionarItem:   (id, data)   => api.post(`/eventos/orcamentos/${id}/itens/`, data),
+  editarItem:      (id, itemId, data) => api.patch(`/eventos/orcamentos/${id}/itens/${itemId}/editar/`, data),
   removerItem:     (id, itemId) => api.delete(`/eventos/orcamentos/${id}/itens/${itemId}/remover/`),
+  adicionarImagens: (id, formData) => api.post(`/eventos/orcamentos/${id}/imagens/`, formData, {
+    headers: { 'Content-Type': undefined },
+  }),
+  removerImagem:    (id, imgId)    => api.delete(`/eventos/orcamentos/${id}/imagens/${imgId}/remover/`),
   enviarWhatsApp:  (id, data)   => api.post(`/eventos/orcamentos/${id}/enviar-whatsapp/`, data),
   gerarContrato:   (id, data)   => api.post(`/eventos/orcamentos/${id}/gerar-contrato/`, data),
 }

@@ -11,8 +11,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
 from .models import (
-    LocalEvento, Evento, ItemEvento, Orcamento, ItemOrcamento,
-    Contrato, ConfiguracaoContrato,
+    LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
+    ImagemInspiracao, Contrato, ConfiguracaoContrato,
 )
 from notificacoes.servico import notificar, _fone_pedido
 
@@ -27,6 +27,7 @@ from .serializers import (
     EventoAgendaSerializer,
     ItemEventoCreateSerializer,
     ItemEventoSerializer,
+    PagamentoEventoSerializer,
     OrcamentoListSerializer,
     OrcamentoDetailSerializer,
     OrcamentoCreateSerializer,
@@ -63,7 +64,9 @@ class LocalEventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 # ─── Eventos ──────────────────────────────────────────────────────────────────
 
 class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
-    queryset           = Evento.objects.prefetch_related('itens').select_related('cliente', 'local').all()
+    queryset           = Evento.objects.prefetch_related(
+        'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
+    ).select_related('cliente', 'local', 'orcamento_origem').all()
     permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['data_evento', 'criado_em', 'valor_total']
@@ -215,6 +218,30 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         evento.recalcular_totais()
         return Response(EventoDetailSerializer(evento).data)
 
+    # ── Pagamentos ────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='pagamentos')
+    def adicionar_pagamento(self, request, pk=None):
+        evento = self.get_object()
+        serializer = PagamentoEventoSerializer(data=request.data)
+        if serializer.is_valid():
+            PagamentoEvento.objects.create(evento=evento, **serializer.validated_data)
+            evento.refresh_from_db()  # evita cache stale do prefetch — ver CLAUDE.md
+            evento.recalcular_sinal_pago()
+            return Response(EventoDetailSerializer(evento).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['delete'], url_path=r'pagamentos/(?P<pagamento_id>[^/.]+)/remover')
+    def remover_pagamento(self, request, pk=None, pagamento_id=None):
+        evento = self.get_object()
+        try:
+            pagamento = evento.pagamentos.get(pk=pagamento_id)
+        except PagamentoEvento.DoesNotExist:
+            return Response({'detail': 'Pagamento não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        pagamento.delete()
+        evento.recalcular_sinal_pago()
+        return Response(EventoDetailSerializer(evento).data)
+
     # ── View de agenda (calendário) ────────────────────────────────────────
 
     @action(detail=False, methods=['get'], url_path='agenda')
@@ -304,7 +331,7 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 # ─── Orçamentos ───────────────────────────────────────────────────────────────
 
 class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
-    queryset           = Orcamento.objects.prefetch_related('itens').select_related('cliente', 'evento').all()
+    queryset           = Orcamento.objects.prefetch_related('itens', 'imagens_inspiracao').select_related('cliente', 'evento').all()
     permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['criado_em', 'valor_total', 'data_evento']
@@ -325,6 +352,19 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             OrcamentoDetailSerializer(orcamento).data,
             status=status.HTTP_201_CREATED,
         )
+
+    def update(self, request, *args, **kwargs):
+        orc = self.get_object()
+        if orc.status not in ('rascunho', 'enviado'):
+            return Response(
+                {'detail': 'Só é possível editar orçamentos com status Rascunho ou Enviado.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        partial = kwargs.pop('partial', False)
+        serializer = OrcamentoCreateSerializer(orc, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        orcamento = serializer.save()
+        return Response(OrcamentoDetailSerializer(orcamento).data)
 
     def get_queryset(self):
         qs     = super().get_queryset()
@@ -401,7 +441,7 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         endereco_avulso = request.data.get('endereco_avulso', orc.endereco_avulso)
         bairro_entrega  = request.data.get('bairro_entrega', orc.bairro_entrega)
         taxa_entrega    = request.data.get('taxa_entrega', orc.taxa_entrega)
-        sinal_pago      = request.data.get('sinal_pago', 0)
+        sinal_pago      = Decimal(str(request.data.get('sinal_pago', 0) or 0))
 
         evento = Evento.objects.create(
             numero=Evento.proximo_numero(),
@@ -420,9 +460,21 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             subtotal=orc.subtotal,
             desconto=orc.desconto,
             valor_total=orc.valor_total,
-            sinal_pago=sinal_pago,
             observacoes=orc.observacoes,
         )
+
+        # Sinal informado na conversão vira o primeiro PagamentoEvento — sinal_pago é
+        # sempre derivado da soma dos pagamentos (ver recalcular_sinal_pago), nunca gravado direto.
+        if sinal_pago:
+            PagamentoEvento.objects.create(
+                evento=evento,
+                valor=sinal_pago,
+                forma_pagamento='outro',
+                status='pago',
+                data_pagamento=timezone.localtime(timezone.now()).date(),
+                observacao='Sinal informado na conversão do orçamento em evento.',
+            )
+            evento.recalcular_sinal_pago()
 
         for item in orc.itens.all():
             ItemEvento.objects.create(
@@ -482,6 +534,58 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
         item.delete()
         orc.recalcular_totais()
+        return Response(OrcamentoDetailSerializer(orc).data)
+
+    @action(detail=True, methods=['patch'], url_path=r'itens/(?P<item_id>[^/.]+)/editar')
+    def editar_item(self, request, pk=None, item_id=None):
+        orc = self.get_object()
+        if orc.status not in ('rascunho', 'enviado'):
+            return Response(
+                {'detail': 'Não é possível editar itens neste status.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            item = orc.itens.get(pk=item_id)
+        except ItemOrcamento.DoesNotExist:
+            return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ItemOrcamentoCreateSerializer(item, data=request.data)
+        if serializer.is_valid():
+            data  = serializer.validated_data
+            qty   = data.get('quantidade', item.quantidade)
+            price = data.get('preco_unit', item.preco_unit)
+            for attr, value in data.items():
+                setattr(item, attr, value)
+            item.preco_total = price * qty
+            item.save()
+            orc.recalcular_totais()
+            return Response(OrcamentoDetailSerializer(orc).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Imagens de Inspiração ────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='imagens')
+    def adicionar_imagens(self, request, pk=None):
+        orc = self.get_object()
+        arquivos = request.FILES.getlist('imagens')
+        if not arquivos:
+            return Response(
+                {'detail': 'Nenhuma imagem enviada.'}, status=status.HTTP_400_BAD_REQUEST
+            )
+        for arquivo in arquivos:
+            ImagemInspiracao.objects.create(orcamento=orc, imagem=arquivo)
+        orc.refresh_from_db()
+        return Response(OrcamentoDetailSerializer(orc).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'imagens/(?P<imagem_id>[^/.]+)/remover')
+    def remover_imagem(self, request, pk=None, imagem_id=None):
+        orc = self.get_object()
+        try:
+            img = orc.imagens_inspiracao.get(pk=imagem_id)
+        except ImagemInspiracao.DoesNotExist:
+            return Response({'detail': 'Imagem não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        img.imagem.delete(save=False)
+        img.delete()
+        orc.refresh_from_db()
         return Response(OrcamentoDetailSerializer(orc).data)
 
     @action(detail=True, methods=['post'], url_path='restaurar')
