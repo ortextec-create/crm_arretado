@@ -260,3 +260,9 @@ export const fichasApi = {
 export const relatoriosApi = {
   ifood: (params = {}) => api.get('/relatorios/ifood/', { params }),
 }
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+
+export const dashboardApi = {
+  resumo: () => api.get('/dashboard/resumo/'),
+}

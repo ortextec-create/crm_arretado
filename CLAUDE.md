@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 10/jul/2026.
+> Última atualização: 11/jul/2026.
 
 ---
 
@@ -25,8 +25,8 @@ Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, cat
 ```
 arretado/                        ← raiz Django
 ├── config/
-│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, relatorios
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/relatorios/
+│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, relatorios, dashboard
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/relatorios/, /api/v1/dashboard/
 │   └── wsgi.py
 ├── clientes/                    ← Fase 1: CRM de clientes
 │   ├── models.py                ← Cliente (inclui rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil —
@@ -76,6 +76,10 @@ arretado/                        ← raiz Django
 ├── relatorios/                  ← Relatórios consolidados por canal
 │   ├── views.py                 ← RelatorioIFoodView (resumo + agrupado por dia/mês, export Excel/PDF)
 │   └── urls.py                  ← ifood/ (mais canais a adicionar conforme necessário)
+├── dashboard/                    ← Dashboard multi-canal (só leitura, sem models próprios)
+│   ├── views.py                 ← DashboardResumoView (APIView, GET) — agrega PedidoUnificado (iFood/PDV)
+│   │                               + PagamentoEvento/Evento (eventos) num único JSON, ver regras abaixo
+│   └── urls.py                  ← resumo/
 └── manage.py
 
 arretado-crm/                    ← raiz React
@@ -85,10 +89,11 @@ arretado-crm/                    ← raiz React
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
     │                               eventosApi, locaisEventoApi, orcamentosApi, contratosApi, configContratoApi,
     │                               notificacoesApi, usuariosApi, authApi, fichasApi,
-    │                               taxasEntregaApi, configEntregaApi
+    │                               taxasEntregaApi, configEntregaApi, relatoriosApi, dashboardApi
     ├── pages/
     │   ├── Login.jsx
-    │   ├── Dashboard.jsx
+    │   ├── Dashboard.jsx        ← agrega dashboardApi.resumo() (canais + gráfico 7 dias + a receber +
+    │   │                          fila operacional + próximos eventos + ticket médio) e clientesApi (recentes)
     │   ├── Clientes.jsx
     │   ├── ClienteDetail.jsx
     │   ├── Tags.jsx
@@ -142,6 +147,7 @@ arretado-crm/                    ← raiz React
 - **Cuidado com `prefetch_related` + criação de objeto relacionado na mesma request**: se uma view faz `self.get_object()` sobre um queryset com `prefetch_related('algo')` e, na mesma request, cria/deleta um objeto relacionado via `Model.objects.create(fk=obj, ...)` (sem passar pelo manager `obj.algo`), o cache do prefetch fica stale e `obj.algo.all()` (inclusive dentro do serializer) não reflete a mudança. Sempre que fizer isso, chamar `obj.refresh_from_db()` antes de serializar a resposta (foi o que corrigiu `adicionar_imagens`/`remover_imagem` no `OrcamentoViewSet` e `adicionar_pagamento` no `EventoViewSet` — o mesmo padrão de `adicionar_item`/`remover_item` pode estar sujeito ao mesmo problema, não verificado)
 - **`eventos.PagamentoEvento`** registra as parcelas de pagamento de um `Evento` (valor/forma_pagamento/status/data_pagamento/observação). `Evento.sinal_pago` **nunca** é gravado direto — é sempre recalculado via `Evento.recalcular_sinal_pago()` (soma dos pagamentos com `status='pago'`), chamado após criar/remover um `PagamentoEvento` (`POST/DELETE /eventos/{id}/pagamentos/...`). O sinal informado na criação do Evento ou na conversão de Orçamento em Evento (`sinal_pago` no body) também vira um `PagamentoEvento` inicial (forma `outro`, status `pago`) em vez de setar o campo diretamente
 - **Edição de Orçamento**: `OrcamentoViewSet.update()` só permite `PATCH/PUT` quando `status` é `rascunho` ou `enviado` (400 caso contrário); mesma restrição vale para editar item (`PATCH /eventos/orcamentos/{id}/itens/{item_id}/editar/`). Depois de aprovado/enviado além desses estágios, o orçamento é imutável (mesma filosofia do `Contrato` como snapshot)
+- **`dashboard/` é um app só-leitura, sem models** — `DashboardResumoView` (`GET /api/v1/dashboard/resumo/`) apenas agrega dados que já existem em `pedidos.PedidoUnificado` e `eventos.Evento`/`PagamentoEvento`. Regra importante: a receita de **Eventos** no dia (`canais.eventos.recebido_hoje` e a fatia "eventos" do `grafico_7dias`) vem **exclusivamente** de `PagamentoEvento` com `status='pago'` e `data_pagamento` do dia — nunca de `Evento.valor_total` nem do status de entrega (é recebimento efetivo de caixa, não valor do pedido). Já `ticket_medio.eventos` é a exceção: usa `Evento.valor_total` (não `PagamentoEvento`) dos eventos `status='entregue'` nos últimos 30 dias, porque ali a métrica é tamanho médio de venda, não fluxo de caixa. `fila_operacional` cruza os 3 canais lendo só `PedidoUnificado` (o `Evento` já sincroniza pra lá via `EVENTO_STATUS_MAP`), nunca faz query separada em `eventos.Evento`
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -184,6 +190,8 @@ arretado-crm/                    ← raiz React
 | Relatórios | Relatório consolidado iFood (resumo, agrupamento por dia/mês, export Excel/PDF) — app `relatorios/` | ✅ Concluída (apenas canal iFood por enquanto) |
 | Contrato | Emissão de Contrato de Aquisição de Produtos a partir de Orçamento aprovado (PDF com cláusulas configuráveis + envio por WhatsApp) | ✅ Concluída (ver `Contrato.md`) |
 | Imagens de Inspiração | Galeria de imagens de referência anexada ao Orçamento (upload múltiplo, lightbox, uso interno, visível também no Evento após conversão) | ✅ Concluída |
+| Pagamentos Parciais de Evento | `eventos.PagamentoEvento` (parcelas), `Evento.sinal_pago` derivado, redesign do modal de detalhe do Evento (stepper + abas), edição de Orçamento antes da conversão | ✅ Concluída |
+| Dashboard Multi-Canal | App `dashboard/` (só leitura) — vendas do dia e histórico recente consolidado de iFood/PDV/Eventos (+ espaço reservado pra Anota AI), gráfico 7 dias, a receber, fila operacional, próximos eventos, ticket médio | ✅ Concluída |
 
 ---
 
@@ -286,6 +294,11 @@ GET              /api/v1/fichas/snapshots/
 
 # Relatórios
 GET /api/v1/relatorios/ifood/                    ← query params: data_inicio, data_fim, agrupamento (dia|mes), formato (json|excel|pdf)
+
+# Dashboard
+GET /api/v1/dashboard/resumo/                    ← sem parâmetros; agrega canais (iFood/PDV/Eventos/Anota AI),
+                                                     total recebido hoje + comparativo vs ontem, gráfico 7 dias,
+                                                     a receber, fila operacional, próximos eventos e ticket médio
 ```
 
 ---
@@ -370,4 +383,6 @@ Infra já configurada em produção (não precisa recriar):
 - Não duplicar `ImagemInspiracao` para o Evento na conversão — o Evento só **lê** via `orcamento_origem`, nunca copia as imagens
 - Não gravar `Evento.sinal_pago` diretamente — sempre criar/remover um `PagamentoEvento` e chamar `evento.recalcular_sinal_pago()`
 - Não permitir `PATCH/PUT` em `Orcamento` (nem editar item) quando `status` não for `rascunho` ou `enviado`
+- Não somar `Evento.valor_total` nem olhar status de entrega para calcular a receita de Eventos do dia no Dashboard — vem exclusivamente de `PagamentoEvento` pago com `data_pagamento` de hoje
+- Não criar nenhum model no app `dashboard/` — é um agregador só-leitura; qualquer novo dado exibido ali deve vir de um app de canal já existente
 - **Nunca rodar `npm run build`/`vite build` na VPS sem avisar antes** — o Nginx serve o frontend direto de `arretado-crm/dist/` (`root` no vhost), então qualquer build "de teste" já sobrescreve o que está em produção. Não existe build isolado nesse projeto; tratar todo `build` como deploy real

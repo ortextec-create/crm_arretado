@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'notificacoes',
     'fichas',
     'relatorios',
+    'dashboard',
 ]
 
 MIDDLEWARE = [

@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/v1/notificacoes/', include('notificacoes.urls')),
     path('api/v1/fichas/',       include('fichas.urls')),
     path('api/v1/relatorios/',   include('relatorios.urls')),
+    path('api/v1/dashboard/',    include('dashboard.urls')),
 ]
 
 if settings.DEBUG:
