@@ -66,6 +66,8 @@ export const pdvApi = {
   criarProduto:    (data)      => api.post('/pdv/produtos/', data),
   updateProduto:   (id, data)  => api.patch(`/pdv/produtos/${id}/`, data),
   deleteProduto:   (id)        => api.delete(`/pdv/produtos/${id}/`),
+  updateFoto:      (id, formData) => api.patch(`/pdv/produtos/${id}/`, formData, { headers: { 'Content-Type': undefined } }),
+  removerFoto:     (id)        => api.patch(`/pdv/produtos/${id}/`, { foto: null }),
   listPedidos:     (params={}) => api.get('/pdv/pedidos/', { params }),
   getPedido:       (id)        => api.get(`/pdv/pedidos/${id}/`),
   criarPedido:     (data)      => api.post('/pdv/pedidos/', data),

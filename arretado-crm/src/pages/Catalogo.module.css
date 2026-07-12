@@ -534,3 +534,52 @@
 }
 
 .erro { color: var(--danger); font-size: 12px; margin: 12px 0 0; }
+
+/* Foto do produto */
+.fotoSection {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.fotoPreview {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--texto-faint);
+  font-size: 22px;
+}
+
+.fotoPreview img { width: 100%; height: 100%; object-fit: cover; }
+
+.fotoActions { display: flex; flex-direction: column; gap: 6px; }
+
+.fotoBtnRow { display: flex; gap: 8px; }
+
+.btnFoto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px dashed var(--border-strong);
+  color: var(--texto-sec);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btnFoto:hover:not(:disabled) { border-color: var(--caramelo); color: var(--caramelo); }
+.btnFoto:disabled { opacity: .5; cursor: not-allowed; }
+
+.btnFotoRemover { color: var(--danger); border-color: rgba(180,60,60,.35); }
+.btnFotoRemover:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }

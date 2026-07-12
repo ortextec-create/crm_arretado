@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fichasApi, pdvApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast } from '../components/ui'
@@ -280,6 +280,10 @@ function ModalProduto({ prod, categorias, fichas, materiasPrimas, produtos, onCl
   const [saving, setSaving] = useState(false)
   const [erro,   setErro]   = useState('')
 
+  // ── Foto do produto ─────────────────────────────────────────────────────
+  const [enviandoFoto, setEnviandoFoto] = useState(false)
+  const fotoInputRef = useRef(null)
+
   // ── Fabricado: ficha técnica vinculada ─────────────────────────────────
   const [fichaId, setFichaId] = useState(() => fichas.find(f => f.produto_pdv_id === prod?.id)?.id ?? '')
   const [vinculandoFicha, setVinculandoFicha] = useState(false)
@@ -414,6 +418,33 @@ function ModalProduto({ prod, categorias, fichas, materiasPrimas, produtos, onCl
     atualizarLocal(res.data)
   }
 
+  // ── Foto do produto: enviar/trocar/remover ──────────────────────────────
+  async function handleFotoSelecionada(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !produtoAtual) return
+    setEnviandoFoto(true); setErro('')
+    try {
+      const formData = new FormData()
+      formData.append('foto', file)
+      const res = await pdvApi.updateFoto(produtoAtual.id, formData)
+      atualizarLocal(res.data)
+    } catch {
+      setErro('Erro ao enviar a foto.')
+    } finally { setEnviandoFoto(false) }
+  }
+
+  async function handleRemoverFoto() {
+    if (!produtoAtual) return
+    setEnviandoFoto(true); setErro('')
+    try {
+      const res = await pdvApi.removerFoto(produtoAtual.id)
+      atualizarLocal(res.data)
+    } catch {
+      setErro('Erro ao remover a foto.')
+    } finally { setEnviandoFoto(false) }
+  }
+
   return (
     <Modal
       open
@@ -427,6 +458,37 @@ function ModalProduto({ prod, categorias, fichas, materiasPrimas, produtos, onCl
         </>
       }
     >
+      {!criando && (
+        <div className={styles.fotoSection}>
+          <div className={styles.fotoPreview}>
+            {produtoAtual.foto ? <img src={produtoAtual.foto} alt={produtoAtual.nome} /> : <i className="ti ti-photo" />}
+          </div>
+          <div className={styles.fotoActions}>
+            <input
+              ref={fotoInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleFotoSelecionada}
+            />
+            <div className={styles.fotoBtnRow}>
+              <button type="button" className={styles.btnFoto} disabled={enviandoFoto} onClick={() => fotoInputRef.current?.click()}>
+                <i className="ti ti-upload" /> {produtoAtual.foto ? 'Trocar foto' : 'Enviar foto'}
+              </button>
+              {produtoAtual.foto && (
+                <button type="button" className={`${styles.btnFoto} ${styles.btnFotoRemover}`} disabled={enviandoFoto} onClick={handleRemoverFoto}>
+                  <i className="ti ti-trash" /> Remover
+                </button>
+              )}
+            </div>
+            <span className={styles.hint}>JPG ou PNG.</span>
+          </div>
+        </div>
+      )}
+      {criando && (
+        <p className={styles.hint} style={{ marginBottom: 10 }}>Salve os dados básicos do produto para adicionar uma foto.</p>
+      )}
+
       <div className={styles.modalGrid}>
         <div className={styles.fg} style={{ gridColumn: '1 / -1' }}>
           <label>Nome do produto *</label>
