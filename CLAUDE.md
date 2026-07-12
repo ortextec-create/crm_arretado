@@ -199,13 +199,12 @@ arretado-crm/                    ← raiz React
 
 1. **Anota AI (Fase 3-ext-B)** — criar app `anotaai/` seguindo o padrão de `pdv/`
 2. **Fichas técnicas incompletas** — 3 ingredientes com custo zero na planilha original (`Cobertura cappucino`, `Folha decorativa`, `Castanha do Pará`, `Ameixa`) e `Brigadeiro Sensacional` sem quantidades
-3. **Foto de produtos** — campo `foto` (ImageField) existe no model mas upload ainda não está no frontend (`Catalogo.jsx`)
-4. **PDV Hardware (roadmap):**
+3. **PDV Hardware (roadmap):**
    - Curto prazo: impressora térmica TCP/IP (Django imprime via socket ESC/POS) + caixa registradora pelo mesmo cabo
    - Médio prazo: NFC-e (nota fiscal — SEFAZ-PI)
    - Longo prazo: TEF integrado
-5. **Relatórios cobrem só iFood** — `relatorios/` tem apenas `RelatorioIFoodView`; expandir para PDV e Eventos/Orçamentos seguindo o mesmo padrão (resumo + agrupado + export Excel/PDF)
-6. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
+4. **Relatórios cobrem só iFood** — `relatorios/` tem apenas `RelatorioIFoodView`; expandir para PDV e Eventos/Orçamentos seguindo o mesmo padrão (resumo + agrupado + export Excel/PDF)
+5. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
    ```
    ZAPI_INSTANCE_ID=3F44AD8FFA071145A7847A94F00847F6
    ZAPI_TOKEN=664FD7CD1788EFA5660A875F
