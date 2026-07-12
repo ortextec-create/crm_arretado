@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 11/jul/2026.
+> Última atualização: 12/jul/2026.
 
 ---
 
@@ -41,9 +41,13 @@ arretado/                        ← raiz Django
 │   ├── models.py                ← PedidoUnificado
 │   └── apps.py                  ← registra signals do iFood e PDV no ready()
 ├── pdv/                         ← Fase 3-ext-A: PDV próprio
-│   ├── models.py                ← CategoriaProduto, Produto (+ segmento/foto/disponibilidades), PedidoPDV, ItemPedidoPDV,
+│   ├── models.py                ← CategoriaProduto, Produto (+ segmento/foto/disponibilidades/tipo fabricado|revenda|kit
+│   │                               com custo polimórfico, preco_para() por faixa), ItemKit, FaixaPreco (quantidade_minima+canal),
+│   │                               DadosFiscaisProduto (unidade/código/EAN/NCM — prepara NFC-e futura), PedidoPDV, ItemPedidoPDV,
 │   │                               TaxaEntregaBairro (bairro→taxa), ConfiguracaoEntrega (singleton, frete padrão)
 │   ├── urls.py                  ← inclui taxas-entrega/ e configuracao-entrega/
+│   ├── management/commands/listar_candidatos_revenda.py ← lista produtos "fabricado" sem FichaTecnica vinculada
+│   │                               (candidatos a reclassificar manualmente para "revenda"); só leitura, não altera o banco
 │   └── signals.py               ← espelha PedidoPDV → PedidoUnificado
 ├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos + contratos
 │   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento,
@@ -139,6 +143,10 @@ arretado-crm/                    ← raiz React
 - **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`
 - **pdv.ConfiguracaoEntrega é singleton** — sempre acessado via `ConfiguracaoEntrega.get()`. Guarda o `frete_padrao` usado quando a entrega é por bairro mas nenhum bairro cadastrado foi selecionado
 - **`pdv.TaxaEntregaBairro`** é a tabela configurável de bairro→taxa usada por PDV e Orçamentos/Eventos. Nunca hardcodar valor de frete no código — ver `FRETE.md` para o funcionamento completo do sistema de entrega
+- **`pdv.Produto.tipo`** (`fabricado`/`revenda`/`kit`) define de onde vem o custo (`Produto.custo`, propriedade polimórfica): `fabricado` deriva de `FichaTecnica.custo_total_unitario` (via `produto_pdv_id`, mesma FK fraca já documentada); `revenda` deriva de `materia_prima_origem.custo_unitario` (só preenchível quando `tipo == 'revenda'`, validado no serializer); `kit` soma `custo * quantidade` de cada `ItemKit` em `itens_kit`. `margem_desejada_pct` é opcional e só sugere preço de venda (`preco_sugerido_revenda`) — nunca substitui o campo `preco`, que continua sendo o preço efetivo de venda
+- **`pdv.ItemKit`** não pode conter kit-de-kit (`componente.tipo == 'kit'` é rejeitado tanto no `clean()` do model quanto no `ItemKitSerializer.validate_componente`) nem um kit se auto-referenciando
+- **`pdv.FaixaPreco`** guarda preço por quantidade mínima e canal opcional (`pdv`/`ifood`/`eventos`/vazio=todos). `Produto.preco_para(quantidade, canal)` resolve a prioridade: faixa específica do canal > faixa geral (`canal=null`) > `preco` base. Nunca hardcodar desconto por quantidade no frontend — sempre resolver via essa property/endpoint
+- **`pdv.DadosFiscaisProduto`** é opcional (`OneToOneField` de `Produto`, aninhado e gravável via `ProdutoSerializer.dados_fiscais` com `update_or_create`) e prepara o cadastro para NFC-e futura — ainda não é consumido por nenhuma integração fiscal real (ver pendência de NFC-e)
 - **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`
 - **`eventos.Contrato`** é um snapshot gravado no momento da emissão (mesma filosofia de `ItemOrcamento`/`SnapshotPrecos`) — `valor_total`/`percentual_sinal`/`valor_sinal`/`data_quitacao` nunca são recalculados ao reabrir/reimprimir um contrato já emitido
 - **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só é permitida com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente preenchidos (podem estar vazios no cadastro normal — são exigidos só neste momento) — ver `Contrato.md`
@@ -186,6 +194,7 @@ arretado-crm/                    ← raiz React
 | WhatsApp | Notificações via Z-API | ✅ Concluída (`notificacoes/` + `zapi_client.py`) |
 | Usuários | Gestão de usuários + RBAC | ✅ Concluída |
 | Catálogo & Precificação | App `fichas/` + 3 telas de frontend | ✅ Concluída · dados importados em prod |
+| Catálogo — Revenda/Kit/Faixas de Preço | `Produto.tipo` (fabricado/revenda/kit) com custo polimórfico, `ItemKit`, `FaixaPreco` (quantidade/canal), `DadosFiscaisProduto` (prepara NFC-e), redesign do `Catalogo.jsx` em cards | ✅ Concluída |
 | Frete por Bairro | Cálculo de taxa de entrega por bairro no PDV e Orçamentos/Eventos + frete padrão configurável + cadastro de Locais de Evento | ✅ Concluída (ver `FRETE.md`) |
 | Relatórios | Relatório consolidado iFood (resumo, agrupamento por dia/mês, export Excel/PDF) — app `relatorios/` | ✅ Concluída (apenas canal iFood por enquanto) |
 | Contrato | Emissão de Contrato de Aquisição de Produtos a partir de Orçamento aprovado (PDF com cláusulas configuráveis + envio por WhatsApp) | ✅ Concluída (ver `Contrato.md`) |
@@ -234,6 +243,16 @@ GET/POST /api/v1/pdv/produtos/
 GET/POST /api/v1/pdv/categorias/
 POST     /api/v1/pdv/pedidos/{id}/confirmar/
 POST     /api/v1/pdv/pedidos/{id}/concluir/
+
+# Catálogo — tipo de produto (fabricado/revenda/kit), faixas de preço e dados fiscais
+GET    /api/v1/pdv/produtos/{id}/preco/?quantidade=&canal=        ← resolve preço via Produto.preco_para()
+POST   /api/v1/pdv/produtos/{id}/faixas-preco/
+PATCH  /api/v1/pdv/produtos/{id}/faixas-preco/{faixa_id}/
+DELETE /api/v1/pdv/produtos/{id}/faixas-preco/{faixa_id}/remover/
+POST   /api/v1/pdv/produtos/{id}/itens-kit/                       ← só quando produto.tipo == 'kit'
+DELETE /api/v1/pdv/produtos/{id}/itens-kit/{item_id}/
+                                                                    ← dados_fiscais é aninhado e gravável direto no
+                                                                      PATCH de /pdv/produtos/{id}/ (campo "dados_fiscais")
 
 # Frete (ver FRETE.md)
 GET/POST/PATCH/DELETE /api/v1/pdv/taxas-entrega/[{id}/]     ← cadastro de bairro→taxa
@@ -372,6 +391,9 @@ Infra já configurada em produção (não precisa recriar):
 - Não fazer FK direta de `fichas` para `pdv` — a ligação entre FichaTecnica e Produto é via `produto_pdv_id` (IntegerField fraco)
 - Não instanciar `ConfiguracaoEntrega()` diretamente — sempre usar `ConfiguracaoEntrega.get()`
 - Não hardcodar valor de taxa de entrega no código — sempre vem de `TaxaEntregaBairro` ou do `frete_padrao` de `ConfiguracaoEntrega`
+- Não preencher `Produto.materia_prima_origem`/`margem_desejada_pct` em produto que não seja `tipo == 'revenda'` (validado em `ProdutoSerializer.validate`, não duplicar a regra em outro lugar)
+- Não permitir kit-de-kit — `ItemKit.componente` nunca pode ter `tipo == 'kit'` (regra já existe em `ItemKit.clean()` e `ItemKitSerializer.validate_componente`)
+- Não hardcodar desconto por quantidade/canal no frontend — sempre resolver via `Produto.preco_para()` (endpoint `/pdv/produtos/{id}/preco/`) em vez de recalcular a lógica de faixas no cliente
 - Ao sugerir automaticamente o bairro/taxa de entrega, o bairro do **Local de Evento** (quando selecionado) tem prioridade sobre o bairro do endereço do cliente — nunca inverter essa ordem (ver `FRETE.md`)
 - Não instanciar `ConfiguracaoContrato()` diretamente — sempre usar `ConfiguracaoContrato.get()`
 - Não criar `ItemContrato` — o PDF do contrato lê os itens direto de `contrato.orcamento.itens`
