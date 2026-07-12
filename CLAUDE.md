@@ -166,7 +166,7 @@ arretado-crm/                    ← raiz React
 - **`services.js`:** um objeto de API por canal — `clientesApi`, `ifoodApi`, `pdvApi`, `notificacoesApi`, `orcamentosApi`, `fichasApi`
 - **Novo canal** = novo objeto no `services.js` seguindo o mesmo padrão
 - **Busca de cliente CRM** (padrão usado em `Eventos.jsx` e `Orcamentos.jsx`): input com debounce 350ms → `clientesApi.list({ search })` → dropdown com seleção → chip com nome/telefone e botão X para limpar. Nunca usar `<select>` com todos os clientes pré-carregados.
-- **Upload de arquivo/imagem via axios**: `api/client.js` fixa `headers: {'Content-Type': 'application/json'}` na instância do axios, e isso **não** é sobrescrito automaticamente quando o corpo é um `FormData` — sem correção, o navegador não define o boundary do multipart e o backend recebe a requisição sem o arquivo (`request.FILES` vazio). Sempre que enviar `FormData`, passar `{ headers: { 'Content-Type': undefined } }` na chamada (ver `orcamentosApi.adicionarImagens` em `services.js`) para o navegador definir o header correto.
+- **Upload de arquivo/imagem via axios**: `api/client.js` fixa `headers: {'Content-Type': 'application/json'}` na instância do axios, e isso **não** é sobrescrito automaticamente quando o corpo é um `FormData` — sem correção, o navegador não define o boundary do multipart e o backend recebe a requisição sem o arquivo (`request.FILES` vazio). Sempre que enviar `FormData`, passar `{ headers: { 'Content-Type': undefined } }` na chamada (ver `orcamentosApi.adicionarImagens`, `pdvApi.updateFoto` e `eventosApi.adicionarPagamento` — este último condicional, só monta `FormData` quando há arquivo de comprovante anexado — em `services.js`) para o navegador definir o header correto.
 - **Lightbox de imagem ampliada**: padrão usado em `Orcamentos.jsx`/`Eventos.jsx` para a galeria de `imagens_inspiracao` — clique na thumbnail abre um overlay `position: fixed` (z-index 400, acima do Modal que é 200) com a imagem em `object-fit: contain`, fecha no clique fora ou no X. Reaproveitar esse padrão para qualquer nova galeria de imagens.
 
 ---
@@ -268,7 +268,7 @@ GET/POST              /api/v1/eventos/locais/
 GET/PATCH/DELETE      /api/v1/eventos/locais/{id}/
 POST                  /api/v1/eventos/{id}/confirmar/
 POST                  /api/v1/eventos/{id}/entregar/
-POST                  /api/v1/eventos/{id}/pagamentos/                  ← cria PagamentoEvento + recalcula sinal_pago
+POST                  /api/v1/eventos/{id}/pagamentos/                  ← cria PagamentoEvento + recalcula sinal_pago (multipart opcional, campo "comprovante")
 DELETE                /api/v1/eventos/{id}/pagamentos/{pagamento_id}/remover/
 GET                   /api/v1/eventos/agenda/
 
