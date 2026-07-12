@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV
+from .models import (
+    CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV,
+    ItemKit, FaixaPreco, DadosFiscaisProduto,
+)
 
 
 @admin.register(CategoriaProduto)
@@ -8,12 +11,29 @@ class CategoriaProdutoAdmin(admin.ModelAdmin):
     ordering     = ('ordem', 'nome')
 
 
+class ItemKitInline(admin.TabularInline):
+    model = ItemKit
+    fk_name = 'kit'
+    extra = 0
+
+
+class FaixaPrecoInline(admin.TabularInline):
+    model = FaixaPreco
+    extra = 0
+
+
+class DadosFiscaisProdutoInline(admin.StackedInline):
+    model = DadosFiscaisProduto
+    extra = 0
+
+
 @admin.register(Produto)
 class ProdutoAdmin(admin.ModelAdmin):
-    list_display  = ('nome', 'categoria', 'preco', 'ativo')
-    list_filter   = ('ativo', 'categoria')
+    list_display  = ('nome', 'categoria', 'tipo', 'preco', 'ativo')
+    list_filter   = ('ativo', 'categoria', 'tipo')
     search_fields = ('nome',)
     ordering      = ('categoria__ordem', 'nome')
+    inlines       = [FaixaPrecoInline, ItemKitInline, DadosFiscaisProdutoInline]
 
 
 class ItemPedidoPDVInline(admin.TabularInline):

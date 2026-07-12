@@ -4,7 +4,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from .models import CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV, TaxaEntregaBairro, ConfiguracaoEntrega
+from .models import (
+    CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV, TaxaEntregaBairro, ConfiguracaoEntrega,
+    ItemKit, FaixaPreco,
+)
 from notificacoes.servico import notificar, _fone_pedido
 
 
@@ -13,6 +16,8 @@ def _notificar_pdv(pedido, mensagem):
 from .serializers import (
     CategoriaProdutoSerializer,
     ProdutoSerializer,
+    FaixaPrecoSerializer,
+    ItemKitSerializer,
     PedidoPDVListSerializer,
     PedidoPDVDetailSerializer,
     PedidoPDVCreateSerializer,
@@ -112,6 +117,72 @@ class ProdutoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         produto.ativo = False
         produto.save(update_fields=['ativo', 'atualizado_em'])
         return Response({'ativo': False})
+
+    # ── Faixas de preço ────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='faixas-preco')
+    def adicionar_faixa_preco(self, request, pk=None):
+        produto    = self.get_object()
+        serializer = FaixaPrecoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(produto=produto)
+        return Response(ProdutoSerializer(produto).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch'], url_path=r'faixas-preco/(?P<faixa_id>[^/.]+)')
+    def editar_faixa_preco(self, request, pk=None, faixa_id=None):
+        produto = self.get_object()
+        try:
+            faixa = produto.faixas_preco.get(pk=faixa_id)
+        except FaixaPreco.DoesNotExist:
+            return Response({'detail': 'Faixa não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = FaixaPrecoSerializer(faixa, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(ProdutoSerializer(produto).data)
+
+    @action(detail=True, methods=['delete'], url_path=r'faixas-preco/(?P<faixa_id>[^/.]+)/remover')
+    def remover_faixa_preco(self, request, pk=None, faixa_id=None):
+        produto = self.get_object()
+        try:
+            faixa = produto.faixas_preco.get(pk=faixa_id)
+        except FaixaPreco.DoesNotExist:
+            return Response({'detail': 'Faixa não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        faixa.delete()
+        return Response(ProdutoSerializer(produto).data)
+
+    # ── Itens de Kit ────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='itens-kit')
+    def adicionar_item_kit(self, request, pk=None):
+        produto = self.get_object()
+        if produto.tipo != 'kit':
+            return Response({'detail': 'Só é possível adicionar componentes a produtos do tipo "kit".'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ItemKitSerializer(data=request.data, context={'kit': produto})
+        serializer.is_valid(raise_exception=True)
+        serializer.save(kit=produto)
+        return Response(ProdutoSerializer(produto).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'itens-kit/(?P<item_id>[^/.]+)')
+    def remover_item_kit(self, request, pk=None, item_id=None):
+        produto = self.get_object()
+        try:
+            item = produto.itens_kit.get(pk=item_id)
+        except ItemKit.DoesNotExist:
+            return Response({'detail': 'Componente não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        item.delete()
+        return Response(ProdutoSerializer(produto).data)
+
+    # ── Preço resolvido por quantidade/canal ───────────────────────────────
+
+    @action(detail=True, methods=['get'], url_path='preco')
+    def preco(self, request, pk=None):
+        produto = self.get_object()
+        try:
+            quantidade = int(request.query_params.get('quantidade', 1))
+        except (TypeError, ValueError):
+            quantidade = 1
+        canal = request.query_params.get('canal') or None
+        return Response({'preco': float(produto.preco_para(quantidade=quantidade, canal=canal))})
 
 
 # ─── Pedidos PDV ─────────────────────────────────────────────────────────────

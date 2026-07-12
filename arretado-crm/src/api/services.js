@@ -75,6 +75,18 @@ export const pdvApi = {
   addItem:         (pedidoId, data)   => api.post(`/pdv/pedidos/${pedidoId}/itens/`, data),
   removeItem:      (pedidoId, itemId) => api.delete(`/pdv/pedidos/${pedidoId}/itens/${itemId}/remover/`),
   estatisticas:    ()                 => api.get('/pdv/pedidos/estatisticas/'),
+
+  faixasPreco: {
+    criar:     (produtoId, data)          => api.post(`/pdv/produtos/${produtoId}/faixas-preco/`, data),
+    atualizar: (produtoId, faixaId, data) => api.patch(`/pdv/produtos/${produtoId}/faixas-preco/${faixaId}/`, data),
+    remover:   (produtoId, faixaId)       => api.delete(`/pdv/produtos/${produtoId}/faixas-preco/${faixaId}/remover/`),
+  },
+  itensKit: {
+    adicionar: (produtoId, data)    => api.post(`/pdv/produtos/${produtoId}/itens-kit/`, data),
+    remover:   (produtoId, itemId)  => api.delete(`/pdv/produtos/${produtoId}/itens-kit/${itemId}/`),
+  },
+  precoPara: (produtoId, { quantidade, canal } = {}) =>
+    api.get(`/pdv/produtos/${produtoId}/preco/`, { params: { quantidade, canal } }),
 }
 
 export const taxasEntregaApi = {
