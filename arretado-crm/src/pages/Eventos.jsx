@@ -921,6 +921,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
     valor: '', forma_pagamento: 'pix', status: 'pago',
     data_pagamento: new Date().toISOString().slice(0, 10), observacao: '',
   })
+  const [comprovanteFile, setComprovanteFile] = useState(null)
 
   // CORRIGIDO: usa pdvApi.listProdutos() e pdvApi.listCategorias()
   useEffect(() => {
@@ -989,17 +990,29 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
     }
     setSavingPagamento(true)
     try {
-      await eventosApi.adicionarPagamento(evento.id, {
-        valor,
-        forma_pagamento: pagamentoForm.forma_pagamento,
-        status:          pagamentoForm.status,
-        data_pagamento:  pagamentoForm.data_pagamento,
-        observacao:      pagamentoForm.observacao,
-      })
+      if (comprovanteFile) {
+        const formData = new FormData()
+        formData.append('valor', valor)
+        formData.append('forma_pagamento', pagamentoForm.forma_pagamento)
+        formData.append('status', pagamentoForm.status)
+        formData.append('data_pagamento', pagamentoForm.data_pagamento)
+        formData.append('observacao', pagamentoForm.observacao)
+        formData.append('comprovante', comprovanteFile)
+        await eventosApi.adicionarPagamento(evento.id, formData, { headers: { 'Content-Type': undefined } })
+      } else {
+        await eventosApi.adicionarPagamento(evento.id, {
+          valor,
+          forma_pagamento: pagamentoForm.forma_pagamento,
+          status:          pagamentoForm.status,
+          data_pagamento:  pagamentoForm.data_pagamento,
+          observacao:      pagamentoForm.observacao,
+        })
+      }
       setPagamentoForm({
         valor: '', forma_pagamento: 'pix', status: 'pago',
         data_pagamento: new Date().toISOString().slice(0, 10), observacao: '',
       })
+      setComprovanteFile(null)
       setRegistrandoPagamento(false)
       await onItemAdded()
       onToast({ message: 'Pagamento registrado!', type: 'success' })
@@ -1241,6 +1254,17 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
                         {pg.observacao && <span className={styles.itemObs}>{pg.observacao}</span>}
                       </div>
                       <div className={styles.itemNums}>
+                        {pg.comprovante && (
+                          /\.pdf($|\?)/i.test(pg.comprovante) ? (
+                            <a href={pg.comprovante} target="_blank" rel="noreferrer" className={styles.comprovanteLink} title="Ver comprovante (PDF)">
+                              <i className="ti ti-file-type-pdf" />
+                            </a>
+                          ) : (
+                            <button className={styles.comprovanteLink} onClick={() => setLightboxImg(pg.comprovante)} title="Ver comprovante">
+                              <i className="ti ti-receipt" />
+                            </button>
+                          )
+                        )}
                         <span
                           className={styles.badge}
                           style={{ '--badge-color': pg.status === 'pago' ? '#059669' : '#D97706' }}
@@ -1302,13 +1326,26 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
                         placeholder="Ex: Pix referente à 2ª parcela"
                       />
                     </div>
+                    <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                      <label>Comprovante (opcional)</label>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={e => setComprovanteFile(e.target.files?.[0] ?? null)}
+                      />
+                      {comprovanteFile && (
+                        <span className={styles.itemObs}>
+                          <i className="ti ti-paperclip" /> {comprovanteFile.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <Btn onClick={salvarPagamento} disabled={savingPagamento}>
                       {savingPagamento ? <Spinner size={14} /> : <i className="ti ti-check" />}
                       {savingPagamento ? 'Salvando…' : 'Salvar pagamento'}
                     </Btn>
-                    <Btn variant="ghost" onClick={() => setRegistrandoPagamento(false)}>
+                    <Btn variant="ghost" onClick={() => { setRegistrandoPagamento(false); setComprovanteFile(null) }}>
                       Cancelar
                     </Btn>
                   </div>
@@ -1351,7 +1388,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
           <button className={styles.lightboxClose} onClick={() => setLightboxImg(null)} aria-label="Fechar">
             <i className="ti ti-x" />
           </button>
-          <img className={styles.lightboxImg} src={lightboxImg} alt="Inspiração ampliada" onClick={e => e.stopPropagation()} />
+          <img className={styles.lightboxImg} src={lightboxImg} alt="Imagem ampliada" onClick={e => e.stopPropagation()} />
         </div>
       )}
     </Modal>

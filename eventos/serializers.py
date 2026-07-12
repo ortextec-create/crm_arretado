@@ -90,7 +90,7 @@ class PagamentoEventoSerializer(serializers.ModelSerializer):
         model  = PagamentoEvento
         fields = [
             'id', 'valor', 'forma_pagamento', 'forma_pagamento_display',
-            'status', 'status_display', 'data_pagamento', 'observacao', 'criado_em',
+            'status', 'status_display', 'data_pagamento', 'observacao', 'comprovante', 'criado_em',
         ]
 
 

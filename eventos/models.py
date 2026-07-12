@@ -449,6 +449,7 @@ class PagamentoEvento(models.Model):
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pago')
     data_pagamento  = models.DateField(default=timezone.now)
     observacao      = models.CharField(max_length=300, blank=True, default='')
+    comprovante     = models.FileField(upload_to='eventos/comprovantes/%Y/%m/', null=True, blank=True)
 
     criado_em       = models.DateTimeField(auto_now_add=True)
 

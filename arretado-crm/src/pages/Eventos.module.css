@@ -880,6 +880,19 @@
 }
 .removeItem:hover { color: #DC2626; }
 
+.comprovanteLink {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0;
+  display: flex;
+  font-size: 16px;
+  transition: color 0.12s;
+  text-decoration: none;
+}
+.comprovanteLink:hover { color: var(--caramelo); }
+
 /* ── Add itens panel ──────────────────────────────────────────────────────── */
 .addItemsPanel {
   border: 1px solid var(--border);

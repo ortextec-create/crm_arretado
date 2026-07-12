@@ -188,7 +188,7 @@ export const eventosApi = {
   cancelar:        (id)     => api.post(`/eventos/${id}/cancelar/`),
   adicionarItem:   (id, data)   => api.post(`/eventos/${id}/itens/`, data),
   removerItem:     (id, itemId) => api.delete(`/eventos/${id}/itens/${itemId}/remover/`),
-  adicionarPagamento: (id, data)      => api.post(`/eventos/${id}/pagamentos/`, data),
+  adicionarPagamento: (id, data, config={}) => api.post(`/eventos/${id}/pagamentos/`, data, config),
   removerPagamento:   (id, pagamentoId) => api.delete(`/eventos/${id}/pagamentos/${pagamentoId}/remover/`),
   agenda:          (mes)   => api.get('/eventos/agenda/', { params: { mes } }),
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
