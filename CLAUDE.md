@@ -77,6 +77,7 @@ arretado/                        ← raiz Django
 ├── auditoria/                   ← Log de auditoria (login, CRUD de usuário, mudança de role/perms) — extensível a outros sistemas críticos
 │   ├── models.py                ← LogAuditoria (usuario FK SET_NULL + usuario_nome_snapshot, acao, detalhes JSON, ip, criado_em)
 │   ├── utils.py                 ← registrar(usuario, acao, detalhes=None, request=None) — único ponto de escrita, nunca lança exceção
+│   ├── mixins.py                ← AuditoriaDestroyMixin (audita destroy() padrão + traduz ProtectedError em 400 amigável)
 │   └── views.py                 ← LogAuditoriaViewSet (só leitura, restrito a IsAdminRole)
 ├── notificacoes/                ← WhatsApp via Z-API
 │   ├── models.py                ← HistoricoMensagem · ConfiguracaoWhatsApp (singleton, inclui validade_orcamento_dias)
@@ -375,6 +376,11 @@ python manage.py avisar_sem_compras --dias 30
 # Importar planilha de precificação
 python manage.py importar_planilha --arquivo PLANILHA_DE_PRECIFICACAO_ARRETADO.xlsx
 # flags: --dry-run | --apenas-materias | --sobrescrever
+
+# Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos)
+python manage.py test --settings=config.settings_test
+# settings_test.py roda contra SQLite em memória — o usuário do Postgres em produção
+# não tem permissão CREATE DATABASE, então `manage.py test` direto (sem --settings) falha
 
 # Frontend
 cd arretado-crm/
