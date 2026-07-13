@@ -370,6 +370,11 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     ordering_fields    = ['criado_em', 'valor_total', 'data_evento']
     ordering           = ['-criado_em']
 
+    def get_permissions(self):
+        if self.action == 'gerar_contrato':
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
     def get_serializer_class(self):
         if self.action == 'list':
             return OrcamentoListSerializer
@@ -817,6 +822,15 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             data_quitacao=data_quitacao,
         )
 
+        registrar(
+            request.user, LogAuditoria.ACAO_CONTRATO_EMITIDO,
+            detalhes={
+                'contrato_numero': contrato.numero, 'orcamento_id': orc.id, 'orcamento_numero': orc.numero,
+                'cliente': cliente.nome, 'valor_total': str(contrato.valor_total),
+            },
+            request=request,
+        )
+
         return Response(ContratoSerializer(contrato).data, status=status.HTTP_201_CREATED)
 
 
@@ -827,9 +841,16 @@ class ContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListMod
     OrcamentoViewSet.gerar_contrato (nunca via POST direto neste ViewSet)."""
     queryset           = Contrato.objects.select_related('orcamento', 'cliente', 'evento').all()
     serializer_class   = ContratoSerializer
-    permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering           = ['-criado_em']
+    # Sobrescreve o [] do CsrfExemptMixin — só assim dá pra saber quem enviou o contrato
+    # (ver get_permissions). list/retrieve/pdf continuam AllowAny, sem mudança de comportamento.
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'enviar_whatsapp':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
@@ -879,6 +900,16 @@ class ContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListMod
 
         contrato.status = 'enviado'
         contrato.save(update_fields=['status', 'atualizado_em'])
+
+        registrar(
+            request.user, LogAuditoria.ACAO_CONTRATO_ENVIADO,
+            detalhes={
+                'contrato_numero': contrato.numero,
+                'cliente': contrato.cliente.nome if contrato.cliente else None,
+                'telefone': telefone,
+            },
+            request=request,
+        )
 
         return Response(ContratoSerializer(contrato).data)
 

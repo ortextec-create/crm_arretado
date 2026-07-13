@@ -16,6 +16,10 @@ from .views import OrcamentoViewSet, ContratoViewSet, EventoViewSet
 class GerarContratoTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Teste', email='admin@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+
         self.cliente = Cliente.objects.create(
             nome='Maria Teste', telefone_principal='86999998888',
         )
@@ -32,12 +36,23 @@ class GerarContratoTests(TestCase):
         self.orc.recalcular_totais()
         self.orc.refresh_from_db()
 
-    def _post(self, data):
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _post(self, data, autenticado=True):
         view = OrcamentoViewSet.as_view({'post': 'gerar_contrato'})
+        extra = {'HTTP_AUTHORIZATION': f'Token {self._token()}'} if autenticado else {}
         req = self.factory.post(
-            f'/api/v1/eventos/orcamentos/{self.orc.id}/gerar-contrato/', data, format='json',
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/gerar-contrato/', data, format='json', **extra,
         )
         return view(req, pk=self.orc.id)
+
+    def test_bloqueia_sem_token_401(self):
+        resp = self._post({}, autenticado=False)
+        self.assertEqual(resp.status_code, 401)
 
     def test_bloqueia_se_orcamento_nao_aprovado(self):
         self.orc.status = 'rascunho'
@@ -79,6 +94,10 @@ class GerarContratoTests(TestCase):
         self.assertEqual(contrato.percentual_sinal, 50)
         self.assertEqual(contrato.valor_sinal, self.orc.valor_total * 50 / 100)
         self.assertEqual(contrato.data_quitacao, self.orc.data_evento - datetime.timedelta(days=7))
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_CONTRATO_EMITIDO).latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['contrato_numero'], contrato.numero)
         return contrato
 
     def test_pdf_gera_bytes_validos(self):
@@ -96,6 +115,7 @@ class GerarContratoTests(TestCase):
         view = ContratoViewSet.as_view({'post': 'enviar_whatsapp'})
         req = self.factory.post(
             f'/api/v1/eventos/contratos/{contrato.id}/enviar-whatsapp/', {}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
         )
         resp = view(req, pk=contrato.id)
         resp.render()
@@ -107,6 +127,19 @@ class GerarContratoTests(TestCase):
         msg = HistoricoMensagem.objects.filter(cliente=self.cliente, tipo='contrato').first()
         self.assertIsNotNone(msg)
         self.assertEqual(msg.status, 'enviado')
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_CONTRATO_ENVIADO).latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['contrato_numero'], contrato.numero)
+
+    def test_enviar_whatsapp_sem_token_401(self):
+        contrato = self.test_gera_contrato_com_dados_completos()
+        view = ContratoViewSet.as_view({'post': 'enviar_whatsapp'})
+        req = self.factory.post(
+            f'/api/v1/eventos/contratos/{contrato.id}/enviar-whatsapp/', {}, format='json',
+        )
+        resp = view(req, pk=contrato.id)
+        self.assertEqual(resp.status_code, 401)
 
 
 class PagamentoEventoAuditoriaTests(TestCase):

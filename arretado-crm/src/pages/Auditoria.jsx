@@ -14,6 +14,8 @@ const ACAO_LABEL = {
   senha_redefinida: 'Senha redefinida',
   pagamento_registrado: 'Pagamento registrado',
   pagamento_removido: 'Pagamento removido',
+  contrato_emitido: 'Contrato emitido',
+  contrato_enviado: 'Contrato enviado',
 }
 
 const ACAO_COR = {
@@ -27,6 +29,8 @@ const ACAO_COR = {
   senha_redefinida: 'var(--caramelo)',
   pagamento_registrado: 'var(--verde)',
   pagamento_removido: '#ef4444',
+  contrato_emitido: 'var(--verde)',
+  contrato_enviado: 'var(--caramelo)',
 }
 
 function dataFmt(iso) {
@@ -52,6 +56,10 @@ function resumo(log) {
     case 'pagamento_registrado':
     case 'pagamento_removido':
       return `Evento ${d.evento_numero ?? d.evento_id ?? '—'} · R$ ${d.valor ?? '—'} (${d.forma_pagamento ?? '—'})`
+    case 'contrato_emitido':
+      return `${d.contrato_numero ?? '—'} · ${d.cliente ?? '—'} · R$ ${d.valor_total ?? '—'}`
+    case 'contrato_enviado':
+      return `${d.contrato_numero ?? '—'} · ${d.cliente ?? '—'} · ${d.telefone ?? '—'}`
     default:
       return '—'
   }

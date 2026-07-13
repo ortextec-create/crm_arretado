@@ -162,7 +162,7 @@ arretado-crm/                    ← raiz React
 - **`pdv.DadosFiscaisProduto`** é opcional (`OneToOneField` de `Produto`, aninhado e gravável via `ProdutoSerializer.dados_fiscais` com `update_or_create`) e prepara o cadastro para NFC-e futura — ainda não é consumido por nenhuma integração fiscal real (ver pendência de NFC-e)
 - **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`
 - **`eventos.Contrato`** é um snapshot gravado no momento da emissão (mesma filosofia de `ItemOrcamento`/`SnapshotPrecos`) — `valor_total`/`percentual_sinal`/`valor_sinal`/`data_quitacao` nunca são recalculados ao reabrir/reimprimir um contrato já emitido
-- **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só é permitida com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente preenchidos (podem estar vazios no cadastro normal — são exigidos só neste momento) — ver `Contrato.md`
+- **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só é permitida com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente preenchidos (podem estar vazios no cadastro normal — são exigidos só neste momento) — ver `Contrato.md`. Exige login (`IsAuthenticated`, único override de `get_permissions()` no `OrcamentoViewSet` — resto continua `AllowAny`) e grava `contrato_emitido` em `auditoria.LogAuditoria`. `ContratoViewSet.enviar_whatsapp` também exige login (`contrato_enviado` no log) — `list`/`retrieve`/`pdf` continuam `AllowAny`, sem mudança
 - **`eventos.ImagemInspiracao`** é a galeria de imagens de referência (uso interno da equipe, nunca entra no PDF/WhatsApp do orçamento) anexada ao `Orcamento` inteiro (não por item). `Evento` **não duplica** essas imagens — `EventoDetailSerializer.imagens_inspiracao` é um `SerializerMethodField` que lê direto de `evento.orcamento_origem.imagens_inspiracao` (mesma filosofia de nunca duplicar o que a relação já entrega, como o Contrato faz com os itens do Orçamento)
 - **`MEDIA_URL`/`MEDIA_ROOT`** estão configurados em `config/settings.py` (`/media/`, `BASE_DIR / 'media'`) desde a feature de Imagens de Inspiração — é o único `ImageField` do projeto de fato exercitado em produção. Em prod, o Nginx tem um `location /media/ { alias .../media/; }` próprio (não é servido pelo Django/Gunicorn) — qualquer novo `ImageField`/`FileField` já pode reaproveitar essa infra, não precisa recriar
 - **Cuidado com `prefetch_related` + criação de objeto relacionado na mesma request**: se uma view faz `self.get_object()` sobre um queryset com `prefetch_related('algo')` e, na mesma request, cria/deleta um objeto relacionado via `Model.objects.create(fk=obj, ...)` (sem passar pelo manager `obj.algo`), o cache do prefetch fica stale e `obj.algo.all()` (inclusive dentro do serializer) não reflete a mudança. Sempre que fizer isso, chamar `obj.refresh_from_db()` antes de serializar a resposta (foi o que corrigiu `adicionar_imagens`/`remover_imagem` no `OrcamentoViewSet` e `adicionar_pagamento` no `EventoViewSet` — o mesmo padrão de `adicionar_item`/`remover_item` pode estar sujeito ao mesmo problema, não verificado)
@@ -214,7 +214,7 @@ arretado-crm/                    ← raiz React
 | Imagens de Inspiração | Galeria de imagens de referência anexada ao Orçamento (upload múltiplo, lightbox, uso interno, visível também no Evento após conversão) | ✅ Concluída |
 | Pagamentos Parciais de Evento | `eventos.PagamentoEvento` (parcelas), `Evento.sinal_pago` derivado, redesign do modal de detalhe do Evento (stepper + abas), edição de Orçamento antes da conversão | ✅ Concluída |
 | Dashboard Multi-Canal | App `dashboard/` (só leitura) — vendas do dia e histórico recente consolidado de iFood/PDV/Eventos (+ espaço reservado pra Anota AI), gráfico 7 dias, a receber, fila operacional, próximos eventos, ticket médio | ✅ Concluída |
-| Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`, substitui o "token" fake do frontend) + app `auditoria/` (log de login, CRUD de usuário, mudança de role/perms — item 1 da lista de sistemas críticos) + auditoria de pagamentos de evento (item 2: registrar/remover pagamento exige login; sinal inicial na criação de Evento/conversão de Orçamento é auditado de forma oportunista, sem exigir login) — tela restrita a `role=admin`. Próximo item da lista: Contrato | ✅ Concluída (usuarios + eventos/pagamentos) |
+| Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`, substitui o "token" fake do frontend) + app `auditoria/` (log de login, CRUD de usuário, mudança de role/perms — item 1) + pagamentos de evento (item 2: registrar/remover pagamento exige login; sinal inicial na criação de Evento/conversão de Orçamento é oportunista) + contrato (item 3: emitir contrato e enviar por WhatsApp exigem login) — tela restrita a `role=admin`. Próximo item da lista: Central de Preços/ajuste linear | ✅ Concluída (usuarios + eventos/pagamentos + eventos/contrato) |
 
 ---
 
@@ -287,13 +287,13 @@ POST          /api/v1/eventos/orcamentos/{id}/imagens/                  ← mult
 DELETE        /api/v1/eventos/orcamentos/{id}/imagens/{imagem_id}/remover/
 GET           /api/v1/eventos/orcamentos/{id}/pdf/
 POST          /api/v1/eventos/orcamentos/{id}/enviar-whatsapp/   ← gera PDF + envia via Z-API + grava HistoricoMensagem + muda status para 'enviado'
-POST          /api/v1/eventos/orcamentos/{id}/gerar-contrato/    ← só com status='aprovado' · body: cpf/rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil/endereco_avulso
+POST          /api/v1/eventos/orcamentos/{id}/gerar-contrato/    ← exige login · só com status='aprovado' · body: cpf/rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil/endereco_avulso · audita contrato_emitido
 
 # Contratos (ver Contrato.md)
 GET           /api/v1/eventos/contratos/                        ← só leitura (contrato só é criado via gerar-contrato/ acima)
 GET           /api/v1/eventos/contratos/{id}/
 GET           /api/v1/eventos/contratos/{id}/pdf/
-POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/
+POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/    ← exige login · audita contrato_enviado
 GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton
 
 # Eventos

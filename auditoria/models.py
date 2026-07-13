@@ -14,6 +14,8 @@ class LogAuditoria(models.Model):
     ACAO_SENHA_REDEFINIDA   = 'senha_redefinida'
     ACAO_PAGAMENTO_REGISTRADO = 'pagamento_registrado'
     ACAO_PAGAMENTO_REMOVIDO   = 'pagamento_removido'
+    ACAO_CONTRATO_EMITIDO = 'contrato_emitido'
+    ACAO_CONTRATO_ENVIADO = 'contrato_enviado'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -31,6 +33,8 @@ class LogAuditoria(models.Model):
         (ACAO_SENHA_REDEFINIDA,   'Senha redefinida'),
         (ACAO_PAGAMENTO_REGISTRADO, 'Pagamento registrado'),
         (ACAO_PAGAMENTO_REMOVIDO,   'Pagamento removido'),
+        (ACAO_CONTRATO_EMITIDO, 'Contrato emitido'),
+        (ACAO_CONTRATO_ENVIADO, 'Contrato enviado'),
     ]
 
     usuario = models.ForeignKey(
