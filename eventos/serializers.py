@@ -4,6 +4,8 @@ from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
     ImagemInspiracao, Contrato, ConfiguracaoContrato,
 )
+from auditoria.models import LogAuditoria
+from auditoria.utils import registrar
 
 
 # ─── Local de Evento ──────────────────────────────────────────────────────────
@@ -163,7 +165,7 @@ class EventoCreateSerializer(serializers.ModelSerializer):
         # Sinal informado na criação vira o primeiro PagamentoEvento — sinal_pago é
         # sempre derivado da soma dos pagamentos (ver recalcular_sinal_pago), nunca gravado direto.
         if sinal_pago:
-            PagamentoEvento.objects.create(
+            pagamento = PagamentoEvento.objects.create(
                 evento=evento,
                 valor=sinal_pago,
                 forma_pagamento='outro',
@@ -172,6 +174,18 @@ class EventoCreateSerializer(serializers.ModelSerializer):
                 observacao='Sinal informado na criação do evento.',
             )
             evento.recalcular_sinal_pago()
+            request = self.context.get('request')
+            ator = getattr(request, 'user', None) if request else None
+            ator = ator if getattr(ator, 'is_authenticated', False) else None
+            registrar(
+                ator, LogAuditoria.ACAO_PAGAMENTO_REGISTRADO,
+                detalhes={
+                    'evento_id': evento.id, 'evento_numero': evento.numero,
+                    'pagamento_id': pagamento.id, 'valor': str(pagamento.valor),
+                    'forma_pagamento': pagamento.forma_pagamento, 'origem': 'criacao_evento',
+                },
+                request=request,
+            )
         return evento
 
     def update(self, instance, validated_data):

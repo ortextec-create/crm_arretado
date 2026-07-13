@@ -12,6 +12,8 @@ const ACAO_LABEL = {
   usuario_removido: 'Usuário removido',
   permissao_alterada: 'Permissão alterada',
   senha_redefinida: 'Senha redefinida',
+  pagamento_registrado: 'Pagamento registrado',
+  pagamento_removido: 'Pagamento removido',
 }
 
 const ACAO_COR = {
@@ -23,6 +25,8 @@ const ACAO_COR = {
   usuario_removido: '#ef4444',
   permissao_alterada: 'var(--caramelo)',
   senha_redefinida: 'var(--caramelo)',
+  pagamento_registrado: 'var(--verde)',
+  pagamento_removido: '#ef4444',
 }
 
 function dataFmt(iso) {
@@ -45,6 +49,9 @@ function resumo(log) {
       return d.role_antes ? `role: ${d.role_antes} → ${d.role_depois}` : 'permissões alteradas'
     case 'senha_redefinida':
       return `${d.usuario_nome ?? '—'}`
+    case 'pagamento_registrado':
+    case 'pagamento_removido':
+      return `Evento ${d.evento_numero ?? d.evento_id ?? '—'} · R$ ${d.valor ?? '—'} (${d.forma_pagamento ?? '—'})`
     default:
       return '—'
   }

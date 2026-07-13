@@ -8,13 +8,16 @@ from django.utils import timezone
 from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
     ImagemInspiracao, Contrato, ConfiguracaoContrato,
 )
 from notificacoes.servico import notificar, _fone_pedido
+from usuarios.authentication import TokenAuthentication
+from auditoria.models import LogAuditoria
+from auditoria.utils import registrar
 
 
 def _notificar_evento(evento, mensagem):
@@ -67,10 +70,18 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = Evento.objects.prefetch_related(
         'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
     ).select_related('cliente', 'local', 'orcamento_origem').all()
-    permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['data_evento', 'criado_em', 'valor_total']
     ordering           = ['data_evento', 'hora_evento']
+    # Sobrescreve o [] do CsrfExemptMixin — só assim dá pra saber quem registrou/removeu
+    # um pagamento (ver get_permissions). Demais actions continuam AllowAny, sem mudança
+    # de comportamento — a autenticação só passa a ser exigida nas actions de pagamento.
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action in ('adicionar_pagamento', 'remover_pagamento'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -225,9 +236,18 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         evento = self.get_object()
         serializer = PagamentoEventoSerializer(data=request.data)
         if serializer.is_valid():
-            PagamentoEvento.objects.create(evento=evento, **serializer.validated_data)
+            pagamento = PagamentoEvento.objects.create(evento=evento, **serializer.validated_data)
             evento.refresh_from_db()  # evita cache stale do prefetch — ver CLAUDE.md
             evento.recalcular_sinal_pago()
+            registrar(
+                request.user, LogAuditoria.ACAO_PAGAMENTO_REGISTRADO,
+                detalhes={
+                    'evento_id': evento.id, 'evento_numero': evento.numero,
+                    'pagamento_id': pagamento.id, 'valor': str(pagamento.valor),
+                    'forma_pagamento': pagamento.forma_pagamento, 'origem': 'action_pagamentos',
+                },
+                request=request,
+            )
             return Response(EventoDetailSerializer(evento).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -238,6 +258,16 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             pagamento = evento.pagamentos.get(pk=pagamento_id)
         except PagamentoEvento.DoesNotExist:
             return Response({'detail': 'Pagamento não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        registrar(
+            request.user, LogAuditoria.ACAO_PAGAMENTO_REMOVIDO,
+            detalhes={
+                'evento_id': evento.id, 'evento_numero': evento.numero,
+                'pagamento_id': pagamento.id, 'valor': str(pagamento.valor),
+                'forma_pagamento': pagamento.forma_pagamento,
+            },
+            request=request,
+        )
         pagamento.delete()
         evento.recalcular_sinal_pago()
         return Response(EventoDetailSerializer(evento).data)
@@ -333,6 +363,9 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = Orcamento.objects.prefetch_related('itens', 'imagens_inspiracao').select_related('cliente', 'evento').all()
     permission_classes = [AllowAny]
+    # Não exige login (permission continua AllowAny) — só permite capturar o ator de forma
+    # oportunista quando o token vier, para auditar o sinal inicial em converter_em_evento.
+    authentication_classes = [TokenAuthentication]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['criado_em', 'valor_total', 'data_evento']
     ordering           = ['-criado_em']
@@ -466,7 +499,7 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         # Sinal informado na conversão vira o primeiro PagamentoEvento — sinal_pago é
         # sempre derivado da soma dos pagamentos (ver recalcular_sinal_pago), nunca gravado direto.
         if sinal_pago:
-            PagamentoEvento.objects.create(
+            pagamento = PagamentoEvento.objects.create(
                 evento=evento,
                 valor=sinal_pago,
                 forma_pagamento='outro',
@@ -475,6 +508,16 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
                 observacao='Sinal informado na conversão do orçamento em evento.',
             )
             evento.recalcular_sinal_pago()
+            ator = request.user if getattr(request.user, 'is_authenticated', False) else None
+            registrar(
+                ator, LogAuditoria.ACAO_PAGAMENTO_REGISTRADO,
+                detalhes={
+                    'evento_id': evento.id, 'evento_numero': evento.numero,
+                    'pagamento_id': pagamento.id, 'valor': str(pagamento.valor),
+                    'forma_pagamento': pagamento.forma_pagamento, 'origem': 'conversao_orcamento',
+                },
+                request=request,
+            )
 
         for item in orc.itens.all():
             ItemEvento.objects.create(
