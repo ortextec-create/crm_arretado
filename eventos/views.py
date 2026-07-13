@@ -917,8 +917,13 @@ class ContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListMod
 # ─── Configuração de Contrato (singleton) ─────────────────────────────────────
 
 class ConfiguracaoContratoViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
-    permission_classes = [AllowAny]
     serializer_class   = ConfiguracaoContratoSerializer
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'partial_update':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_object(self):
         return ConfiguracaoContrato.get()
@@ -927,8 +932,16 @@ class ConfiguracaoContratoViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
         return Response(self.get_serializer(self.get_object()).data)
 
     def partial_update(self, request, pk=None):
-        config     = self.get_object()
+        config  = self.get_object()
+        campos  = list(request.data.keys())
+        antes   = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
         serializer = ConfiguracaoContratoSerializer(config, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        depois = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
+        registrar(
+            request.user, LogAuditoria.ACAO_CONFIG_CONTRATO_ALTERADA,
+            detalhes={'antes': antes, 'depois': depois},
+            request=request,
+        )
         return Response(serializer.data)

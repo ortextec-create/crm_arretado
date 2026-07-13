@@ -20,6 +20,9 @@ class LogAuditoria(models.Model):
     ACAO_AJUSTE_LINEAR_DESFEITO = 'ajuste_linear_desfeito'
     ACAO_PRECO_MATERIA_ATUALIZADO = 'preco_materia_atualizado'
     ACAO_PARAMETROS_NEGOCIO_ALTERADOS = 'parametros_negocio_alterados'
+    ACAO_CONFIG_CONTRATO_ALTERADA = 'config_contrato_alterada'
+    ACAO_CONFIG_ENTREGA_ALTERADA = 'config_entrega_alterada'
+    ACAO_CONFIG_WHATSAPP_ALTERADA = 'config_whatsapp_alterada'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -43,6 +46,9 @@ class LogAuditoria(models.Model):
         (ACAO_AJUSTE_LINEAR_DESFEITO, 'Ajuste linear de preços desfeito'),
         (ACAO_PRECO_MATERIA_ATUALIZADO, 'Preço de matéria-prima atualizado'),
         (ACAO_PARAMETROS_NEGOCIO_ALTERADOS, 'Parâmetros de negócio alterados'),
+        (ACAO_CONFIG_CONTRATO_ALTERADA, 'Configuração de contrato alterada'),
+        (ACAO_CONFIG_ENTREGA_ALTERADA, 'Configuração de entrega alterada'),
+        (ACAO_CONFIG_WHATSAPP_ALTERADA, 'Configuração de WhatsApp alterada'),
     ]
 
     usuario = models.ForeignKey(

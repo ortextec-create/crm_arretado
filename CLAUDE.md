@@ -150,17 +150,17 @@ arretado-crm/                    ← raiz React
 - Número do pedido PDV: método `PedidoPDV.proximo_numero()` — sequencial com zero-fill
 - Itens do PDV: snapshot de nome e preço no momento da venda
 - **Z-API WhatsApp:** configurado via `.env` (`ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`) com fallback para o banco (`ConfiguracaoWhatsApp`). O cliente em `notificacoes/zapi_client.py` resolve o número canônico via `phone-exists` antes de cada envio (trata números BR de 8 e 9 dígitos), lança `ZAPIError` em caso de falha. Sempre use `notificacoes/servico.py` (`notificar()` para texto, `notificar_documento()` para PDF) — nunca chame `zapi_client` diretamente em views ou signals.
-- **ConfiguracaoWhatsApp é singleton** — sempre acessado via `ConfiguracaoWhatsApp.get()`. Contém credenciais Z-API, toggles de notificação, templates de mensagem e `validade_orcamento_dias` (prazo padrão de validade de orçamentos, configurável em Configurações).
+- **ConfiguracaoWhatsApp é singleton** — sempre acessado via `ConfiguracaoWhatsApp.get()`. Contém credenciais Z-API, toggles de notificação, templates de mensagem e `validade_orcamento_dias` (prazo padrão de validade de orçamentos, configurável em Configurações). `GET/PATCH /notificacoes/configuracao/` exigem login (o GET expõe `zapi_token`/`zapi_client_token` em texto puro, então diferente das outras duas configs singleton — aqui até a leitura exige `IsAuthenticated`, não só a escrita) e o PATCH audita `config_whatsapp_alterada` em `auditoria.LogAuditoria` (valores dos 3 campos de credencial nunca vão pro log em texto puro, ficam mascarados como `"***"`)
 - **fichas.ParametrosNegocio é singleton** — sempre acessado via `ParametrosNegocio.get()`, nunca instanciado diretamente. `PATCH /fichas/parametros/1/` exige login e audita `parametros_negocio_alterados` (antes/depois dos campos alterados) em `auditoria.LogAuditoria`
 - **FichaTecnica → pdv.Produto** é uma FK fraca via `produto_pdv_id` (IntegerField, não ForeignKey) — o produto pode existir sem ficha e vice-versa
 - **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`. Aplicar o ajuste (`confirmar=true`) e desfazê-lo (`DesfazerAjusteView`) exigem login e auditam `ajuste_linear_aplicado`/`ajuste_linear_desfeito` — o preview (`confirmar=false`) continua `AllowAny`, já que não altera nada
-- **pdv.ConfiguracaoEntrega é singleton** — sempre acessado via `ConfiguracaoEntrega.get()`. Guarda o `frete_padrao` usado quando a entrega é por bairro mas nenhum bairro cadastrado foi selecionado
+- **pdv.ConfiguracaoEntrega é singleton** — sempre acessado via `ConfiguracaoEntrega.get()`. Guarda o `frete_padrao` usado quando a entrega é por bairro mas nenhum bairro cadastrado foi selecionado. `PATCH /pdv/configuracao-entrega/1/` exige login e audita `config_entrega_alterada` (GET continua `AllowAny`)
 - **`pdv.TaxaEntregaBairro`** é a tabela configurável de bairro→taxa usada por PDV e Orçamentos/Eventos. Nunca hardcodar valor de frete no código — ver `FRETE.md` para o funcionamento completo do sistema de entrega
 - **`pdv.Produto.tipo`** (`fabricado`/`revenda`/`kit`) define de onde vem o custo (`Produto.custo`, propriedade polimórfica): `fabricado` deriva de `FichaTecnica.custo_total_unitario` (via `produto_pdv_id`, mesma FK fraca já documentada); `revenda` deriva de `materia_prima_origem.custo_unitario` (só preenchível quando `tipo == 'revenda'`, validado no serializer); `kit` soma `custo * quantidade` de cada `ItemKit` em `itens_kit`. `margem_desejada_pct` é opcional e só sugere preço de venda (`preco_sugerido_revenda`) — nunca substitui o campo `preco`, que continua sendo o preço efetivo de venda
 - **`pdv.ItemKit`** não pode conter kit-de-kit (`componente.tipo == 'kit'` é rejeitado tanto no `clean()` do model quanto no `ItemKitSerializer.validate_componente`) nem um kit se auto-referenciando
 - **`pdv.FaixaPreco`** guarda preço por quantidade mínima e canal opcional (`pdv`/`ifood`/`eventos`/vazio=todos). `Produto.preco_para(quantidade, canal)` resolve a prioridade: faixa específica do canal > faixa geral (`canal=null`) > `preco` base. Nunca hardcodar desconto por quantidade no frontend — sempre resolver via essa property/endpoint
 - **`pdv.DadosFiscaisProduto`** é opcional (`OneToOneField` de `Produto`, aninhado e gravável via `ProdutoSerializer.dados_fiscais` com `update_or_create`) e prepara o cadastro para NFC-e futura — ainda não é consumido por nenhuma integração fiscal real (ver pendência de NFC-e)
-- **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`
+- **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`. `PATCH /eventos/configuracao-contrato/1/` exige login e audita `config_contrato_alterada` (GET continua `AllowAny`)
 - **`eventos.Contrato`** é um snapshot gravado no momento da emissão (mesma filosofia de `ItemOrcamento`/`SnapshotPrecos`) — `valor_total`/`percentual_sinal`/`valor_sinal`/`data_quitacao` nunca são recalculados ao reabrir/reimprimir um contrato já emitido
 - **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só é permitida com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente preenchidos (podem estar vazios no cadastro normal — são exigidos só neste momento) — ver `Contrato.md`. Exige login (`IsAuthenticated`, único override de `get_permissions()` no `OrcamentoViewSet` — resto continua `AllowAny`) e grava `contrato_emitido` em `auditoria.LogAuditoria`. `ContratoViewSet.enviar_whatsapp` também exige login (`contrato_enviado` no log) — `list`/`retrieve`/`pdf` continuam `AllowAny`, sem mudança
 - **`eventos.ImagemInspiracao`** é a galeria de imagens de referência (uso interno da equipe, nunca entra no PDF/WhatsApp do orçamento) anexada ao `Orcamento` inteiro (não por item). `Evento` **não duplica** essas imagens — `EventoDetailSerializer.imagens_inspiracao` é um `SerializerMethodField` que lê direto de `evento.orcamento_origem.imagens_inspiracao` (mesma filosofia de nunca duplicar o que a relação já entrega, como o Contrato faz com os itens do Orçamento)
@@ -214,7 +214,7 @@ arretado-crm/                    ← raiz React
 | Imagens de Inspiração | Galeria de imagens de referência anexada ao Orçamento (upload múltiplo, lightbox, uso interno, visível também no Evento após conversão) | ✅ Concluída |
 | Pagamentos Parciais de Evento | `eventos.PagamentoEvento` (parcelas), `Evento.sinal_pago` derivado, redesign do modal de detalhe do Evento (stepper + abas), edição de Orçamento antes da conversão | ✅ Concluída |
 | Dashboard Multi-Canal | App `dashboard/` (só leitura) — vendas do dia e histórico recente consolidado de iFood/PDV/Eventos (+ espaço reservado pra Anota AI), gráfico 7 dias, a receber, fila operacional, próximos eventos, ticket médio | ✅ Concluída |
-| Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`, substitui o "token" fake do frontend) + app `auditoria/` (log de login, CRUD de usuário, mudança de role/perms — item 1) + pagamentos de evento (item 2) + contrato (item 3: emitir/enviar exigem login) + Central de Preços (item 4: aplicar ajuste linear, desfazer ajuste, atualizar preço de matéria-prima e alterar `ParametrosNegocio` exigem login — preview do ajuste linear continua livre) — tela restrita a `role=admin`. Próximo item: configurações singleton restantes (`ConfiguracaoContrato`/`ConfiguracaoEntrega`/`ConfiguracaoWhatsApp`) e exclusões em geral | ✅ Concluída (usuarios + eventos/pagamentos + eventos/contrato + fichas/preços) |
+| Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`, substitui o "token" fake do frontend) + app `auditoria/` (log de login, CRUD de usuário, mudança de role/perms — item 1) + pagamentos de evento (item 2) + contrato (item 3) + Central de Preços (item 4) + configurações singleton (item 5: PATCH de `ConfiguracaoContrato`/`ConfiguracaoEntrega`/`ConfiguracaoWhatsApp` exige login; `ConfiguracaoWhatsApp` também exige login no GET, já que expõe credencial Z-API) — tela restrita a `role=admin`. Próximo/último item: exclusões em geral | ✅ Concluída (usuarios + eventos/pagamentos + eventos/contrato + fichas/preços + configs singleton) |
 
 ---
 
@@ -271,7 +271,7 @@ DELETE /api/v1/pdv/produtos/{id}/itens-kit/{item_id}/
 
 # Frete (ver FRETE.md)
 GET/POST/PATCH/DELETE /api/v1/pdv/taxas-entrega/[{id}/]     ← cadastro de bairro→taxa
-GET/PATCH             /api/v1/pdv/configuracao-entrega/1/   ← singleton, campo frete_padrao
+GET/PATCH             /api/v1/pdv/configuracao-entrega/1/   ← singleton, campo frete_padrao · PATCH exige login · audita config_entrega_alterada
 
 # Orçamentos
 GET/POST      /api/v1/eventos/orcamentos/
@@ -294,7 +294,7 @@ GET           /api/v1/eventos/contratos/                        ← só leitura 
 GET           /api/v1/eventos/contratos/{id}/
 GET           /api/v1/eventos/contratos/{id}/pdf/
 POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/    ← exige login · audita contrato_enviado
-GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton
+GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton · PATCH exige login · audita config_contrato_alterada
 
 # Eventos
 GET/POST              /api/v1/eventos/                                  ← POST aceita "sinal_pago" opcional (vira 1º PagamentoEvento)
@@ -310,6 +310,8 @@ GET                   /api/v1/eventos/agenda/
 GET  /api/v1/notificacoes/mensagens/
 POST /api/v1/notificacoes/mensagens/enviar/
 GET  /api/v1/notificacoes/mensagens/status-conexao/
+GET/PATCH /api/v1/notificacoes/configuracao/          ← singleton · GET e PATCH exigem login (só aqui GET também é restrito — expõe credencial Z-API) · PATCH audita config_whatsapp_alterada
+POST      /api/v1/notificacoes/configuracao/testar/   ← exige login · testa conexão Z-API, não muda nada, não audita
 
 # Usuários
 GET/POST              /api/v1/usuarios/

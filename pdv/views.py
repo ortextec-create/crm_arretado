@@ -2,13 +2,16 @@ from django.db.models import Q, Sum, Count
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .models import (
     CategoriaProduto, Produto, PedidoPDV, ItemPedidoPDV, TaxaEntregaBairro, ConfiguracaoEntrega,
     ItemKit, FaixaPreco,
 )
 from notificacoes.servico import notificar, _fone_pedido
+from usuarios.authentication import TokenAuthentication
+from auditoria.models import LogAuditoria
+from auditoria.utils import registrar
 
 
 def _notificar_pdv(pedido, mensagem):
@@ -57,8 +60,13 @@ class TaxaEntregaBairroViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
 
 class ConfiguracaoEntregaViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
-    permission_classes = [AllowAny]
     serializer_class   = ConfiguracaoEntregaSerializer
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'partial_update':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_object(self):
         return ConfiguracaoEntrega.get()
@@ -67,10 +75,18 @@ class ConfiguracaoEntregaViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
         return Response(self.get_serializer(self.get_object()).data)
 
     def partial_update(self, request, pk=None):
-        config     = self.get_object()
+        config  = self.get_object()
+        campos  = list(request.data.keys())
+        antes   = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
         serializer = ConfiguracaoEntregaSerializer(config, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        depois = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
+        registrar(
+            request.user, LogAuditoria.ACAO_CONFIG_ENTREGA_ALTERADA,
+            detalhes={'antes': antes, 'depois': depois},
+            request=request,
+        )
         return Response(serializer.data)
 
 

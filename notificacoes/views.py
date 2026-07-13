@@ -1,12 +1,15 @@
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from clientes.models import Cliente
 from .models import HistoricoMensagem, ConfiguracaoWhatsApp
 from .serializers import HistoricoMensagemSerializer, EnviarMensagemSerializer, ConfiguracaoWhatsAppSerializer
 from . import zapi_client as evo
+from usuarios.authentication import TokenAuthentication
+from auditoria.models import LogAuditoria
+from auditoria.utils import registrar
 
 
 class CsrfExemptMixin:
@@ -113,7 +116,11 @@ class MensagemViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
 
 class ConfiguracaoWhatsAppViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
     serializer_class   = ConfiguracaoWhatsAppSerializer
-    permission_classes = [AllowAny]
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]  # retrieve/partial_update — expõe credenciais Z-API, exige login em tudo
+
+    # Campos que carregam credencial de verdade — nunca gravar o valor em texto puro no log de auditoria
+    _CAMPOS_SENSIVEIS = {'zapi_instance_id', 'zapi_token', 'zapi_client_token'}
 
     def get_object(self):
         return ConfiguracaoWhatsApp.get()
@@ -124,9 +131,24 @@ class ConfiguracaoWhatsAppViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
 
     @action(detail=False, methods=['patch'], url_path='')
     def partial_update(self, request):
-        serializer = self.get_serializer(self.get_object(), data=request.data, partial=True)
+        config = self.get_object()
+        campos = list(request.data.keys())
+        antes  = {
+            c: ('***' if c in self._CAMPOS_SENSIVEIS else str(getattr(config, c)))
+            for c in campos if hasattr(config, c)
+        }
+        serializer = self.get_serializer(config, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        depois = {
+            c: ('***' if c in self._CAMPOS_SENSIVEIS else str(getattr(config, c)))
+            for c in campos if hasattr(config, c)
+        }
+        registrar(
+            request.user, LogAuditoria.ACAO_CONFIG_WHATSAPP_ALTERADA,
+            detalhes={'antes': antes, 'depois': depois},
+            request=request,
+        )
         return Response(serializer.data)
 
     @action(detail=False, methods=['post'], url_path='testar')

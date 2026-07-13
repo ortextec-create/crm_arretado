@@ -20,6 +20,9 @@ const ACAO_LABEL = {
   ajuste_linear_desfeito: 'Ajuste linear desfeito',
   preco_materia_atualizado: 'Preço de matéria-prima atualizado',
   parametros_negocio_alterados: 'Parâmetros de negócio alterados',
+  config_contrato_alterada: 'Configuração de contrato alterada',
+  config_entrega_alterada: 'Configuração de entrega alterada',
+  config_whatsapp_alterada: 'Configuração de WhatsApp alterada',
 }
 
 const ACAO_COR = {
@@ -39,6 +42,9 @@ const ACAO_COR = {
   ajuste_linear_desfeito: '#ef4444',
   preco_materia_atualizado: 'var(--caramelo)',
   parametros_negocio_alterados: 'var(--caramelo)',
+  config_contrato_alterada: 'var(--caramelo)',
+  config_entrega_alterada: 'var(--caramelo)',
+  config_whatsapp_alterada: 'var(--caramelo)',
 }
 
 function dataFmt(iso) {
@@ -75,6 +81,9 @@ function resumo(log) {
     case 'preco_materia_atualizado':
       return `${d.materia_nome ?? '—'}: R$ ${d.valor_antigo ?? '—'} → R$ ${d.valor_novo ?? '—'}`
     case 'parametros_negocio_alterados':
+    case 'config_contrato_alterada':
+    case 'config_entrega_alterada':
+    case 'config_whatsapp_alterada':
       return Object.keys(d.depois ?? {}).join(', ') || '—'
     default:
       return '—'
