@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { orcamentosApi, contratosApi, clientesApi, pdvApi, locaisEventoApi, taxasEntregaApi, configEntregaApi } from '../api/services'
-import { Btn, Modal, Spinner, Toast } from '../components/ui'
+import { Btn, Modal, Spinner, Toast, Empty } from '../components/ui'
+import PresencaAtiva from '../components/ui/PresencaAtiva'
+import { ACAO_LABEL, ACAO_COR, dataFmt, resumo } from '../utils/auditoriaResumo'
 import styles from './Orcamentos.module.css'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -726,9 +728,26 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
   const [editItemForm,  setEditItemForm]  = useState({ preco_unit: '', quantidade: '1' })
   const [savingItem,    setSavingItem]    = useState(false)
 
+  // Histórico (seção colapsável — este modal não usa abas)
+  const [historicoAberto,  setHistoricoAberto]  = useState(false)
+  const [historico,        setHistorico]        = useState(null)
+  const [loadingHistorico, setLoadingHistorico]  = useState(false)
+
   useEffect(() => {
     pdvApi.listProdutos({ ativo: 'true', page_size: 500 }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
   }, [])
+
+  function toggleHistorico() {
+    const abrir = !historicoAberto
+    setHistoricoAberto(abrir)
+    if (abrir && historico === null) {
+      setLoadingHistorico(true)
+      orcamentosApi.historico(orc.id)
+        .then((r) => setHistorico(r.data))
+        .catch(() => setHistorico([]))
+        .finally(() => setLoadingHistorico(false))
+    }
+  }
 
   function handleProdutoItem(e) {
     const id = e.target.value
@@ -803,6 +822,8 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
 
   return (
     <Modal open title={`Orçamento ${orc.numero}`} onClose={onClose} wide>
+      <PresencaAtiva model="Orcamento" objetoId={orc.id} />
+
       {/* Cabeçalho do orçamento */}
       <div className={styles.detHeader}>
         <div className={styles.detInfo}>
@@ -979,6 +1000,34 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
             style={{ display: 'none' }}
           />
         </label>
+      </div>
+
+      {/* Histórico (colapsável) */}
+      <div className={styles.historicoSection}>
+        <button className={styles.historicoToggle} onClick={toggleHistorico}>
+          <i className={`ti ${historicoAberto ? 'ti-chevron-down' : 'ti-chevron-right'}`} /> Histórico de Alterações
+        </button>
+        {historicoAberto && (
+          loadingHistorico ? (
+            <div style={{ padding: 16, textAlign: 'center' }}><Spinner size={20} /></div>
+          ) : !historico || historico.length === 0 ? (
+            <Empty icon="history" message="Nenhuma alteração registrada ainda." />
+          ) : (
+            <div className={styles.historicoLista}>
+              {historico.map((log) => (
+                <div key={log.id} className={styles.historicoItem}>
+                  <span className={styles.historicoBadge} style={{ color: ACAO_COR[log.acao] }}>
+                    {ACAO_LABEL[log.acao] ?? log.acao_display}
+                  </span>
+                  <span className={styles.historicoResumo}>{resumo(log)}</span>
+                  <span className={styles.historicoMeta}>
+                    {log.usuario_nome_snapshot || 'Sistema'} · {dataFmt(log.criado_em)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        )}
       </div>
 
       {/* Ações */}

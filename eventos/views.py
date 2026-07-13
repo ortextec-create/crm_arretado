@@ -17,8 +17,11 @@ from .models import (
 from notificacoes.servico import notificar, _fone_pedido
 from usuarios.authentication import TokenAuthentication
 from auditoria.models import LogAuditoria
-from auditoria.utils import registrar
-from auditoria.mixins import AuditoriaDestroyMixin
+from auditoria.utils import registrar, ator_ou_none
+from auditoria.mixins import (
+    AuditoriaCreateMixin, AuditoriaDestroyMixin, AuditoriaStatusMixin, AuditoriaUpdateMixin,
+)
+from auditoria.serializers import LogAuditoriaSerializer
 
 
 def _notificar_evento(evento, mensagem):
@@ -73,7 +76,10 @@ class LocalEventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelV
 
 # ─── Eventos ──────────────────────────────────────────────────────────────────
 
-class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
+class EventoViewSet(
+    AuditoriaStatusMixin, AuditoriaUpdateMixin, AuditoriaCreateMixin, AuditoriaDestroyMixin,
+    CsrfExemptMixin, viewsets.ModelViewSet,
+):
     queryset           = Evento.objects.prefetch_related(
         'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
     ).select_related('cliente', 'local', 'orcamento_origem').all()
@@ -82,13 +88,24 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
     ordering           = ['data_evento', 'hora_evento']
     # Sobrescreve o [] do CsrfExemptMixin — só assim dá pra saber quem registrou/removeu
     # um pagamento (ver get_permissions). Demais actions continuam AllowAny, sem mudança
-    # de comportamento — a autenticação só passa a ser exigida nas actions de pagamento
-    # e nas de exclusão (destroy/remover_item).
+    # de comportamento — a autenticação só passa a ser exigida nas actions de pagamento,
+    # exclusão, criação/edição e mudança de status (ver get_permissions).
     authentication_classes = [TokenAuthentication]
     campos_log_exclusao = ['numero', 'cliente_nome', 'valor_total']
+    campos_log_criacao = ['numero', 'cliente_nome', 'valor_total']
+    campos_log_atualizacao = [
+        'cliente', 'cliente_nome', 'cliente_telefone', 'tipo_evento', 'data_evento', 'hora_evento',
+        'tipo_entrega', 'local', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
+        'desconto', 'observacoes',
+    ]
 
     def get_permissions(self):
-        if self.action in ('adicionar_pagamento', 'remover_pagamento', 'destroy', 'remover_item'):
+        if self.action in (
+            'adicionar_pagamento', 'remover_pagamento', 'destroy', 'remover_item',
+            'create', 'update', 'partial_update',
+            'confirmar', 'iniciar_producao', 'marcar_pronto', 'entregar', 'cancelar',
+            'adicionar_item', 'historico',
+        ):
             return [IsAuthenticated()]
         return [AllowAny()]
 
@@ -149,8 +166,10 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
         if not evento.pode_confirmar:
             return Response({'detail': 'Evento não pode ser confirmado neste status.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = evento.status
         evento.status = 'confirmado'
         evento.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(evento, de=de, para=evento.status)
         _notificar_evento(evento, f'✅ Sua encomenda #{evento.numero} está confirmada para {evento.data_evento.strftime("%d/%m/%Y")}! Qualquer dúvida, é só chamar. 🍬')
         return Response(EventoDetailSerializer(evento).data)
 
@@ -160,8 +179,10 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
         if not evento.pode_iniciar_producao:
             return Response({'detail': 'Evento não pode iniciar produção neste status.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = evento.status
         evento.status = 'em_producao'
         evento.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(evento, de=de, para=evento.status)
         _notificar_evento(evento, f'👨‍🍳 Sua encomenda #{evento.numero} entrou em produção! Estamos caprichando em cada detalhe.')
         return Response(EventoDetailSerializer(evento).data)
 
@@ -171,8 +192,10 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
         if not evento.pode_marcar_pronto:
             return Response({'detail': 'Evento não pode ser marcado como pronto neste status.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = evento.status
         evento.status = 'pronto'
         evento.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(evento, de=de, para=evento.status)
         _notificar_evento(evento, f'🎉 Sua encomenda #{evento.numero} está pronta! Entraremos em contato para combinar a entrega.')
         return Response(EventoDetailSerializer(evento).data)
 
@@ -182,8 +205,10 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
         if not evento.pode_entregar:
             return Response({'detail': 'Evento não pode ser marcado como entregue neste status.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = evento.status
         evento.status = 'entregue'
         evento.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(evento, de=de, para=evento.status)
         _notificar_evento(evento, f'💚 Encomenda #{evento.numero} entregue! Obrigado pela confiança na Arretado Doces. Até a próxima! 🍬')
         return Response(EventoDetailSerializer(evento).data)
 
@@ -193,8 +218,10 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
         if not evento.pode_cancelar:
             return Response({'detail': 'Evento já foi entregue ou cancelado.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = evento.status
         evento.status = 'cancelado'
         evento.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(evento, de=de, para=evento.status)
         _notificar_evento(evento, f'❌ Sua encomenda #{evento.numero} foi cancelada. Entre em contato se precisar de ajuda.')
         return Response(EventoDetailSerializer(evento).data)
 
@@ -213,12 +240,21 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
             data  = serializer.validated_data
             qty   = data.get('quantidade', 1)
             price = data['preco_unit']
-            ItemEvento.objects.create(
+            item = ItemEvento.objects.create(
                 evento=evento,
                 preco_total=price * qty,
                 **data,
             )
             evento.recalcular_totais()
+            registrar(
+                ator_ou_none(request), LogAuditoria.ACAO_ITEM_ADICIONADO,
+                detalhes={
+                    'model': 'ItemEvento', 'id': item.id, 'nome': item.nome,
+                    'preco_total': str(item.preco_total),
+                    'evento_id': evento.id, 'evento_numero': evento.numero,
+                },
+                request=request,
+            )
             return Response(EventoDetailSerializer(evento).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -288,6 +324,28 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
         pagamento.delete()
         evento.recalcular_sinal_pago()
         return Response(EventoDetailSerializer(evento).data)
+
+    # ── Histórico ─────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['get'], url_path='historico')
+    def historico(self, request, pk=None):
+        """
+        GET /api/v1/eventos/{id}/historico/
+        Trilha de auditoria deste evento (criação, edição, mudança de
+        status, itens, pagamentos) — não confundir com
+        clientes/{id}/historico/, que é histórico de PEDIDOS do cliente
+        entre canais, um conceito totalmente diferente.
+        """
+        evento = self.get_object()
+        logs = LogAuditoria.objects.filter(
+            Q(detalhes__model='Evento', detalhes__id=evento.id) |
+            Q(detalhes__model='ItemEvento', detalhes__evento_id=evento.id) |
+            Q(
+                acao__in=[LogAuditoria.ACAO_PAGAMENTO_REGISTRADO, LogAuditoria.ACAO_PAGAMENTO_REMOVIDO],
+                detalhes__evento_id=evento.id,
+            )
+        ).select_related('usuario').order_by('-criado_em')
+        return Response(LogAuditoriaSerializer(logs, many=True).data)
 
     # ── View de agenda (calendário) ────────────────────────────────────────
 
@@ -377,7 +435,10 @@ class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSe
 
 # ─── Orçamentos ───────────────────────────────────────────────────────────────
 
-class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
+class OrcamentoViewSet(
+    AuditoriaStatusMixin, AuditoriaUpdateMixin, AuditoriaCreateMixin, AuditoriaDestroyMixin,
+    CsrfExemptMixin, viewsets.ModelViewSet,
+):
     queryset           = Orcamento.objects.prefetch_related('itens', 'imagens_inspiracao').select_related('cliente', 'evento').all()
     # authentication_classes real (ver abaixo) — algumas actions continuam AllowAny
     # (permission depende de get_permissions), só permitindo capturar o ator de forma
@@ -387,9 +448,20 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
     ordering_fields    = ['criado_em', 'valor_total', 'data_evento']
     ordering           = ['-criado_em']
     campos_log_exclusao = ['numero', 'cliente_nome', 'valor_total']
+    campos_log_criacao = ['numero', 'cliente_nome', 'valor_total']
+    campos_log_atualizacao = [
+        'cliente', 'cliente_nome', 'cliente_telefone', 'tipo_evento', 'data_evento', 'validade',
+        'tipo_entrega', 'local', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
+        'desconto', 'observacoes',
+    ]
 
     def get_permissions(self):
-        if self.action in ('gerar_contrato', 'destroy', 'remover_item', 'remover_imagem'):
+        if self.action in (
+            'gerar_contrato', 'destroy', 'remover_item', 'remover_imagem',
+            'create', 'update', 'partial_update',
+            'enviar', 'aprovar', 'recusar', 'restaurar',
+            'adicionar_item', 'editar_item', 'historico',
+        ):
             return [IsAuthenticated()]
         return [AllowAny()]
 
@@ -403,9 +475,9 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
     def create(self, request, *args, **kwargs):
         serializer = OrcamentoCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        orcamento = serializer.save()
+        self.perform_create(serializer)
         return Response(
-            OrcamentoDetailSerializer(orcamento).data,
+            OrcamentoDetailSerializer(serializer.instance).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -419,8 +491,8 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
         partial = kwargs.pop('partial', False)
         serializer = OrcamentoCreateSerializer(orc, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
-        orcamento = serializer.save()
-        return Response(OrcamentoDetailSerializer(orcamento).data)
+        self.perform_update(serializer)
+        return Response(OrcamentoDetailSerializer(serializer.instance).data)
 
     def get_queryset(self):
         qs     = super().get_queryset()
@@ -453,8 +525,10 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
         if not orc.pode_enviar:
             return Response({'detail': 'Orçamento não pode ser marcado como enviado neste status.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = orc.status
         orc.status = 'enviado'
         orc.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(orc, de=de, para=orc.status)
         return Response(OrcamentoDetailSerializer(orc).data)
 
     @action(detail=True, methods=['post'], url_path='aprovar')
@@ -463,8 +537,10 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
         if not orc.pode_aprovar:
             return Response({'detail': 'Orçamento não pode ser aprovado neste status.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = orc.status
         orc.status = 'aprovado'
         orc.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(orc, de=de, para=orc.status)
         return Response(OrcamentoDetailSerializer(orc).data)
 
     @action(detail=True, methods=['post'], url_path='recusar')
@@ -473,8 +549,10 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
         if not orc.pode_recusar:
             return Response({'detail': 'Orçamento não pode ser recusado neste status.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        de = orc.status
         orc.status = 'recusado'
         orc.save(update_fields=['status', 'atualizado_em'])
+        self.log_mudanca_status(orc, de=de, para=orc.status)
         return Response(OrcamentoDetailSerializer(orc).data)
 
     @action(detail=True, methods=['post'], url_path='converter-em-evento')
@@ -531,9 +609,8 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
                 observacao='Sinal informado na conversão do orçamento em evento.',
             )
             evento.recalcular_sinal_pago()
-            ator = request.user if getattr(request.user, 'is_authenticated', False) else None
             registrar(
-                ator, LogAuditoria.ACAO_PAGAMENTO_REGISTRADO,
+                ator_ou_none(request), LogAuditoria.ACAO_PAGAMENTO_REGISTRADO,
                 detalhes={
                     'evento_id': evento.id, 'evento_numero': evento.numero,
                     'pagamento_id': pagamento.id, 'valor': str(pagamento.valor),
@@ -557,6 +634,16 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
         orc.status = 'convertido'
         orc.save(update_fields=['evento', 'status', 'atualizado_em'])
 
+        registrar(
+            ator_ou_none(request), LogAuditoria.ACAO_ORCAMENTO_CONVERTIDO,
+            detalhes={
+                'orcamento_id': orc.id, 'orcamento_numero': orc.numero,
+                'evento_id': evento.id, 'evento_numero': evento.numero,
+                'cliente': orc.nome_cliente_display,
+            },
+            request=request,
+        )
+
         return Response({
             'evento':    EventoDetailSerializer(evento).data,
             'orcamento': OrcamentoDetailSerializer(orc).data,
@@ -577,12 +664,21 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
             data  = serializer.validated_data
             qty   = data.get('quantidade', 1)
             price = data['preco_unit']
-            ItemOrcamento.objects.create(
+            item = ItemOrcamento.objects.create(
                 orcamento=orc,
                 preco_total=price * qty,
                 **data,
             )
             orc.recalcular_totais()
+            registrar(
+                ator_ou_none(request), LogAuditoria.ACAO_ITEM_ADICIONADO,
+                detalhes={
+                    'model': 'ItemOrcamento', 'id': item.id, 'nome': item.nome,
+                    'preco_total': str(item.preco_total),
+                    'orcamento_id': orc.id, 'orcamento_numero': orc.numero,
+                },
+                request=request,
+            )
             return Response(OrcamentoDetailSerializer(orc).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -624,6 +720,9 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
             return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
         serializer = ItemOrcamentoCreateSerializer(item, data=request.data)
         if serializer.is_valid():
+            campos_auditados = ('nome', 'preco_unit', 'quantidade', 'observacao')
+            antes = {c: str(getattr(item, c, None)) for c in campos_auditados}
+
             data  = serializer.validated_data
             qty   = data.get('quantidade', item.quantidade)
             price = data.get('preco_unit', item.preco_unit)
@@ -632,6 +731,18 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
             item.preco_total = price * qty
             item.save()
             orc.recalcular_totais()
+
+            depois = {c: str(getattr(item, c, None)) for c in campos_auditados}
+            mudou = {c: {'de': antes[c], 'para': depois[c]} for c in campos_auditados if antes[c] != depois[c]}
+            if mudou:
+                registrar(
+                    ator_ou_none(request), LogAuditoria.ACAO_REGISTRO_ATUALIZADO,
+                    detalhes={
+                        'model': 'ItemOrcamento', 'id': item.id, 'campos': mudou,
+                        'orcamento_id': orc.id, 'orcamento_numero': orc.numero,
+                    },
+                    request=request,
+                )
             return Response(OrcamentoDetailSerializer(orc).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -678,9 +789,11 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
                             status=status.HTTP_400_BAD_REQUEST)
         from notificacoes.models import ConfiguracaoWhatsApp
         dias = ConfiguracaoWhatsApp.get().validade_orcamento_dias
+        de = orc.status
         orc.status   = 'rascunho'
         orc.validade = timezone.localtime(timezone.now()).date() + datetime.timedelta(days=dias)
         orc.save(update_fields=['status', 'validade', 'atualizado_em'])
+        self.log_mudanca_status(orc, de=de, para=orc.status)
         return Response(OrcamentoDetailSerializer(orc).data)
 
     @action(detail=True, methods=['post'], url_path='enviar-whatsapp')
@@ -736,6 +849,7 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
         if orc.status == 'rascunho':
             orc.status = 'enviado'
             orc.save(update_fields=['status', 'atualizado_em'])
+            self.log_mudanca_status(orc, de='rascunho', para='enviado')
 
         return Response(OrcamentoDetailSerializer(orc).data)
 
@@ -752,6 +866,28 @@ class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'inline; filename="{orc.numero}.pdf"'
         return response
+
+    @action(detail=True, methods=['get'], url_path='historico')
+    def historico(self, request, pk=None):
+        """
+        GET /api/v1/eventos/orcamentos/{id}/historico/
+        Trilha de auditoria deste orçamento (criação, edição, mudança de
+        status, itens, imagens, conversão, contrato) — não confundir com
+        clientes/{id}/historico/, que é histórico de PEDIDOS do cliente
+        entre canais, um conceito totalmente diferente.
+        """
+        orc = self.get_object()
+        logs = LogAuditoria.objects.filter(
+            Q(detalhes__model='Orcamento', detalhes__id=orc.id) |
+            Q(detalhes__model='ItemOrcamento', detalhes__orcamento_id=orc.id) |
+            Q(detalhes__model='ImagemInspiracao', detalhes__orcamento_id=orc.id) |
+            Q(acao=LogAuditoria.ACAO_ORCAMENTO_CONVERTIDO, detalhes__orcamento_id=orc.id) |
+            Q(
+                acao__in=[LogAuditoria.ACAO_CONTRATO_EMITIDO, LogAuditoria.ACAO_CONTRATO_ENVIADO],
+                detalhes__orcamento_id=orc.id,
+            )
+        ).select_related('usuario').order_by('-criado_em')
+        return Response(LogAuditoriaSerializer(logs, many=True).data)
 
     @action(detail=True, methods=['post'], url_path='gerar-contrato')
     def gerar_contrato(self, request, pk=None):
@@ -938,7 +1074,7 @@ class ContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListMod
         registrar(
             request.user, LogAuditoria.ACAO_CONTRATO_ENVIADO,
             detalhes={
-                'contrato_numero': contrato.numero,
+                'contrato_numero': contrato.numero, 'orcamento_id': contrato.orcamento_id,
                 'cliente': contrato.cliente.nome if contrato.cliente else None,
                 'telefone': telefone,
             },

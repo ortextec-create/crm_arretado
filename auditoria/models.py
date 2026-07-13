@@ -24,6 +24,11 @@ class LogAuditoria(models.Model):
     ACAO_CONFIG_ENTREGA_ALTERADA = 'config_entrega_alterada'
     ACAO_CONFIG_WHATSAPP_ALTERADA = 'config_whatsapp_alterada'
     ACAO_REGISTRO_EXCLUIDO = 'registro_excluido'
+    ACAO_REGISTRO_CRIADO = 'registro_criado'
+    ACAO_REGISTRO_ATUALIZADO = 'registro_atualizado'
+    ACAO_STATUS_ALTERADO = 'status_alterado'
+    ACAO_ITEM_ADICIONADO = 'item_adicionado'
+    ACAO_ORCAMENTO_CONVERTIDO = 'orcamento_convertido_em_evento'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -51,6 +56,11 @@ class LogAuditoria(models.Model):
         (ACAO_CONFIG_ENTREGA_ALTERADA, 'Configuração de entrega alterada'),
         (ACAO_CONFIG_WHATSAPP_ALTERADA, 'Configuração de WhatsApp alterada'),
         (ACAO_REGISTRO_EXCLUIDO, 'Registro excluído'),
+        (ACAO_REGISTRO_CRIADO, 'Registro criado'),
+        (ACAO_REGISTRO_ATUALIZADO, 'Registro atualizado'),
+        (ACAO_STATUS_ALTERADO, 'Status alterado'),
+        (ACAO_ITEM_ADICIONADO, 'Item adicionado'),
+        (ACAO_ORCAMENTO_CONVERTIDO, 'Orçamento convertido em evento'),
     ]
 
     usuario = models.ForeignKey(
@@ -76,3 +86,28 @@ class LogAuditoria(models.Model):
 
     def __str__(self):
         return f'{self.get_acao_display()} — {self.usuario_nome_snapshot} ({self.criado_em:%d/%m/%Y %H:%M})'
+
+
+class PresencaEdicao(models.Model):
+    """
+    Heartbeat de "quem está vendo/editando este registro agora" — via polling
+    REST (não WebSocket, ver CLAUDE.md). unique_together garante no máximo 1
+    linha por usuário×objeto, então a tabela cresce por combinação única já
+    visitada, não por visita — não precisa de limpeza periódica por ora.
+    """
+    usuario   = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='presencas')
+    model     = models.CharField(max_length=50)
+    objeto_id = models.PositiveIntegerField()
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'auditoria_presenca_edicao'
+        verbose_name = 'Presença de Edição'
+        verbose_name_plural = 'Presenças de Edição'
+        unique_together = [('usuario', 'model', 'objeto_id')]
+        indexes = [
+            models.Index(fields=['model', 'objeto_id']),
+        ]
+
+    def __str__(self):
+        return f'{self.usuario.name} em {self.model}#{self.objeto_id} ({self.atualizado_em:%H:%M:%S})'

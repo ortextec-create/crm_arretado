@@ -166,6 +166,11 @@ export const auditoriaApi = {
   listar: (params = {}) => api.get('/auditoria/logs/', { params }),
 }
 
+// Presença via heartbeat (não é WebSocket — polling REST, ver CLAUDE.md)
+export const presencaApi = {
+  heartbeat: ({ model, objeto_id }) => api.post('/auditoria/presenca/', { model, objeto_id }),
+}
+
 // ─── NOTIFICAÇÕES WHATSAPP ────────────────────────────────────────────────────
 
 export const notificacoesApi = {
@@ -205,6 +210,7 @@ export const eventosApi = {
   removerPagamento:   (id, pagamentoId) => api.delete(`/eventos/${id}/pagamentos/${pagamentoId}/remover/`),
   agenda:          (mes)   => api.get('/eventos/agenda/', { params: { mes } }),
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
+  historico:       (id)    => api.get(`/eventos/${id}/historico/`),
 }
 
 // ─── ORÇAMENTOS ──────────────────────────────────────────────────────────────
@@ -230,6 +236,7 @@ export const orcamentosApi = {
   removerImagem:    (id, imgId)    => api.delete(`/eventos/orcamentos/${id}/imagens/${imgId}/remover/`),
   enviarWhatsApp:  (id, data)   => api.post(`/eventos/orcamentos/${id}/enviar-whatsapp/`, data),
   gerarContrato:   (id, data)   => api.post(`/eventos/orcamentos/${id}/gerar-contrato/`, data),
+  historico:       (id)     => api.get(`/eventos/orcamentos/${id}/historico/`),
 }
 
 // ─── CONTRATOS ───────────────────────────────────────────────────────────────

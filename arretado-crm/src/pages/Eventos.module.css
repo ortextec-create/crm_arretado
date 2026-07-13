@@ -1050,6 +1050,41 @@
   margin: -4px 0 4px;
 }
 
+.historicoLista {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.historicoItem {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.historicoItem:last-child {
+  border-bottom: none;
+}
+
+.historicoBadge {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.historicoResumo {
+  color: var(--texto);
+}
+
+.historicoMeta {
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: right;
+}
+
 @media (max-width: 720px) {
   .detalheLayoutV2 {
     grid-template-columns: 1fr;

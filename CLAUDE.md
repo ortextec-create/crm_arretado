@@ -62,12 +62,19 @@ arretado/                        ← raiz Django
 │   │                               continua AllowAny) e grava `auditoria.LogAuditoria` via `registrar()`. O sinal inicial criado
 │   │                               junto com o Evento (`EventoCreateSerializer.create`) ou na conversão de Orçamento
 │   │                               (`OrcamentoViewSet.converter_em_evento`) também é auditado, mas de forma oportunista — sem
-│   │                               exigir login nesses dois fluxos, só captura o ator quando o token vier (ver "O Que NÃO Fazer")
+│   │                               exigir login nesses dois fluxos, só captura o ator quando o token vier (ver "O Que NÃO Fazer").
+│   │                               Criação, edição (PATCH/PUT), mudança de status (enviar/aprovar/recusar/restaurar no
+│   │                               Orçamento; confirmar/iniciar_producao/marcar_pronto/entregar/cancelar no Evento),
+│   │                               adicionar/editar item e a conversão de Orçamento em Evento também são auditados
+│   │                               (via `AuditoriaCreateMixin`/`AuditoriaUpdateMixin`/`AuditoriaStatusMixin`, ver
+│   │                               `auditoria/mixins.py`) e exigem login — exceção oportunista continua só em
+│   │                               `converter_em_evento`/`enviar_whatsapp` (AllowAny, captura o ator quando o token vier)
 │   ├── pdf_orcamento.py          ← gera PDF (ReportLab, canvas cru, 1 página) — inclui linha "Taxa de entrega" quando houver
 │   ├── pdf_contrato.py           ← gera PDF do contrato (ReportLab Platypus, multi-página) — texto e cláusulas vêm de
 │   │                               ConfiguracaoContrato.get() + snapshot do Contrato, nunca hardcoded
 │   └── views.py                 ← OrcamentoViewSet (converter-em-evento, gerar-contrato, imagens/, itens/{id}/editar/,
-│                                    update() restrito a status rascunho/enviado) + EventoViewSet (pagamentos/, pagamentos/{id}/remover/) +
+│                                    historico/, update() restrito a status rascunho/enviado) + EventoViewSet
+│                                    (pagamentos/, pagamentos/{id}/remover/, historico/) +
 │                                    ContratoViewSet (só leitura + pdf/enviar-whatsapp) + ConfiguracaoContratoViewSet
 ├── usuarios/                    ← Gestão de usuários + RBAC + autenticação real por token
 │   ├── models.py                ← Usuario (auth_token, gerar_token(), is_authenticated/is_anonymous — compatibilidade DRF)
@@ -75,10 +82,18 @@ arretado/                        ← raiz Django
 │   ├── permissions.py           ← IsAdminRole (reusado por auditoria/)
 │   └── views.py                 ← login/logout (regenera/invalida auth_token), CRUD instrumentado via auditoria.utils.registrar()
 ├── auditoria/                   ← Log de auditoria (login, CRUD de usuário, mudança de role/perms) — extensível a outros sistemas críticos
-│   ├── models.py                ← LogAuditoria (usuario FK SET_NULL + usuario_nome_snapshot, acao, detalhes JSON, ip, criado_em)
-│   ├── utils.py                 ← registrar(usuario, acao, detalhes=None, request=None) — único ponto de escrita, nunca lança exceção
-│   ├── mixins.py                ← AuditoriaDestroyMixin (audita destroy() padrão + traduz ProtectedError em 400 amigável)
-│   └── views.py                 ← LogAuditoriaViewSet (só leitura, restrito a IsAdminRole)
+│   ├── models.py                ← LogAuditoria (usuario FK SET_NULL + usuario_nome_snapshot, acao, detalhes JSON, ip, criado_em) ·
+│   │                               PresencaEdicao (heartbeat de "quem está vendo/editando agora" — usuario/model/objeto_id,
+│   │                               unique_together, atualizado_em auto_now)
+│   ├── utils.py                 ← registrar(usuario, acao, detalhes=None, request=None) — único ponto de escrita, nunca lança exceção ·
+│   │                               ator_ou_none(request) — helper pra actions oportunistas/mixins (usuario autenticado ou None)
+│   ├── mixins.py                ← AuditoriaDestroyMixin (destroy() → registro_excluido, traduz ProtectedError em 400 amigável) ·
+│   │                               AuditoriaCreateMixin (perform_create() → registro_criado) ·
+│   │                               AuditoriaUpdateMixin (perform_update() → registro_atualizado, só campos alterados do payload) ·
+│   │                               AuditoriaStatusMixin (log_mudanca_status(obj, de, para) → status_alterado, chamado manualmente
+│   │                               em cada action de status)
+│   └── views.py                 ← LogAuditoriaViewSet (só leitura, restrito a IsAdminRole) ·
+│                                    PresencaHeartbeatView (APIView, POST presenca/ — heartbeat + devolve quem mais está ativo)
 ├── notificacoes/                ← WhatsApp via Z-API
 │   ├── models.py                ← HistoricoMensagem · ConfiguracaoWhatsApp (singleton, inclui validade_orcamento_dias)
 │   ├── zapi_client.py           ← enviar_texto(), enviar_documento(), status_conexao() · resolve número canônico via phone-exists · lança ZAPIError
@@ -107,7 +122,11 @@ arretado-crm/                    ← raiz React
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
     │                               eventosApi, locaisEventoApi, orcamentosApi, contratosApi, configContratoApi,
     │                               notificacoesApi, usuariosApi, authApi, fichasApi,
-    │                               taxasEntregaApi, configEntregaApi, relatoriosApi, dashboardApi
+    │                               taxasEntregaApi, configEntregaApi, relatoriosApi, dashboardApi, auditoriaApi,
+    │                               presencaApi (heartbeat de presença — ver Padrões Obrigatórios)
+    ├── utils/
+    │   └── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — extraído de Auditoria.jsx,
+    │                               reusado também pela aba/seção "Histórico" no modal de Orçamento/Evento
     ├── pages/
     │   ├── Login.jsx
     │   ├── Dashboard.jsx        ← agrega dashboardApi.resumo() (canais + gráfico 7 dias + a receber +
@@ -134,7 +153,9 @@ arretado-crm/                    ← raiz React
     │   ├── layout/
     │   │   ├── AppLayout.jsx
     │   │   └── Sidebar.jsx
-    │   └── ui/                  ← Btn, Modal, Spinner, Avatar, etc.
+    │   └── ui/                  ← Btn, Modal, Spinner, Avatar, etc. · PresencaAtiva.jsx (badge "Fulano também
+    │                               está vendo isso agora", heartbeat a cada 15s via presencaApi — usado no
+    │                               modal de detalhe de Orçamento e Evento)
     └── App.jsx                  ← rotas do frontend
 ```
 
@@ -168,9 +189,12 @@ arretado-crm/                    ← raiz React
 - **`MEDIA_URL`/`MEDIA_ROOT`** estão configurados em `config/settings.py` (`/media/`, `BASE_DIR / 'media'`) desde a feature de Imagens de Inspiração — é o único `ImageField` do projeto de fato exercitado em produção. Em prod, o Nginx tem um `location /media/ { alias .../media/; }` próprio (não é servido pelo Django/Gunicorn) — qualquer novo `ImageField`/`FileField` já pode reaproveitar essa infra, não precisa recriar
 - **Cuidado com `prefetch_related` + criação de objeto relacionado na mesma request**: se uma view faz `self.get_object()` sobre um queryset com `prefetch_related('algo')` e, na mesma request, cria/deleta um objeto relacionado via `Model.objects.create(fk=obj, ...)` (sem passar pelo manager `obj.algo`), o cache do prefetch fica stale e `obj.algo.all()` (inclusive dentro do serializer) não reflete a mudança. Sempre que fizer isso, chamar `obj.refresh_from_db()` antes de serializar a resposta (foi o que corrigiu `adicionar_imagens`/`remover_imagem` no `OrcamentoViewSet` e `adicionar_pagamento` no `EventoViewSet` — o mesmo padrão de `adicionar_item`/`remover_item` pode estar sujeito ao mesmo problema, não verificado)
 - **`auditoria.mixins.AuditoriaDestroyMixin`** — mixin genérico pra auditar o `destroy()` padrão de um `ModelViewSet`: grava `ACAO_REGISTRO_EXCLUIDO` (com `detalhes.model`/`id`/`descricao` + campos extras via `campos_log_exclusao`) e traduz `ProtectedError` (FK `on_delete=PROTECT`) numa resposta 400 amigável em vez do 500 cru do Django. Usar em qualquer novo `ModelViewSet` que precise de DELETE auditado — já aplicado em `Cliente`, `Tag`, `Produto`, `CategoriaProduto`, `TaxaEntregaBairro`, `PedidoPDV`, `Evento`, `Orcamento`, `LocalEvento`, `MateriaPrima`, `FichaTecnica`. A view precisa combinar com `authentication_classes = [TokenAuthentication]` + `get_permissions()` exigindo `IsAuthenticated` na action `destroy` (e nas `remover-*` correspondentes, instrumentadas manualmente com `registrar()` direto, já que não passam por `perform_destroy`). Endpoint `GET /api/v1/auditoria/logs/?model=Cliente` filtra por `detalhes.model`
+- **`auditoria.mixins.AuditoriaCreateMixin`/`AuditoriaUpdateMixin`/`AuditoriaStatusMixin`** — mesma filosofia do `AuditoriaDestroyMixin`, hoje aplicados só em `OrcamentoViewSet`/`EventoViewSet` (não em todos os ModelViewSets — só onde criação/edição/status faz sentido auditar). `AuditoriaCreateMixin.perform_create()` grava `ACAO_REGISTRO_CRIADO`; `AuditoriaUpdateMixin.perform_update()` grava `ACAO_REGISTRO_ATUALIZADO` só com os campos de `campos_log_atualizacao` que vieram no payload E mudaram de valor (antes/depois, mesmo padrão das configs singleton). Para usar `AuditoriaUpdateMixin` num `update()` já customizado (como o do `OrcamentoViewSet`, que valida status antes de salvar), a view precisa chamar `self.perform_update(serializer)` em vez de `serializer.save()` direto — mesmo raciocínio vale para `create()`/`self.perform_create(serializer)`. `AuditoriaStatusMixin.log_mudanca_status(obj, de, para)` não é automático — chamar manualmente dentro de cada `@action` de mudança de status, depois do `.save()`; grava `ACAO_STATUS_ALTERADO` genérico (desambiguado por `detalhes.model`, mesmo espírito do `registro_excluido`). Adicionar item usa `ACAO_ITEM_ADICIONADO` (também genérico, cobre `ItemOrcamento` e `ItemEvento`). A conversão de Orçamento em Evento é o único marco de negócio com constante própria: `ACAO_ORCAMENTO_CONVERTIDO`
+- **`auditoria.PresencaEdicao`** (heartbeat de presença, `POST /api/v1/auditoria/presenca/` via `PresencaHeartbeatView`) — **não é WebSocket**: é polling REST comum (frontend chama a cada 15s enquanto o modal de Orçamento/Evento estiver aberto), decisão deliberada porque o projeto roda só Gunicorn/WSGI síncrono, sem Channels/Redis/ASGI. O endpoint faz `update_or_create` da presença do usuário autenticado e devolve quem mais está ativo no mesmo `(model, objeto_id)` numa janela de 40s (`JANELA_PRESENCA_SEGUNDOS` em `auditoria/views.py`). `unique_together=('usuario','model','objeto_id')` garante no máximo 1 linha por combinação — a tabela cresce por usuário×objeto já visitado, não por heartbeat, então não precisa de limpeza periódica por ora. É só informativo ("Fulano também está vendo isso agora") — não é uma trava/lock de edição
 - **`ifood.ConfiguracaoIFood` não é singleton de verdade** (usa `.objects.first()`, não `.get()`) — `ConfiguracaoIFoodViewSet.destroy()` está bloqueado de propósito (sempre `405`), pra nunca perder client_id/secret/tokens de produção. Se um dia virar singleton de verdade (`.get()` como os outros 3 configs), reavaliar se ainda faz sentido bloquear o DELETE
 - **`eventos.PagamentoEvento`** registra as parcelas de pagamento de um `Evento` (valor/forma_pagamento/status/data_pagamento/observação/comprovante). `comprovante` é um `FileField` opcional (imagem ou PDF) enviado no momento do registro do pagamento (`multipart/form-data`, mesmo padrão de `ImagemInspiracao`/`ImageField` de produto — ver upload de `FormData` no frontend). `Evento.sinal_pago` **nunca** é gravado direto — é sempre recalculado via `Evento.recalcular_sinal_pago()` (soma dos pagamentos com `status='pago'`), chamado após criar/remover um `PagamentoEvento` (`POST/DELETE /eventos/{id}/pagamentos/...`). O sinal informado na criação do Evento ou na conversão de Orçamento em Evento (`sinal_pago` no body) também vira um `PagamentoEvento` inicial (forma `outro`, status `pago`) em vez de setar o campo diretamente. Toda criação/remoção de `PagamentoEvento` é auditada via `auditoria.utils.registrar()` — nas actions dedicadas (`adicionar_pagamento`/`remover_pagamento`) o login é obrigatório; no sinal inicial (criação do Evento ou conversão do Orçamento) é oportunista, sem bloquear o fluxo se ninguém estiver logado
 - **Edição de Orçamento**: `OrcamentoViewSet.update()` só permite `PATCH/PUT` quando `status` é `rascunho` ou `enviado` (400 caso contrário); mesma restrição vale para editar item (`PATCH /eventos/orcamentos/{id}/itens/{item_id}/editar/`). Depois de aprovado/enviado além desses estágios, o orçamento é imutável (mesma filosofia do `Contrato` como snapshot)
+- **Criação/edição/status/item de Orçamento e Evento exigem login** (`create`, `update`/`partial_update`, `enviar`/`aprovar`/`recusar`/`restaurar` no Orçamento, `confirmar`/`iniciar_producao`/`marcar_pronto`/`entregar`/`cancelar` no Evento, `adicionar_item`/`editar_item`) — mudança de comportamento em relação ao que existia antes desta auditoria (essas actions eram `AllowAny`). Único motivo de exigir login aqui é garantir que sempre exista um ator no log; `converter_em_evento` e `enviar_whatsapp` continuam `AllowAny` de propósito (oportunistas, capturam o ator só quando o token vier)
 - **`dashboard/` é um app só-leitura, sem models** — `DashboardResumoView` (`GET /api/v1/dashboard/resumo/`) apenas agrega dados que já existem em `pedidos.PedidoUnificado` e `eventos.Evento`/`PagamentoEvento`. Regra importante: a receita de **Eventos** no dia (`canais.eventos.recebido_hoje` e a fatia "eventos" do `grafico_7dias`) vem **exclusivamente** de `PagamentoEvento` com `status='pago'` e `data_pagamento` do dia — nunca de `Evento.valor_total` nem do status de entrega (é recebimento efetivo de caixa, não valor do pedido). Já `ticket_medio.eventos` é a exceção: usa `Evento.valor_total` (não `PagamentoEvento`) dos eventos `status='entregue'` nos últimos 30 dias, porque ali a métrica é tamanho médio de venda, não fluxo de caixa. `fila_operacional` cruza os 3 canais lendo só `PedidoUnificado` (o `Evento` já sincroniza pra lá via `EVENTO_STATUS_MAP`), nunca faz query separada em `eventos.Evento`
 
 ### Frontend
@@ -218,6 +242,7 @@ arretado-crm/                    ← raiz React
 | Pagamentos Parciais de Evento | `eventos.PagamentoEvento` (parcelas), `Evento.sinal_pago` derivado, redesign do modal de detalhe do Evento (stepper + abas), edição de Orçamento antes da conversão | ✅ Concluída |
 | Dashboard Multi-Canal | App `dashboard/` (só leitura) — vendas do dia e histórico recente consolidado de iFood/PDV/Eventos (+ espaço reservado pra Anota AI), gráfico 7 dias, a receber, fila operacional, próximos eventos, ticket médio | ✅ Concluída |
 | Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`) + app `auditoria/` cobrindo os 6 itens da lista priorizada: usuários (login/CRUD/permissões), pagamentos de evento, contrato, Central de Preços, configurações singleton (`ConfiguracaoContrato`/`ConfiguracaoEntrega`/`ConfiguracaoWhatsApp` — esta última também exige login no GET, já que expõe credencial Z-API) e exclusões em geral (`AuditoriaDestroyMixin` genérico, aplicado em `Cliente`/`Tag`/`Endereco`/`Produto`/`CategoriaProduto`/`TaxaEntregaBairro`/`PedidoPDV`/`Evento`/`Orcamento`/`LocalEvento`/`MateriaPrima`/`FichaTecnica` e os respectivos `remover-item`; `ConfiguracaoIFood` teve o DELETE bloqueado de vez, não só auditado) — tela restrita a `role=admin` | ✅ Concluída (lista completa) |
+| Auditoria de Criação/Edição/Status + Presença + Histórico no Modal | Extensão da auditoria de Orçamento/Evento: criação, edição (PATCH/PUT), mudança de status e adicionar/editar item agora também são auditados (`AuditoriaCreateMixin`/`AuditoriaUpdateMixin`/`AuditoriaStatusMixin`), exigindo login nessas ações (antes eram `AllowAny`). Presença via heartbeat REST (`auditoria.PresencaEdicao`, `PresencaAtiva.jsx`, polling a cada 15s — não WebSocket) mostrando quem mais está vendo o registro agora. Aba/seção "Histórico" dentro do próprio modal de detalhe (`historico/` em `OrcamentoViewSet`/`EventoViewSet`, `IsAuthenticated` — diferente da tela de Auditoria geral, que é restrita a admin) | ✅ Concluída |
 
 ---
 
@@ -279,19 +304,21 @@ GET/POST/PATCH/DELETE /api/v1/pdv/taxas-entrega/[{id}/]     ← cadastro de bair
 GET/PATCH             /api/v1/pdv/configuracao-entrega/1/   ← singleton, campo frete_padrao · PATCH exige login · audita config_entrega_alterada
 
 # Orçamentos
-GET/POST      /api/v1/eventos/orcamentos/
-GET/PATCH/DELETE /api/v1/eventos/orcamentos/{id}/                       ← PATCH só permitido com status rascunho/enviado · DELETE exige login, audita registro_excluido (400 amigável se já tiver Contrato — PROTECT)
-POST          /api/v1/eventos/orcamentos/{id}/enviar/
-POST          /api/v1/eventos/orcamentos/{id}/aprovar/
-POST          /api/v1/eventos/orcamentos/{id}/recusar/
-POST          /api/v1/eventos/orcamentos/{id}/converter-em-evento/      ← body opcional "sinal_pago" vira 1º PagamentoEvento
-POST          /api/v1/eventos/orcamentos/{id}/itens/
-PATCH         /api/v1/eventos/orcamentos/{id}/itens/{item_id}/editar/   ← só com status rascunho/enviado
+GET/POST      /api/v1/eventos/orcamentos/                               ← POST exige login · audita registro_criado
+GET/PATCH/DELETE /api/v1/eventos/orcamentos/{id}/                       ← PATCH exige login, só permitido com status rascunho/enviado, audita registro_atualizado (só campos alterados) · DELETE exige login, audita registro_excluido (400 amigável se já tiver Contrato — PROTECT)
+POST          /api/v1/eventos/orcamentos/{id}/enviar/                   ← exige login · audita status_alterado
+POST          /api/v1/eventos/orcamentos/{id}/aprovar/                  ← exige login · audita status_alterado
+POST          /api/v1/eventos/orcamentos/{id}/recusar/                  ← exige login · audita status_alterado
+POST          /api/v1/eventos/orcamentos/{id}/restaurar/                ← exige login · audita status_alterado
+POST          /api/v1/eventos/orcamentos/{id}/converter-em-evento/      ← body opcional "sinal_pago" vira 1º PagamentoEvento · continua AllowAny (oportunista) · audita orcamento_convertido_em_evento
+POST          /api/v1/eventos/orcamentos/{id}/itens/                    ← exige login · audita item_adicionado
+PATCH         /api/v1/eventos/orcamentos/{id}/itens/{item_id}/editar/   ← exige login · só com status rascunho/enviado · audita registro_atualizado
 DELETE        /api/v1/eventos/orcamentos/{id}/itens/{item_id}/remover/  ← exige login · audita registro_excluido
 POST          /api/v1/eventos/orcamentos/{id}/imagens/                  ← multipart, campo "imagens" (um ou mais arquivos)
 DELETE        /api/v1/eventos/orcamentos/{id}/imagens/{imagem_id}/remover/ ← exige login · audita registro_excluido
 GET           /api/v1/eventos/orcamentos/{id}/pdf/
-POST          /api/v1/eventos/orcamentos/{id}/enviar-whatsapp/   ← gera PDF + envia via Z-API + grava HistoricoMensagem + muda status para 'enviado'
+GET           /api/v1/eventos/orcamentos/{id}/historico/                ← exige login · trilha de auditoria deste orçamento (não confundir com clientes/{id}/historico/, que é histórico de pedidos)
+POST          /api/v1/eventos/orcamentos/{id}/enviar-whatsapp/   ← gera PDF + envia via Z-API + grava HistoricoMensagem + muda status para 'enviado' (continua AllowAny, audita status_alterado de forma oportunista)
 POST          /api/v1/eventos/orcamentos/{id}/gerar-contrato/    ← exige login · só com status='aprovado' · body: cpf/rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil/endereco_avulso · audita contrato_emitido
 
 # Contratos (ver Contrato.md)
@@ -302,15 +329,20 @@ POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/    ← exige login
 GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton · PATCH exige login · audita config_contrato_alterada
 
 # Eventos
-GET/POST              /api/v1/eventos/                                  ← POST aceita "sinal_pago" opcional (vira 1º PagamentoEvento)
-GET/PUT/PATCH/DELETE  /api/v1/eventos/{id}/                              ← DELETE exige login · audita registro_excluido
+GET/POST              /api/v1/eventos/                                  ← POST exige login · aceita "sinal_pago" opcional (vira 1º PagamentoEvento) · audita registro_criado
+GET/PUT/PATCH/DELETE  /api/v1/eventos/{id}/                              ← PUT/PATCH exigem login, audita registro_atualizado (só campos alterados) · DELETE exige login · audita registro_excluido
 GET/POST              /api/v1/eventos/locais/
 GET/PATCH/DELETE      /api/v1/eventos/locais/{id}/                       ← DELETE exige login · audita registro_excluido
 DELETE                /api/v1/eventos/{id}/itens/{item_id}/remover/      ← exige login · audita registro_excluido
-POST                  /api/v1/eventos/{id}/confirmar/
-POST                  /api/v1/eventos/{id}/entregar/
+POST                  /api/v1/eventos/{id}/itens/                       ← exige login · audita item_adicionado
+POST                  /api/v1/eventos/{id}/confirmar/                    ← exige login · audita status_alterado
+POST                  /api/v1/eventos/{id}/iniciar-producao/             ← exige login · audita status_alterado
+POST                  /api/v1/eventos/{id}/marcar-pronto/                ← exige login · audita status_alterado
+POST                  /api/v1/eventos/{id}/entregar/                     ← exige login · audita status_alterado
+POST                  /api/v1/eventos/{id}/cancelar/                     ← exige login · audita status_alterado
 POST                  /api/v1/eventos/{id}/pagamentos/                  ← exige login (IsAuthenticated) · cria PagamentoEvento + recalcula sinal_pago (multipart opcional, campo "comprovante") + audita em auditoria.LogAuditoria
 DELETE                /api/v1/eventos/{id}/pagamentos/{pagamento_id}/remover/ ← exige login (IsAuthenticated) · audita em auditoria.LogAuditoria
+GET                   /api/v1/eventos/{id}/historico/                    ← exige login · trilha de auditoria deste evento (não confundir com clientes/{id}/historico/, que é histórico de pedidos)
 GET                   /api/v1/eventos/agenda/
 
 # Notificações WhatsApp
@@ -329,6 +361,9 @@ POST                  /api/v1/usuarios/{id}/redefinir-senha/
 
 # Auditoria (restrito a role=admin)
 GET /api/v1/auditoria/logs/   ← query params: usuario, acao, model (filtra detalhes.model — só relevante com acao=registro_excluido), data_inicio, data_fim
+
+# Presença (heartbeat — qualquer usuário logado, não é restrito a admin)
+POST /api/v1/auditoria/presenca/   ← exige login · body {"model", "objeto_id"} · devolve quem mais está ativo no mesmo (model, objeto_id) numa janela de 40s (polling REST, não WebSocket)
 
 # Catálogo / Fichas / Precificação
 GET/POST         /api/v1/fichas/materias-primas/
@@ -450,6 +485,9 @@ Infra já configurada em produção (não precisa recriar):
 - Não criar `LogAuditoria` fora de `auditoria/utils.py::registrar()` — é o único ponto de escrita, sempre dentro de try/except (nunca pode derrubar login/CRUD)
 - Não checar `usuario.role == 'admin'` cru em views novas — usar `usuarios.permissions.IsAdminRole` (reusa a mesma regra em qualquer app)
 - Não estender `authentication_classes`/`permission_classes` globalmente em `config/settings.py` por causa da autenticação real — cada app opta localmente, na própria classe da view. A lista de sistemas críticos priorizada com o usuário (usuários, pagamentos, contrato, preços, configs singleton, exclusões) já está toda instrumentada; ações novas em qualquer desses apps devem seguir o mesmo padrão local (`get_permissions()` por action), não abrir mão dele
-- Ao adicionar `TokenAuthentication` a uma viewset só para capturar o ator em auditoria, **não** assuma que isso exige login — `authentication_classes` só popula `request.user` quando o header vem; `permission_classes` (`AllowAny` vs `IsAuthenticated`) é quem decide se a ação é bloqueada sem login. Ver `EventoViewSet.get_permissions()` (só `adicionar_pagamento`/`remover_pagamento`/`destroy`/`remover_item` exigem `IsAuthenticated`) vs. `OrcamentoViewSet.converter_em_evento` (continua `AllowAny`, captura o ator de forma oportunista)
+- Ao adicionar `TokenAuthentication` a uma viewset só para capturar o ator em auditoria, **não** assuma que isso exige login — `authentication_classes` só popula `request.user` quando o header vem; `permission_classes` (`AllowAny` vs `IsAuthenticated`) é quem decide se a ação é bloqueada sem login. Ver `EventoViewSet.get_permissions()`/`OrcamentoViewSet.get_permissions()` (create/update/status/adicionar_item/historico exigem `IsAuthenticated`) vs. `converter_em_evento`/`enviar_whatsapp` (continuam `AllowAny`, capturam o ator de forma oportunista via `ator_ou_none(request)`)
+- Não confundir os dois endpoints `historico/` do projeto: `clientes/{id}/historico/` é histórico de **pedidos** do cliente entre canais (iFood/PDV/Eventos, pra métricas), enquanto `eventos/orcamentos/{id}/historico/` e `eventos/{id}/historico/` são trilha de **auditoria** (quem criou/editou/mudou status) daquele registro específico — mesmo nome, conceitos e implementações totalmente diferentes
+- `auditoria.PresencaEdicao`/`PresencaAtiva.jsx` é só informativo ("Fulano também está vendo isso agora") — não implementar nenhuma trava/lock de edição em cima disso (ex: bloquear salvar se outro usuário estiver com o modal aberto). Se um dia precisar de trava de verdade, é uma feature nova, não uma extensão da presença
+- Não trocar o heartbeat de presença por WebSocket/Django Channels sem antes confirmar com o usuário — decisão deliberada de manter só polling REST, já que o projeto roda Gunicorn/WSGI síncrono sem Channels/Redis/ASGI
 - Ao criar um novo `ModelViewSet` com DELETE que deva ser auditado, usar `auditoria.mixins.AuditoriaDestroyMixin` em vez de escrever `registrar()` manualmente no `destroy()` — ele já trata `ProtectedError` (FK `on_delete=PROTECT`) como 400 amigável em vez de deixar vazar um 500. Para exclusão de item filho via `@action` customizada (`remover-item`, `remover-imagem` etc.), não dá pra usar o mixin (não passa por `perform_destroy`) — chamar `registrar()` manualmente ali, sempre **antes** de `.delete()` (o objeto perde o `pk` depois)
 - Nunca remover o bloqueio de `DELETE` em `ifood.ConfiguracaoIFoodViewSet` — essa config não é um singleton de verdade (usa `.objects.first()`), então excluir a linha derruba client_id/secret/tokens de produção sem aviso

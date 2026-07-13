@@ -225,7 +225,10 @@ class PagamentoEventoAuditoriaTests(TestCase):
         self.assertEqual(log.usuario_id, self.admin.id)
         self.assertEqual(log.detalhes['pagamento_id'], pagamento.id)
 
-    def test_criar_evento_com_sinal_sem_token_loga_sem_usuario(self):
+    def test_criar_evento_sem_token_401(self):
+        # create() do EventoViewSet passou a exigir login (ver AuditoriaCreateMixin/
+        # ACAO_REGISTRO_CRIADO) — antes desta feature, criar Evento sem token era
+        # permitido e o pagamento do sinal era logado com usuario=None.
         view = EventoViewSet.as_view({'post': 'create'})
         req = self.factory.post('/api/v1/eventos/', {
             'cliente_nome': 'Fulano', 'cliente_telefone': '86999997777',
@@ -233,10 +236,7 @@ class PagamentoEventoAuditoriaTests(TestCase):
             'sinal_pago': '80.00',
         }, format='json')
         resp = view(req)
-        self.assertEqual(resp.status_code, 201, resp.data)
-
-        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_PAGAMENTO_REGISTRADO, detalhes__origem='criacao_evento').latest('id')
-        self.assertIsNone(log.usuario_id)
+        self.assertEqual(resp.status_code, 401)
 
     def test_criar_evento_com_sinal_com_token_loga_com_usuario(self):
         token = self._token()
@@ -487,3 +487,457 @@ class OrcamentoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
         log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
         self.assertEqual(log.detalhes['model'], 'ImagemInspiracao')
         self.assertEqual(log.detalhes['orcamento_id'], self.orc.id)
+
+
+class OrcamentoCriacaoEdicaoAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def test_create_sem_token_401(self):
+        view = OrcamentoViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/eventos/orcamentos/', {
+            'cliente_nome': 'Fulano', 'cliente_telefone': '86999997777', 'tipo_evento': 'aniversario',
+        }, format='json')
+        resp = view(req)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_create_com_token_gera_log_registro_criado(self):
+        view = OrcamentoViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/eventos/orcamentos/',
+            {'cliente_nome': 'Fulano', 'cliente_telefone': '86999997777', 'tipo_evento': 'aniversario'},
+            format='json', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_CRIADO).latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['model'], 'Orcamento')
+        self.assertEqual(log.detalhes['cliente_nome'], 'Fulano')
+
+    def test_update_sem_token_401(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+        view = OrcamentoViewSet.as_view({'patch': 'partial_update'})
+        req = self.factory.patch(f'/api/v1/eventos/orcamentos/{orc.id}/', {'observacoes': 'nota'}, format='json')
+        resp = view(req, pk=orc.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_update_com_token_gera_log_apenas_campos_alterados(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+        view = OrcamentoViewSet.as_view({'patch': 'partial_update'})
+        req = self.factory.patch(
+            f'/api/v1/eventos/orcamentos/{orc.id}/', {'observacoes': 'Nota atualizada'}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=orc.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_ATUALIZADO).latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['model'], 'Orcamento')
+        self.assertEqual(set(log.detalhes['campos'].keys()), {'observacoes'})
+        self.assertEqual(log.detalhes['campos']['observacoes']['para'], 'Nota atualizada')
+
+    def test_update_bloqueado_fora_de_rascunho_enviado_continua_valendo(self):
+        # Regressão: o refactor de update() pra usar perform_update() não pode
+        # ter quebrado a validação de status já existente.
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='aprovado',
+        )
+        view = OrcamentoViewSet.as_view({'patch': 'partial_update'})
+        req = self.factory.patch(
+            f'/api/v1/eventos/orcamentos/{orc.id}/', {'observacoes': 'nota'}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=orc.id)
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_ATUALIZADO).exists())
+
+
+class OrcamentoStatusAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def setUp(self):
+        super().setUp()
+        self.orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+
+    def _post(self, action_name, token=None):
+        view = OrcamentoViewSet.as_view({'post': action_name})
+        extra = {'HTTP_AUTHORIZATION': f'Token {token}'} if token else {}
+        req = self.factory.post(f'/api/v1/eventos/orcamentos/{self.orc.id}/{action_name}/', format='json', **extra)
+        return view(req, pk=self.orc.id)
+
+    def test_enviar_sem_token_401(self):
+        resp = self._post('enviar')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_enviar_com_token_gera_log_status_alterado(self):
+        resp = self._post('enviar', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO).latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['model'], 'Orcamento')
+        self.assertEqual(log.detalhes['de'], 'rascunho')
+        self.assertEqual(log.detalhes['para'], 'enviado')
+
+    def test_aprovar_sem_token_401(self):
+        resp = self._post('aprovar')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_aprovar_com_token_gera_log_status_alterado(self):
+        resp = self._post('aprovar', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO).latest('id')
+        self.assertEqual(log.detalhes['para'], 'aprovado')
+
+    def test_recusar_sem_token_401(self):
+        resp = self._post('recusar')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_recusar_com_token_gera_log_status_alterado(self):
+        resp = self._post('recusar', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO).latest('id')
+        self.assertEqual(log.detalhes['para'], 'recusado')
+
+    def test_restaurar_sem_token_401(self):
+        self.orc.status = 'expirado'
+        self.orc.save(update_fields=['status'])
+        resp = self._post('restaurar')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_restaurar_com_token_gera_log_status_alterado(self):
+        self.orc.status = 'expirado'
+        self.orc.save(update_fields=['status'])
+        resp = self._post('restaurar', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO).latest('id')
+        self.assertEqual(log.detalhes['de'], 'expirado')
+        self.assertEqual(log.detalhes['para'], 'rascunho')
+
+    @patch('notificacoes.servico.zapi.enviar_documento')
+    def test_enviar_whatsapp_muda_status_e_loga_status_alterado(self, mock_enviar):
+        mock_enviar.return_value = {'messageId': 'abc123'}
+        self.cliente.telefone_principal = '86999998888'
+        self.cliente.save(update_fields=['telefone_principal'])
+
+        view = OrcamentoViewSet.as_view({'post': 'enviar_whatsapp'})
+        req = self.factory.post(f'/api/v1/eventos/orcamentos/{self.orc.id}/enviar-whatsapp/', {}, format='json')
+        resp = view(req, pk=self.orc.id)
+        resp.render()
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO).latest('id')
+        self.assertEqual(log.detalhes['de'], 'rascunho')
+        self.assertEqual(log.detalhes['para'], 'enviado')
+        # enviar_whatsapp continua AllowAny (oportunista) — sem token, ator é None
+        self.assertIsNone(log.usuario_id)
+
+
+class EventoCriacaoEdicaoAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def test_create_sem_token_401(self):
+        view = EventoViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/eventos/', {
+            'cliente_nome': 'Fulano', 'cliente_telefone': '86999997777', 'tipo_evento': 'aniversario',
+            'data_evento': str(datetime.date.today() + datetime.timedelta(days=5)),
+        }, format='json')
+        resp = view(req)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_create_com_token_gera_log_registro_criado(self):
+        view = EventoViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/eventos/',
+            {
+                'cliente_nome': 'Fulano', 'cliente_telefone': '86999997777', 'tipo_evento': 'aniversario',
+                'data_evento': str(datetime.date.today() + datetime.timedelta(days=5)),
+            },
+            format='json', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_CRIADO, detalhes__model='Evento').latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['cliente_nome'], 'Fulano')
+
+    def test_update_sem_token_401(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        view = EventoViewSet.as_view({'patch': 'partial_update'})
+        req = self.factory.patch(f'/api/v1/eventos/{evento.id}/', {'observacoes': 'nota'}, format='json')
+        resp = view(req, pk=evento.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_update_com_token_gera_log_apenas_campos_alterados(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        view = EventoViewSet.as_view({'patch': 'partial_update'})
+        req = self.factory.patch(
+            f'/api/v1/eventos/{evento.id}/', {'observacoes': 'Nota nova'}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=evento.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_ATUALIZADO, detalhes__model='Evento').latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(set(log.detalhes['campos'].keys()), {'observacoes'})
+
+
+class EventoStatusAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def setUp(self):
+        super().setUp()
+        self.evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+
+    def _post(self, action_name, token=None):
+        view = EventoViewSet.as_view({'post': action_name})
+        extra = {'HTTP_AUTHORIZATION': f'Token {token}'} if token else {}
+        req = self.factory.post(f'/api/v1/eventos/{self.evento.id}/{action_name.replace("_", "-")}/', format='json', **extra)
+        return view(req, pk=self.evento.id)
+
+    def test_confirmar_sem_token_401(self):
+        resp = self._post('confirmar')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_confirmar_com_token_gera_log_status_alterado(self):
+        resp = self._post('confirmar', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO, detalhes__model='Evento').latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['de'], 'orcamento')
+        self.assertEqual(log.detalhes['para'], 'confirmado')
+
+    def test_iniciar_producao_sem_token_401(self):
+        self.evento.status = 'confirmado'
+        self.evento.save(update_fields=['status'])
+        resp = self._post('iniciar_producao')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_iniciar_producao_com_token_gera_log(self):
+        self.evento.status = 'confirmado'
+        self.evento.save(update_fields=['status'])
+        resp = self._post('iniciar_producao', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO, detalhes__model='Evento').latest('id')
+        self.assertEqual(log.detalhes['para'], 'em_producao')
+
+    def test_marcar_pronto_com_token_gera_log(self):
+        self.evento.status = 'em_producao'
+        self.evento.save(update_fields=['status'])
+        resp = self._post('marcar_pronto', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO, detalhes__model='Evento').latest('id')
+        self.assertEqual(log.detalhes['para'], 'pronto')
+
+    def test_entregar_sem_token_401(self):
+        self.evento.status = 'pronto'
+        self.evento.save(update_fields=['status'])
+        resp = self._post('entregar')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_entregar_com_token_gera_log(self):
+        self.evento.status = 'pronto'
+        self.evento.save(update_fields=['status'])
+        resp = self._post('entregar', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO, detalhes__model='Evento').latest('id')
+        self.assertEqual(log.detalhes['para'], 'entregue')
+
+    def test_cancelar_com_token_gera_log(self):
+        resp = self._post('cancelar', token=self._token())
+        self.assertEqual(resp.status_code, 200, resp.data)
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_STATUS_ALTERADO, detalhes__model='Evento').latest('id')
+        self.assertEqual(log.detalhes['para'], 'cancelado')
+
+
+class ItemAdicionadoAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def setUp(self):
+        super().setUp()
+        self.orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+        self.evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+
+    def test_orcamento_adicionar_item_sem_token_401(self):
+        view = OrcamentoViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '50.00', 'quantidade': 1}, format='json',
+        )
+        resp = view(req, pk=self.orc.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_orcamento_adicionar_item_com_token_gera_log(self):
+        view = OrcamentoViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '50.00', 'quantidade': 1}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.orc.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_ITEM_ADICIONADO, detalhes__model='ItemOrcamento').latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['nome'], 'Bolo')
+        self.assertEqual(log.detalhes['orcamento_id'], self.orc.id)
+
+    def test_orcamento_editar_item_gera_log_registro_atualizado(self):
+        item = ItemOrcamento.objects.create(orcamento=self.orc, nome='Bolo', preco_unit=50, quantidade=1)
+        view = OrcamentoViewSet.as_view({'patch': 'editar_item'})
+        req = self.factory.patch(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/itens/{item.id}/editar/',
+            {'nome': 'Bolo', 'preco_unit': '60.00', 'quantidade': 2}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.orc.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_ATUALIZADO, detalhes__model='ItemOrcamento').latest('id')
+        self.assertEqual(log.detalhes['orcamento_id'], self.orc.id)
+        self.assertIn('preco_unit', log.detalhes['campos'])
+        self.assertIn('quantidade', log.detalhes['campos'])
+
+    def test_evento_adicionar_item_sem_token_401(self):
+        view = EventoViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/eventos/{self.evento.id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '50.00', 'quantidade': 1}, format='json',
+        )
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_evento_adicionar_item_com_token_gera_log(self):
+        view = EventoViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/eventos/{self.evento.id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '50.00', 'quantidade': 1}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_ITEM_ADICIONADO, detalhes__model='ItemEvento').latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['evento_id'], self.evento.id)
+
+
+class ConversaoOrcamentoAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def setUp(self):
+        super().setUp()
+        self.orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=20), status='aprovado',
+        )
+
+    def test_converter_sem_token_loga_ator_none(self):
+        view = OrcamentoViewSet.as_view({'post': 'converter_em_evento'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/converter-em-evento/', {}, format='json',
+        )
+        resp = view(req, pk=self.orc.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_ORCAMENTO_CONVERTIDO).latest('id')
+        self.assertIsNone(log.usuario_id)
+        self.assertEqual(log.detalhes['orcamento_id'], self.orc.id)
+
+    def test_converter_com_token_loga_ator(self):
+        view = OrcamentoViewSet.as_view({'post': 'converter_em_evento'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/converter-em-evento/', {}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.orc.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_ORCAMENTO_CONVERTIDO).latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['evento_numero'], resp.data['evento']['numero'])
+
+
+class HistoricoPorObjetoTests(AuditoriaEventosDestroyTestCase):
+    def test_historico_orcamento_sem_token_401(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+        view = OrcamentoViewSet.as_view({'get': 'historico'})
+        req = self.factory.get(f'/api/v1/eventos/orcamentos/{orc.id}/historico/')
+        resp = view(req, pk=orc.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_historico_orcamento_agrega_criacao_status_e_itens(self):
+        token = self._token()
+
+        create_view = OrcamentoViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/eventos/orcamentos/',
+            {'cliente_nome': 'Fulano', 'cliente_telefone': '86999997777', 'tipo_evento': 'aniversario'},
+            format='json', HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        resp = create_view(req)
+        orc_id = resp.data['id']
+
+        item_view = OrcamentoViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{orc_id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '50.00', 'quantidade': 1}, format='json',
+            HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        item_view(req, pk=orc_id)
+
+        enviar_view = OrcamentoViewSet.as_view({'post': 'enviar'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{orc_id}/enviar/', format='json', HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        enviar_view(req, pk=orc_id)
+
+        hist_view = OrcamentoViewSet.as_view({'get': 'historico'})
+        req = self.factory.get(
+            f'/api/v1/eventos/orcamentos/{orc_id}/historico/', HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        resp = hist_view(req, pk=orc_id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        acoes = [log['acao'] for log in resp.data]
+        self.assertIn(LogAuditoria.ACAO_REGISTRO_CRIADO, acoes)
+        self.assertIn(LogAuditoria.ACAO_ITEM_ADICIONADO, acoes)
+        self.assertIn(LogAuditoria.ACAO_STATUS_ALTERADO, acoes)
+        # ordenado por criado_em desc — o mais recente (enviar) deve vir primeiro
+        self.assertEqual(resp.data[0]['acao'], LogAuditoria.ACAO_STATUS_ALTERADO)
+
+    def test_historico_evento_agrega_pagamentos(self):
+        token = self._token()
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        pag_view = EventoViewSet.as_view({'post': 'adicionar_pagamento'})
+        req = self.factory.post(
+            f'/api/v1/eventos/{evento.id}/pagamentos/',
+            {'valor': '100.00', 'forma_pagamento': 'pix', 'status': 'pago', 'data_pagamento': str(datetime.date.today())},
+            format='json', HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        pag_view(req, pk=evento.id)
+
+        hist_view = EventoViewSet.as_view({'get': 'historico'})
+        req = self.factory.get(f'/api/v1/eventos/{evento.id}/historico/', HTTP_AUTHORIZATION=f'Token {token}')
+        resp = hist_view(req, pk=evento.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        acoes = [log['acao'] for log in resp.data]
+        self.assertIn(LogAuditoria.ACAO_PAGAMENTO_REGISTRADO, acoes)

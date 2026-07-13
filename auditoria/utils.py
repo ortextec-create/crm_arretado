@@ -14,6 +14,16 @@ def _extrair_ip(request):
     return request.META.get('REMOTE_ADDR')
 
 
+def ator_ou_none(request):
+    """
+    Devolve o usuário autenticado da request, ou None se ninguém estiver
+    logado — usado por actions oportunistas (não exigem login, mas captam
+    o ator quando o token vier) e pelos mixins de auditoria genéricos.
+    """
+    usuario = getattr(request, 'user', None)
+    return usuario if getattr(usuario, 'is_authenticated', False) else None
+
+
 def registrar(usuario, acao, detalhes=None, request=None):
     """
     Grava um evento em LogAuditoria. Nunca lança exceção pra fora —

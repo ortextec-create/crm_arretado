@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { eventosApi, locaisEventoApi, clientesApi } from '../api/services'
 import { pdvApi, taxasEntregaApi } from '../api/services'
-import { Btn, Modal, Spinner, Toast } from '../components/ui'
+import { Btn, Modal, Spinner, Toast, Empty } from '../components/ui'
+import PresencaAtiva from '../components/ui/PresencaAtiva'
+import { ACAO_LABEL, ACAO_COR, dataFmt, resumo } from '../utils/auditoriaResumo'
 import styles from './Eventos.module.css'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -914,6 +916,20 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
   const [savingItems, setSavingItems] = useState(false)
   const [lightboxImg, setLightboxImg] = useState(null)
 
+  // Histórico (aba) — fetch lazy, só quando a aba é ativada pela 1ª vez
+  const [historico,        setHistorico]        = useState(null)
+  const [loadingHistorico, setLoadingHistorico]  = useState(false)
+
+  useEffect(() => {
+    if (abaAtiva === 'historico' && historico === null) {
+      setLoadingHistorico(true)
+      eventosApi.historico(evento.id)
+        .then((r) => setHistorico(r.data))
+        .catch(() => setHistorico([]))
+        .finally(() => setLoadingHistorico(false))
+    }
+  }, [abaAtiva, historico, evento.id])
+
   // Pagamentos
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
   const [savingPagamento,      setSavingPagamento]      = useState(false)
@@ -1052,6 +1068,8 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
 
   return (
     <Modal open title={`Evento ${evento.numero}`} onClose={onClose} width={920}>
+      <PresencaAtiva model="Evento" objetoId={evento.id} />
+
       {/* Stepper de status (ou badge de cancelado) */}
       {evento.status === 'cancelado' ? (
         <div className={styles.statusCanceladoBadge}>
@@ -1145,6 +1163,9 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
             </button>
             <button className={`${styles.tabBtn} ${abaAtiva === 'imagens' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('imagens')}>
               Imagens ({nImagens})
+            </button>
+            <button className={`${styles.tabBtn} ${abaAtiva === 'historico' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('historico')}>
+              Histórico
             </button>
           </div>
 
@@ -1374,6 +1395,34 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
                   {evento.imagens_inspiracao.map(img => (
                     <div key={img.id} className={styles.imagemInspiracaoThumb}>
                       <img src={img.imagem} alt="Inspiração" onClick={() => setLightboxImg(img.imagem)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Aba: Histórico ──────────────────────────────────────────── */}
+          {abaAtiva === 'historico' && (
+            <>
+              <div className={styles.itensHeader}>
+                <h4>Histórico de Alterações</h4>
+              </div>
+              {loadingHistorico ? (
+                <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={22} /></div>
+              ) : !historico || historico.length === 0 ? (
+                <Empty icon="history" message="Nenhuma alteração registrada ainda." />
+              ) : (
+                <div className={styles.historicoLista}>
+                  {historico.map((log) => (
+                    <div key={log.id} className={styles.historicoItem}>
+                      <span className={styles.historicoBadge} style={{ color: ACAO_COR[log.acao] }}>
+                        {ACAO_LABEL[log.acao] ?? log.acao_display}
+                      </span>
+                      <span className={styles.historicoResumo}>{resumo(log)}</span>
+                      <span className={styles.historicoMeta}>
+                        {log.usuario_nome_snapshot || 'Sistema'} · {dataFmt(log.criado_em)}
+                      </span>
                     </div>
                   ))}
                 </div>
