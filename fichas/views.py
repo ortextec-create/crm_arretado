@@ -5,7 +5,7 @@ from django.utils.decorators import method_decorator
 
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -18,6 +18,9 @@ from .serializers import (
     ParametrosNegocioSerializer,
     SnapshotPrecosSerializer,
 )
+from usuarios.authentication import TokenAuthentication
+from auditoria.models import LogAuditoria
+from auditoria.utils import registrar
 
 
 class CsrfExemptMixin:
@@ -31,11 +34,16 @@ class CsrfExemptMixin:
 class MateriaPrimaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = MateriaPrima.objects.all()
     serializer_class   = MateriaPrimaSerializer
-    permission_classes = [AllowAny]
     filter_backends    = [filters.SearchFilter, filters.OrderingFilter]
     search_fields      = ['nome']
     ordering_fields    = ['nome', 'valor_compra', 'atualizado_em']
     ordering           = ['nome']
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'atualizar_preco':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_queryset(self):
         qs    = super().get_queryset()
@@ -50,11 +58,21 @@ class MateriaPrimaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         novo_valor = request.data.get('valor_compra')
         if novo_valor is None:
             return Response({'detail': 'valor_compra é obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+        valor_antigo = materia.valor_compra
         materia.valor_compra = Decimal(str(novo_valor))
         materia.save(update_fields=['valor_compra', 'atualizado_em'])
         fichas_ids       = materia.itemfichatecnica_set.values_list('ficha_id', flat=True)
         fichas           = FichaTecnica.objects.filter(id__in=fichas_ids)
         produtos_impact  = list(set(f.produto_pdv_id for f in fichas if f.produto_pdv_id))
+        registrar(
+            request.user, LogAuditoria.ACAO_PRECO_MATERIA_ATUALIZADO,
+            detalhes={
+                'materia_id': materia.id, 'materia_nome': materia.nome,
+                'valor_antigo': str(valor_antigo), 'valor_novo': str(materia.valor_compra),
+                'produtos_impactados': produtos_impact,
+            },
+            request=request,
+        )
         return Response({
             'materia':              MateriaPrimaSerializer(materia).data,
             'produtos_impactados':  produtos_impact,
@@ -139,8 +157,13 @@ class FichaTecnicaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 # ─── Parâmetros do Negócio ────────────────────────────────────────────────────
 
 class ParametrosNegocioViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
-    permission_classes = [AllowAny]
     serializer_class   = ParametrosNegocioSerializer
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'partial_update':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_object(self):
         return ParametrosNegocio.get()
@@ -149,10 +172,18 @@ class ParametrosNegocioViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
         return Response(self.get_serializer(self.get_object()).data)
 
     def partial_update(self, request, pk=None):
-        params     = self.get_object()
+        params  = self.get_object()
+        campos  = list(request.data.keys())
+        antes   = {c: str(getattr(params, c)) for c in campos if hasattr(params, c)}
         serializer = ParametrosNegocioSerializer(params, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        depois = {c: str(getattr(params, c)) for c in campos if hasattr(params, c)}
+        registrar(
+            request.user, LogAuditoria.ACAO_PARAMETROS_NEGOCIO_ALTERADOS,
+            detalhes={'antes': antes, 'depois': depois},
+            request=request,
+        )
         fichas = FichaTecnica.objects.prefetch_related('itens__materia_prima').filter(ativo=True)
         precos_ideais = [
             {'produto_id': f.produto_pdv_id, 'ficha_nome': f.nome, 'preco_ideal': float(f.preco_ideal)}
@@ -172,7 +203,13 @@ class SnapshotPrecosViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
 # ─── Ajuste Linear ────────────────────────────────────────────────────────────
 
 class AjusteLinearView(CsrfExemptMixin, APIView):
-    permission_classes = [AllowAny]
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        # Preview (confirmar=False) continua aberto — só quem de fato aplica o ajuste precisa logar.
+        if self.request.data.get('confirmar'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def post(self, request):
         segmento  = request.data.get('segmento', 'todos')
@@ -217,6 +254,16 @@ class AjusteLinearView(CsrfExemptMixin, APIView):
         for item in preview:
             Produto.objects.filter(pk=item['id']).update(preco=Decimal(str(item['preco_novo'])))
 
+        registrar(
+            request.user, LogAuditoria.ACAO_AJUSTE_LINEAR_APLICADO,
+            detalhes={
+                'snapshot_id': snapshot.id, 'descricao': snapshot.descricao,
+                'total_produtos': len(preview), 'segmento': segmento, 'tipo': tipo,
+                'operacao': operacao, 'valor': str(valor),
+            },
+            request=request,
+        )
+
         return Response({
             'aplicado':            True,
             'total_produtos':      len(preview),
@@ -228,7 +275,8 @@ class AjusteLinearView(CsrfExemptMixin, APIView):
 # ─── Desfazer Ajuste ──────────────────────────────────────────────────────────
 
 class DesfazerAjusteView(CsrfExemptMixin, APIView):
-    permission_classes = [AllowAny]
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, snapshot_id):
         try:
@@ -248,5 +296,14 @@ class DesfazerAjusteView(CsrfExemptMixin, APIView):
 
         snapshot.revertido = True
         snapshot.save(update_fields=['revertido'])
+
+        registrar(
+            request.user, LogAuditoria.ACAO_AJUSTE_LINEAR_DESFEITO,
+            detalhes={
+                'snapshot_id': snapshot.id, 'descricao': snapshot.descricao,
+                'produtos_restaurados': revertidos,
+            },
+            request=request,
+        )
 
         return Response({'revertido': True, 'produtos_restaurados': revertidos})

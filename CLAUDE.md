@@ -151,9 +151,9 @@ arretado-crm/                    ← raiz React
 - Itens do PDV: snapshot de nome e preço no momento da venda
 - **Z-API WhatsApp:** configurado via `.env` (`ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`) com fallback para o banco (`ConfiguracaoWhatsApp`). O cliente em `notificacoes/zapi_client.py` resolve o número canônico via `phone-exists` antes de cada envio (trata números BR de 8 e 9 dígitos), lança `ZAPIError` em caso de falha. Sempre use `notificacoes/servico.py` (`notificar()` para texto, `notificar_documento()` para PDF) — nunca chame `zapi_client` diretamente em views ou signals.
 - **ConfiguracaoWhatsApp é singleton** — sempre acessado via `ConfiguracaoWhatsApp.get()`. Contém credenciais Z-API, toggles de notificação, templates de mensagem e `validade_orcamento_dias` (prazo padrão de validade de orçamentos, configurável em Configurações).
-- **fichas.ParametrosNegocio é singleton** — sempre acessado via `ParametrosNegocio.get()`, nunca instanciado diretamente
+- **fichas.ParametrosNegocio é singleton** — sempre acessado via `ParametrosNegocio.get()`, nunca instanciado diretamente. `PATCH /fichas/parametros/1/` exige login e audita `parametros_negocio_alterados` (antes/depois dos campos alterados) em `auditoria.LogAuditoria`
 - **FichaTecnica → pdv.Produto** é uma FK fraca via `produto_pdv_id` (IntegerField, não ForeignKey) — o produto pode existir sem ficha e vice-versa
-- **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`
+- **SnapshotPrecos** é gravado automaticamente antes de qualquer `AjusteLinear` com `confirmar=True`. Aplicar o ajuste (`confirmar=true`) e desfazê-lo (`DesfazerAjusteView`) exigem login e auditam `ajuste_linear_aplicado`/`ajuste_linear_desfeito` — o preview (`confirmar=false`) continua `AllowAny`, já que não altera nada
 - **pdv.ConfiguracaoEntrega é singleton** — sempre acessado via `ConfiguracaoEntrega.get()`. Guarda o `frete_padrao` usado quando a entrega é por bairro mas nenhum bairro cadastrado foi selecionado
 - **`pdv.TaxaEntregaBairro`** é a tabela configurável de bairro→taxa usada por PDV e Orçamentos/Eventos. Nunca hardcodar valor de frete no código — ver `FRETE.md` para o funcionamento completo do sistema de entrega
 - **`pdv.Produto.tipo`** (`fabricado`/`revenda`/`kit`) define de onde vem o custo (`Produto.custo`, propriedade polimórfica): `fabricado` deriva de `FichaTecnica.custo_total_unitario` (via `produto_pdv_id`, mesma FK fraca já documentada); `revenda` deriva de `materia_prima_origem.custo_unitario` (só preenchível quando `tipo == 'revenda'`, validado no serializer); `kit` soma `custo * quantidade` de cada `ItemKit` em `itens_kit`. `margem_desejada_pct` é opcional e só sugere preço de venda (`preco_sugerido_revenda`) — nunca substitui o campo `preco`, que continua sendo o preço efetivo de venda
@@ -214,7 +214,7 @@ arretado-crm/                    ← raiz React
 | Imagens de Inspiração | Galeria de imagens de referência anexada ao Orçamento (upload múltiplo, lightbox, uso interno, visível também no Evento após conversão) | ✅ Concluída |
 | Pagamentos Parciais de Evento | `eventos.PagamentoEvento` (parcelas), `Evento.sinal_pago` derivado, redesign do modal de detalhe do Evento (stepper + abas), edição de Orçamento antes da conversão | ✅ Concluída |
 | Dashboard Multi-Canal | App `dashboard/` (só leitura) — vendas do dia e histórico recente consolidado de iFood/PDV/Eventos (+ espaço reservado pra Anota AI), gráfico 7 dias, a receber, fila operacional, próximos eventos, ticket médio | ✅ Concluída |
-| Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`, substitui o "token" fake do frontend) + app `auditoria/` (log de login, CRUD de usuário, mudança de role/perms — item 1) + pagamentos de evento (item 2: registrar/remover pagamento exige login; sinal inicial na criação de Evento/conversão de Orçamento é oportunista) + contrato (item 3: emitir contrato e enviar por WhatsApp exigem login) — tela restrita a `role=admin`. Próximo item da lista: Central de Preços/ajuste linear | ✅ Concluída (usuarios + eventos/pagamentos + eventos/contrato) |
+| Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`, substitui o "token" fake do frontend) + app `auditoria/` (log de login, CRUD de usuário, mudança de role/perms — item 1) + pagamentos de evento (item 2) + contrato (item 3: emitir/enviar exigem login) + Central de Preços (item 4: aplicar ajuste linear, desfazer ajuste, atualizar preço de matéria-prima e alterar `ParametrosNegocio` exigem login — preview do ajuste linear continua livre) — tela restrita a `role=admin`. Próximo item: configurações singleton restantes (`ConfiguracaoContrato`/`ConfiguracaoEntrega`/`ConfiguracaoWhatsApp`) e exclusões em geral | ✅ Concluída (usuarios + eventos/pagamentos + eventos/contrato + fichas/preços) |
 
 ---
 
@@ -324,15 +324,15 @@ GET /api/v1/auditoria/logs/   ← query params: usuario, acao, data_inicio, data
 # Catálogo / Fichas / Precificação
 GET/POST         /api/v1/fichas/materias-primas/
 PATCH            /api/v1/fichas/materias-primas/{id}/
-POST             /api/v1/fichas/materias-primas/{id}/atualizar-preco/
+POST             /api/v1/fichas/materias-primas/{id}/atualizar-preco/   ← exige login · audita preco_materia_atualizado
 GET/POST         /api/v1/fichas/fichas/
 GET/PATCH        /api/v1/fichas/fichas/{id}/
 GET              /api/v1/fichas/fichas/{id}/resumo/
 POST             /api/v1/fichas/fichas/{id}/adicionar-item/
 DELETE           /api/v1/fichas/fichas/{id}/remover-item/{item_id}/
-GET/PATCH        /api/v1/fichas/parametros/1/
-POST             /api/v1/fichas/ajuste-linear/
-POST             /api/v1/fichas/desfazer-ajuste/{snapshot_id}/
+GET/PATCH        /api/v1/fichas/parametros/1/                          ← PATCH exige login · audita parametros_negocio_alterados
+POST             /api/v1/fichas/ajuste-linear/                         ← exige login só quando "confirmar":true (preview continua livre) · audita ajuste_linear_aplicado
+POST             /api/v1/fichas/desfazer-ajuste/{snapshot_id}/         ← exige login · audita ajuste_linear_desfeito
 GET              /api/v1/fichas/snapshots/
 
 # Relatórios

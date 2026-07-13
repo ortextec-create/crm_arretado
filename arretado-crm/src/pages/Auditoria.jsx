@@ -16,6 +16,10 @@ const ACAO_LABEL = {
   pagamento_removido: 'Pagamento removido',
   contrato_emitido: 'Contrato emitido',
   contrato_enviado: 'Contrato enviado',
+  ajuste_linear_aplicado: 'Ajuste linear aplicado',
+  ajuste_linear_desfeito: 'Ajuste linear desfeito',
+  preco_materia_atualizado: 'Preço de matéria-prima atualizado',
+  parametros_negocio_alterados: 'Parâmetros de negócio alterados',
 }
 
 const ACAO_COR = {
@@ -31,6 +35,10 @@ const ACAO_COR = {
   pagamento_removido: '#ef4444',
   contrato_emitido: 'var(--verde)',
   contrato_enviado: 'var(--caramelo)',
+  ajuste_linear_aplicado: 'var(--caramelo)',
+  ajuste_linear_desfeito: '#ef4444',
+  preco_materia_atualizado: 'var(--caramelo)',
+  parametros_negocio_alterados: 'var(--caramelo)',
 }
 
 function dataFmt(iso) {
@@ -60,6 +68,14 @@ function resumo(log) {
       return `${d.contrato_numero ?? '—'} · ${d.cliente ?? '—'} · R$ ${d.valor_total ?? '—'}`
     case 'contrato_enviado':
       return `${d.contrato_numero ?? '—'} · ${d.cliente ?? '—'} · ${d.telefone ?? '—'}`
+    case 'ajuste_linear_aplicado':
+      return `${d.descricao ?? '—'} (snapshot #${d.snapshot_id ?? '—'})`
+    case 'ajuste_linear_desfeito':
+      return `${d.descricao ?? '—'} · ${d.produtos_restaurados ?? 0} produto(s) restaurado(s)`
+    case 'preco_materia_atualizado':
+      return `${d.materia_nome ?? '—'}: R$ ${d.valor_antigo ?? '—'} → R$ ${d.valor_novo ?? '—'}`
+    case 'parametros_negocio_alterados':
+      return Object.keys(d.depois ?? {}).join(', ') || '—'
     default:
       return '—'
   }
