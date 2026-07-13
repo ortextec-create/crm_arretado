@@ -26,6 +26,10 @@ class LogAuditoriaViewSet(viewsets.ReadOnlyModelViewSet):
         if acao:
             qs = qs.filter(acao=acao)
 
+        model = params.get('model')
+        if model:
+            qs = qs.filter(detalhes__model=model)
+
         data_inicio = params.get('data_inicio')
         if data_inicio:
             qs = qs.filter(criado_em__date__gte=data_inicio)

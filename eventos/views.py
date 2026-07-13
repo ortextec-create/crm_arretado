@@ -18,6 +18,7 @@ from notificacoes.servico import notificar, _fone_pedido
 from usuarios.authentication import TokenAuthentication
 from auditoria.models import LogAuditoria
 from auditoria.utils import registrar
+from auditoria.mixins import AuditoriaDestroyMixin
 
 
 def _notificar_evento(evento, mensagem):
@@ -46,10 +47,16 @@ class CsrfExemptMixin:
 
 # ─── Local de Evento ──────────────────────────────────────────────────────────
 
-class LocalEventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class LocalEventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = LocalEvento.objects.all()
     serializer_class   = LocalEventoSerializer
-    permission_classes = [AllowAny]
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['nome']
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_queryset(self):
         qs    = super().get_queryset()
@@ -66,7 +73,7 @@ class LocalEventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
 # ─── Eventos ──────────────────────────────────────────────────────────────────
 
-class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class EventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = Evento.objects.prefetch_related(
         'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
     ).select_related('cliente', 'local', 'orcamento_origem').all()
@@ -75,11 +82,13 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     ordering           = ['data_evento', 'hora_evento']
     # Sobrescreve o [] do CsrfExemptMixin — só assim dá pra saber quem registrou/removeu
     # um pagamento (ver get_permissions). Demais actions continuam AllowAny, sem mudança
-    # de comportamento — a autenticação só passa a ser exigida nas actions de pagamento.
+    # de comportamento — a autenticação só passa a ser exigida nas actions de pagamento
+    # e nas de exclusão (destroy/remover_item).
     authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['numero', 'cliente_nome', 'valor_total']
 
     def get_permissions(self):
-        if self.action in ('adicionar_pagamento', 'remover_pagamento'):
+        if self.action in ('adicionar_pagamento', 'remover_pagamento', 'destroy', 'remover_item'):
             return [IsAuthenticated()]
         return [AllowAny()]
 
@@ -225,6 +234,14 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             item = evento.itens.get(pk=item_id)
         except ItemEvento.DoesNotExist:
             return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'ItemEvento', 'id': item.id, 'descricao': str(item),
+                'evento_id': evento.id, 'evento_numero': evento.numero,
+            },
+            request=request,
+        )
         item.delete()
         evento.recalcular_totais()
         return Response(EventoDetailSerializer(evento).data)
@@ -360,18 +377,19 @@ class EventoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
 # ─── Orçamentos ───────────────────────────────────────────────────────────────
 
-class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class OrcamentoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = Orcamento.objects.prefetch_related('itens', 'imagens_inspiracao').select_related('cliente', 'evento').all()
-    permission_classes = [AllowAny]
-    # Não exige login (permission continua AllowAny) — só permite capturar o ator de forma
+    # authentication_classes real (ver abaixo) — algumas actions continuam AllowAny
+    # (permission depende de get_permissions), só permitindo capturar o ator de forma
     # oportunista quando o token vier, para auditar o sinal inicial em converter_em_evento.
     authentication_classes = [TokenAuthentication]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['criado_em', 'valor_total', 'data_evento']
     ordering           = ['-criado_em']
+    campos_log_exclusao = ['numero', 'cliente_nome', 'valor_total']
 
     def get_permissions(self):
-        if self.action == 'gerar_contrato':
+        if self.action in ('gerar_contrato', 'destroy', 'remover_item', 'remover_imagem'):
             return [IsAuthenticated()]
         return [AllowAny()]
 
@@ -580,6 +598,14 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             item = orc.itens.get(pk=item_id)
         except ItemOrcamento.DoesNotExist:
             return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'ItemOrcamento', 'id': item.id, 'descricao': str(item),
+                'orcamento_id': orc.id, 'orcamento_numero': orc.numero,
+            },
+            request=request,
+        )
         item.delete()
         orc.recalcular_totais()
         return Response(OrcamentoDetailSerializer(orc).data)
@@ -631,6 +657,14 @@ class OrcamentoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             img = orc.imagens_inspiracao.get(pk=imagem_id)
         except ImagemInspiracao.DoesNotExist:
             return Response({'detail': 'Imagem não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'ImagemInspiracao', 'id': img.id,
+                'orcamento_id': orc.id, 'orcamento_numero': orc.numero,
+            },
+            request=request,
+        )
         img.imagem.delete(save=False)
         img.delete()
         orc.refresh_from_db()

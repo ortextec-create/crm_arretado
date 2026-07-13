@@ -10,13 +10,17 @@ from django.db.models import Q, Sum, Count, Avg
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .models import Cliente, Endereco, TagCliente
 from .serializers import (
     ClienteListSerializer, ClienteDetailSerializer,
     EnderecoSerializer, TagSerializer
 )
+from usuarios.authentication import TokenAuthentication
+from auditoria.models import LogAuditoria
+from auditoria.utils import registrar
+from auditoria.mixins import AuditoriaDestroyMixin
 
 
 class CsrfExemptMixin:
@@ -24,12 +28,18 @@ class CsrfExemptMixin:
     authentication_classes = []
 
 
-class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class ClienteViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset = Cliente.objects.prefetch_related('enderecos', 'tags').all()
-    permission_classes = [AllowAny]
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ['nome', 'criado_em', 'atualizado_em', 'status']
     ordering = ['-criado_em']
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['nome', 'telefone_principal']
+
+    def get_permissions(self):
+        if self.action in ('destroy', 'remover_endereco'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -100,6 +110,14 @@ class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             endereco = cliente.enderecos.get(pk=endereco_id)
         except Endereco.DoesNotExist:
             return Response({'detail': 'Endereço não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'Endereco', 'id': endereco.id, 'descricao': str(endereco),
+                'cliente_id': cliente.id, 'cliente_nome': cliente.nome,
+            },
+            request=request,
+        )
         endereco.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -294,9 +312,15 @@ class ClienteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 # Tags
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TagViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class TagViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = TagCliente.objects.all()
     serializer_class   = TagSerializer
-    permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering           = ['nome']
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['nome']
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAuthenticated()]
+        return [AllowAny()]

@@ -12,6 +12,7 @@ from notificacoes.servico import notificar, _fone_pedido
 from usuarios.authentication import TokenAuthentication
 from auditoria.models import LogAuditoria
 from auditoria.utils import registrar
+from auditoria.mixins import AuditoriaDestroyMixin
 
 
 def _notificar_pdv(pedido, mensagem):
@@ -36,18 +37,30 @@ class CsrfExemptMixin:
 
 # ─── Categorias ──────────────────────────────────────────────────────────────
 
-class CategoriaProdutoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class CategoriaProdutoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = CategoriaProduto.objects.all()
     serializer_class   = CategoriaProdutoSerializer
-    permission_classes = [AllowAny]
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['nome']
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
 
 # ─── Taxas de Entrega por Bairro ─────────────────────────────────────────────
 
-class TaxaEntregaBairroViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class TaxaEntregaBairroViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = TaxaEntregaBairro.objects.all()
     serializer_class   = TaxaEntregaBairroSerializer
-    permission_classes = [AllowAny]
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['bairro']
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_queryset(self):
         qs    = super().get_queryset()
@@ -92,13 +105,19 @@ class ConfiguracaoEntregaViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
 
 # ─── Produtos ────────────────────────────────────────────────────────────────
 
-class ProdutoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class ProdutoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = Produto.objects.select_related('categoria').all()
     serializer_class   = ProdutoSerializer
-    permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['nome', 'preco', 'categoria__ordem']
     ordering           = ['categoria__ordem', 'nome']
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['nome']
+
+    def get_permissions(self):
+        if self.action in ('destroy', 'remover_faixa_preco', 'remover_item_kit'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -163,6 +182,14 @@ class ProdutoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             faixa = produto.faixas_preco.get(pk=faixa_id)
         except FaixaPreco.DoesNotExist:
             return Response({'detail': 'Faixa não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'FaixaPreco', 'id': faixa.id, 'descricao': str(faixa),
+                'produto_id': produto.id, 'produto_nome': produto.nome,
+            },
+            request=request,
+        )
         faixa.delete()
         return Response(ProdutoSerializer(produto).data)
 
@@ -185,6 +212,14 @@ class ProdutoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             item = produto.itens_kit.get(pk=item_id)
         except ItemKit.DoesNotExist:
             return Response({'detail': 'Componente não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'ItemKit', 'id': item.id, 'descricao': str(item),
+                'kit_id': produto.id, 'kit_nome': produto.nome,
+            },
+            request=request,
+        )
         item.delete()
         return Response(ProdutoSerializer(produto).data)
 
@@ -203,12 +238,18 @@ class ProdutoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
 # ─── Pedidos PDV ─────────────────────────────────────────────────────────────
 
-class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class PedidoPDVViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = PedidoPDV.objects.prefetch_related('itens').select_related('cliente').all()
-    permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['criado_em', 'total', 'status']
     ordering           = ['-criado_em']
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['numero', 'total']
+
+    def get_permissions(self):
+        if self.action in ('destroy', 'remover_item'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -316,6 +357,14 @@ class PedidoPDVViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             item = pedido.itens.get(pk=item_id)
         except ItemPedidoPDV.DoesNotExist:
             return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'ItemPedidoPDV', 'id': item.id, 'descricao': str(item),
+                'pedido_id': pedido.id, 'pedido_numero': pedido.numero,
+            },
+            request=request,
+        )
         item.delete()
         pedido.recalcular_totais()
         return Response(PedidoPDVDetailSerializer(pedido).data)

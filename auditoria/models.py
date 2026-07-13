@@ -23,6 +23,7 @@ class LogAuditoria(models.Model):
     ACAO_CONFIG_CONTRATO_ALTERADA = 'config_contrato_alterada'
     ACAO_CONFIG_ENTREGA_ALTERADA = 'config_entrega_alterada'
     ACAO_CONFIG_WHATSAPP_ALTERADA = 'config_whatsapp_alterada'
+    ACAO_REGISTRO_EXCLUIDO = 'registro_excluido'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -49,6 +50,7 @@ class LogAuditoria(models.Model):
         (ACAO_CONFIG_CONTRATO_ALTERADA, 'Configuração de contrato alterada'),
         (ACAO_CONFIG_ENTREGA_ALTERADA, 'Configuração de entrega alterada'),
         (ACAO_CONFIG_WHATSAPP_ALTERADA, 'Configuração de WhatsApp alterada'),
+        (ACAO_REGISTRO_EXCLUIDO, 'Registro excluído'),
     ]
 
     usuario = models.ForeignKey(

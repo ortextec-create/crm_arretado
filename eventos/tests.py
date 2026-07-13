@@ -4,13 +4,25 @@ from unittest.mock import patch
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
+from django.core.files.uploadedfile import SimpleUploadedFile
+
 from clientes.models import Cliente
 from notificacoes.models import HistoricoMensagem
 from auditoria.models import LogAuditoria
 from usuarios.models import Usuario
 from usuarios.views import UsuarioViewSet
-from .models import Orcamento, ItemOrcamento, Contrato, Evento, PagamentoEvento, ConfiguracaoContrato
-from .views import OrcamentoViewSet, ContratoViewSet, EventoViewSet, ConfiguracaoContratoViewSet
+from .models import (
+    Orcamento, ItemOrcamento, ImagemInspiracao, Contrato, Evento, ItemEvento,
+    LocalEvento, PagamentoEvento, ConfiguracaoContrato,
+)
+from .views import (
+    OrcamentoViewSet, ContratoViewSet, EventoViewSet, LocalEventoViewSet, ConfiguracaoContratoViewSet,
+)
+
+GIF_1PX = SimpleUploadedFile(
+    'inspiracao.gif', b'GIF87a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x01D\x00;',
+    content_type='image/gif',
+)
 
 
 class GerarContratoTests(TestCase):
@@ -300,3 +312,178 @@ class ConfiguracaoContratoAuditoriaTests(TestCase):
         log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_CONFIG_CONTRATO_ALTERADA).latest('id')
         self.assertEqual(log.usuario_id, self.admin.id)
         self.assertEqual(log.detalhes['depois']['percentual_sinal'], '40.00')
+
+
+class AuditoriaEventosDestroyTestCase(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Teste', email='admin@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+        self.cliente = Cliente.objects.create(nome='Cliente Teste', telefone_principal='86999998888')
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+
+class LocalEventoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def setUp(self):
+        super().setUp()
+        self.local = LocalEvento.objects.create(nome='Salão de Festas')
+
+    def test_destroy_sem_token_401(self):
+        view = LocalEventoViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(f'/api/v1/eventos/locais/{self.local.id}/')
+        resp = view(req, pk=self.local.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_destroy_com_token_gera_log(self):
+        view = LocalEventoViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/locais/{self.local.id}/', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.local.id)
+        self.assertEqual(resp.status_code, 204)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'LocalEvento')
+        self.assertEqual(log.detalhes['nome'], 'Salão de Festas')
+
+
+class EventoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def setUp(self):
+        super().setUp()
+        self.evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+
+    def test_destroy_sem_token_401(self):
+        view = EventoViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(f'/api/v1/eventos/{self.evento.id}/')
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 401)
+        self.assertTrue(Evento.objects.filter(pk=self.evento.id).exists())
+
+    def test_destroy_com_token_gera_log(self):
+        view = EventoViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/{self.evento.id}/', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 204)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'Evento')
+        self.assertEqual(log.detalhes['numero'], self.evento.numero)
+
+    def test_remover_item_sem_token_401(self):
+        item = ItemEvento.objects.create(evento=self.evento, nome='Bolo', preco_unit=50, quantidade=1)
+        view = EventoViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(f'/api/v1/eventos/{self.evento.id}/itens/{item.id}/remover/')
+        resp = view(req, pk=self.evento.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_remover_item_com_token_gera_log(self):
+        item = ItemEvento.objects.create(evento=self.evento, nome='Bolo', preco_unit=50, quantidade=1)
+        view = EventoViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/{self.evento.id}/itens/{item.id}/remover/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.evento.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(ItemEvento.objects.filter(pk=item.id).exists())
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'ItemEvento')
+        self.assertEqual(log.detalhes['evento_id'], self.evento.id)
+
+
+class OrcamentoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    def setUp(self):
+        super().setUp()
+        self.orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=30), status='rascunho',
+        )
+
+    def test_destroy_sem_token_401(self):
+        view = OrcamentoViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(f'/api/v1/eventos/orcamentos/{self.orc.id}/')
+        resp = view(req, pk=self.orc.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_destroy_com_token_gera_log(self):
+        view = OrcamentoViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.orc.id)
+        self.assertEqual(resp.status_code, 204)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'Orcamento')
+        self.assertEqual(log.detalhes['numero'], self.orc.numero)
+
+    def test_protegido_por_contrato_retorna_400(self):
+        Contrato.objects.create(
+            numero=Contrato.proximo_numero(), orcamento=self.orc,
+            contratante_nome='Maria', contratante_nacionalidade='brasileira',
+            contratante_cpf='123.456.789-00', contratante_endereco='Rua A, 1',
+            data_evento=self.orc.data_evento, valor_total=100,
+            percentual_sinal=50, valor_sinal=50, data_quitacao=self.orc.data_evento,
+        )
+        view = OrcamentoViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.orc.id)
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(Orcamento.objects.filter(pk=self.orc.id).exists())
+
+    def test_remover_item_sem_token_401(self):
+        item = ItemOrcamento.objects.create(orcamento=self.orc, nome='Bolo', preco_unit=50, quantidade=1)
+        view = OrcamentoViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(f'/api/v1/eventos/orcamentos/{self.orc.id}/itens/{item.id}/remover/')
+        resp = view(req, pk=self.orc.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_remover_item_com_token_gera_log(self):
+        item = ItemOrcamento.objects.create(orcamento=self.orc, nome='Bolo', preco_unit=50, quantidade=1)
+        view = OrcamentoViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/itens/{item.id}/remover/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.orc.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'ItemOrcamento')
+        self.assertEqual(log.detalhes['orcamento_id'], self.orc.id)
+
+    def test_remover_imagem_sem_token_401(self):
+        img = ImagemInspiracao.objects.create(orcamento=self.orc, imagem=GIF_1PX)
+        view = OrcamentoViewSet.as_view({'delete': 'remover_imagem'})
+        req = self.factory.delete(f'/api/v1/eventos/orcamentos/{self.orc.id}/imagens/{img.id}/remover/')
+        resp = view(req, pk=self.orc.id, imagem_id=img.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_remover_imagem_com_token_gera_log(self):
+        img = ImagemInspiracao.objects.create(orcamento=self.orc, imagem=GIF_1PX)
+        view = OrcamentoViewSet.as_view({'delete': 'remover_imagem'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/imagens/{img.id}/remover/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.orc.id, imagem_id=img.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'ImagemInspiracao')
+        self.assertEqual(log.detalhes['orcamento_id'], self.orc.id)

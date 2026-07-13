@@ -41,6 +41,15 @@ class ConfiguracaoIFoodViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     serializer_class   = ConfiguracaoIFoodSerializer
     permission_classes = [AllowAny]
 
+    def destroy(self, request, *args, **kwargs):
+        # ConfiguracaoIFood não é um singleton "de verdade" (acessado via .objects.first(),
+        # não .get() como os outros configs) — bloqueado aqui pra nunca perder client_id/
+        # secret/tokens de produção por engano. Nunca é uma ação válida de negócio.
+        return Response(
+            {'detail': 'Não é possível excluir a configuração do iFood.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     @action(detail=True, methods=['post'], url_path='testar')
     def testar_conexao(self, request, pk=None):
         config = self.get_object()

@@ -21,6 +21,7 @@ from .serializers import (
 from usuarios.authentication import TokenAuthentication
 from auditoria.models import LogAuditoria
 from auditoria.utils import registrar
+from auditoria.mixins import AuditoriaDestroyMixin
 
 
 class CsrfExemptMixin:
@@ -31,7 +32,7 @@ class CsrfExemptMixin:
 
 # ─── Matérias-Primas ──────────────────────────────────────────────────────────
 
-class MateriaPrimaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class MateriaPrimaViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = MateriaPrima.objects.all()
     serializer_class   = MateriaPrimaSerializer
     filter_backends    = [filters.SearchFilter, filters.OrderingFilter]
@@ -39,9 +40,10 @@ class MateriaPrimaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     ordering_fields    = ['nome', 'valor_compra', 'atualizado_em']
     ordering           = ['nome']
     authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['nome']
 
     def get_permissions(self):
-        if self.action == 'atualizar_preco':
+        if self.action in ('atualizar_preco', 'destroy'):
             return [IsAuthenticated()]
         return [AllowAny()]
 
@@ -81,12 +83,18 @@ class MateriaPrimaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
 # ─── Fichas Técnicas ──────────────────────────────────────────────────────────
 
-class FichaTecnicaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+class FichaTecnicaViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
     queryset           = FichaTecnica.objects.prefetch_related('itens__materia_prima').all()
-    permission_classes = [AllowAny]
     filter_backends    = [filters.SearchFilter, filters.OrderingFilter]
     search_fields      = ['nome']
     ordering           = ['nome']
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['nome']
+
+    def get_permissions(self):
+        if self.action in ('destroy', 'remover_item'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -148,9 +156,18 @@ class FichaTecnicaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     def remover_item(self, request, pk=None, item_id=None):
         ficha = self.get_object()
         try:
-            ficha.itens.get(pk=item_id).delete()
+            item = ficha.itens.get(pk=item_id)
         except ItemFichaTecnica.DoesNotExist:
             return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'ItemFichaTecnica', 'id': item.id, 'descricao': str(item),
+                'ficha_id': ficha.id, 'ficha_nome': ficha.nome,
+            },
+            request=request,
+        )
+        item.delete()
         return Response(FichaTecnicaDetailSerializer(ficha).data)
 
 

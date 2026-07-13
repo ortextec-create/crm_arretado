@@ -7,8 +7,11 @@ from auditoria.models import LogAuditoria
 from usuarios.models import Usuario
 from usuarios.views import UsuarioViewSet
 from pdv.models import Produto
-from .models import MateriaPrima, ParametrosNegocio, SnapshotPrecos
-from .views import AjusteLinearView, DesfazerAjusteView, MateriaPrimaViewSet, ParametrosNegocioViewSet
+from .models import FichaTecnica, ItemFichaTecnica, MateriaPrima, ParametrosNegocio, SnapshotPrecos
+from .views import (
+    AjusteLinearView, DesfazerAjusteView, FichaTecnicaViewSet,
+    MateriaPrimaViewSet, ParametrosNegocioViewSet,
+)
 
 
 class AuditoriaFichasTestCase(TestCase):
@@ -114,6 +117,107 @@ class MateriaPrimaAuditoriaTests(AuditoriaFichasTestCase):
         self.assertEqual(log.usuario_id, self.admin.id)
         self.assertEqual(Decimal(log.detalhes['valor_antigo']), Decimal('10'))
         self.assertEqual(Decimal(log.detalhes['valor_novo']), Decimal('15.00'))
+
+
+class MateriaPrimaDestroyAuditoriaTests(AuditoriaFichasTestCase):
+    def setUp(self):
+        super().setUp()
+        self.materia = MateriaPrima.objects.create(
+            nome='Chocolate', unidade_medida='g', valor_compra=10, quantidade_compra=1,
+        )
+
+    def _delete(self, token=None):
+        view = MateriaPrimaViewSet.as_view({'delete': 'destroy'})
+        extra = {'HTTP_AUTHORIZATION': f'Token {token}'} if token else {}
+        req = self.factory.delete(f'/api/v1/fichas/materias-primas/{self.materia.id}/', **extra)
+        return view(req, pk=self.materia.id)
+
+    def test_sem_token_401(self):
+        resp = self._delete()
+        self.assertEqual(resp.status_code, 401)
+        self.assertTrue(MateriaPrima.objects.filter(pk=self.materia.id).exists())
+
+    def test_com_token_exclui_e_gera_log(self):
+        resp = self._delete(token=self._token())
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(MateriaPrima.objects.filter(pk=self.materia.id).exists())
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.usuario_id, self.admin.id)
+        self.assertEqual(log.detalhes['model'], 'MateriaPrima')
+        self.assertEqual(log.detalhes['id'], self.materia.id)
+        self.assertEqual(log.detalhes['nome'], 'Chocolate')
+
+    def test_protegida_por_item_ficha_tecnica_retorna_400(self):
+        ficha = FichaTecnica.objects.create(nome='Bolo Teste')
+        ItemFichaTecnica.objects.create(ficha=ficha, materia_prima=self.materia, quantidade=1)
+
+        resp = self._delete(token=self._token())
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(MateriaPrima.objects.filter(pk=self.materia.id).exists())
+        self.assertFalse(LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).exists())
+
+    def test_protegida_por_produto_revenda_retorna_400(self):
+        Produto.objects.create(
+            nome='Chocolate Revenda', preco=20, segmento='outro',
+            tipo='revenda', materia_prima_origem=self.materia,
+        )
+
+        resp = self._delete(token=self._token())
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(MateriaPrima.objects.filter(pk=self.materia.id).exists())
+
+
+class FichaTecnicaDestroyAuditoriaTests(AuditoriaFichasTestCase):
+    def setUp(self):
+        super().setUp()
+        self.ficha = FichaTecnica.objects.create(nome='Bolo Teste')
+        self.materia = MateriaPrima.objects.create(
+            nome='Chocolate', unidade_medida='g', valor_compra=10, quantidade_compra=1,
+        )
+
+    def test_destroy_sem_token_401(self):
+        view = FichaTecnicaViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(f'/api/v1/fichas/fichas/{self.ficha.id}/')
+        resp = view(req, pk=self.ficha.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_destroy_com_token_gera_log(self):
+        view = FichaTecnicaViewSet.as_view({'delete': 'destroy'})
+        req = self.factory.delete(
+            f'/api/v1/fichas/fichas/{self.ficha.id}/', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.ficha.id)
+        self.assertEqual(resp.status_code, 204)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'FichaTecnica')
+        self.assertEqual(log.detalhes['nome'], 'Bolo Teste')
+
+    def test_remover_item_sem_token_401(self):
+        item = ItemFichaTecnica.objects.create(ficha=self.ficha, materia_prima=self.materia, quantidade=1)
+        view = FichaTecnicaViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(f'/api/v1/fichas/fichas/{self.ficha.id}/remover-item/{item.id}/')
+        resp = view(req, pk=self.ficha.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 401)
+        self.assertTrue(ItemFichaTecnica.objects.filter(pk=item.id).exists())
+
+    def test_remover_item_com_token_gera_log(self):
+        item = ItemFichaTecnica.objects.create(ficha=self.ficha, materia_prima=self.materia, quantidade=1)
+        view = FichaTecnicaViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(
+            f'/api/v1/fichas/fichas/{self.ficha.id}/remover-item/{item.id}/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.ficha.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(ItemFichaTecnica.objects.filter(pk=item.id).exists())
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'ItemFichaTecnica')
+        self.assertEqual(log.detalhes['ficha_id'], self.ficha.id)
 
 
 class ParametrosNegocioAuditoriaTests(AuditoriaFichasTestCase):

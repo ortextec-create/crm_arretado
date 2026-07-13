@@ -23,6 +23,7 @@ const ACAO_LABEL = {
   config_contrato_alterada: 'Configuração de contrato alterada',
   config_entrega_alterada: 'Configuração de entrega alterada',
   config_whatsapp_alterada: 'Configuração de WhatsApp alterada',
+  registro_excluido: 'Registro excluído',
 }
 
 const ACAO_COR = {
@@ -45,6 +46,7 @@ const ACAO_COR = {
   config_contrato_alterada: 'var(--caramelo)',
   config_entrega_alterada: 'var(--caramelo)',
   config_whatsapp_alterada: 'var(--caramelo)',
+  registro_excluido: '#ef4444',
 }
 
 function dataFmt(iso) {
@@ -85,6 +87,8 @@ function resumo(log) {
     case 'config_entrega_alterada':
     case 'config_whatsapp_alterada':
       return Object.keys(d.depois ?? {}).join(', ') || '—'
+    case 'registro_excluido':
+      return `${d.model ?? '—'} #${d.id ?? '—'} — ${d.descricao ?? ''}`
     default:
       return '—'
   }
@@ -100,6 +104,7 @@ export default function Auditoria() {
 
   const [filtroUsuario, setFiltroUsuario] = useState('')
   const [filtroAcao, setFiltroAcao] = useState('')
+  const [filtroModel, setFiltroModel] = useState('')
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
 
@@ -114,6 +119,7 @@ export default function Auditoria() {
     const params = { page }
     if (filtroUsuario) params.usuario = filtroUsuario
     if (filtroAcao) params.acao = filtroAcao
+    if (filtroModel.trim()) params.model = filtroModel.trim()
     if (dataInicio) params.data_inicio = dataInicio
     if (dataFim) params.data_fim = dataFim
 
@@ -125,7 +131,7 @@ export default function Auditoria() {
       })
       .catch(() => { setLogs([]); setCount(0); setNext(null) })
       .finally(() => setLoading(false))
-  }, [page, filtroUsuario, filtroAcao, dataInicio, dataFim])
+  }, [page, filtroUsuario, filtroAcao, filtroModel, dataInicio, dataFim])
 
   useEffect(() => { carregar() }, [carregar])
 
@@ -151,6 +157,12 @@ export default function Auditoria() {
           <option value="">Todas as ações</option>
           {Object.entries(ACAO_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
+        {filtroAcao === 'registro_excluido' && (
+          <input
+            type="text" placeholder="Model (ex: Cliente)" value={filtroModel}
+            onChange={filtrar(setFiltroModel)} className={styles.select}
+          />
+        )}
         <input type="date" value={dataInicio} onChange={filtrar(setDataInicio)} className={styles.select} />
         <input type="date" value={dataFim} onChange={filtrar(setDataFim)} className={styles.select} />
       </div>
