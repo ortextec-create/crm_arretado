@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 12/jul/2026.
+> Última atualização: 13/jul/2026.
 
 ---
 
@@ -63,8 +63,15 @@ arretado/                        ← raiz Django
 │   └── views.py                 ← OrcamentoViewSet (converter-em-evento, gerar-contrato, imagens/, itens/{id}/editar/,
 │                                    update() restrito a status rascunho/enviado) + EventoViewSet (pagamentos/, pagamentos/{id}/remover/) +
 │                                    ContratoViewSet (só leitura + pdf/enviar-whatsapp) + ConfiguracaoContratoViewSet
-├── usuarios/                    ← Gestão de usuários + RBAC
-│   └── views.py
+├── usuarios/                    ← Gestão de usuários + RBAC + autenticação real por token
+│   ├── models.py                ← Usuario (auth_token, gerar_token(), is_authenticated/is_anonymous — compatibilidade DRF)
+│   ├── authentication.py        ← TokenAuthentication (lê "Authorization: Token <valor>", popula request.user)
+│   ├── permissions.py           ← IsAdminRole (reusado por auditoria/)
+│   └── views.py                 ← login/logout (regenera/invalida auth_token), CRUD instrumentado via auditoria.utils.registrar()
+├── auditoria/                   ← Log de auditoria (login, CRUD de usuário, mudança de role/perms) — extensível a outros sistemas críticos
+│   ├── models.py                ← LogAuditoria (usuario FK SET_NULL + usuario_nome_snapshot, acao, detalhes JSON, ip, criado_em)
+│   ├── utils.py                 ← registrar(usuario, acao, detalhes=None, request=None) — único ponto de escrita, nunca lança exceção
+│   └── views.py                 ← LogAuditoriaViewSet (só leitura, restrito a IsAdminRole)
 ├── notificacoes/                ← WhatsApp via Z-API
 │   ├── models.py                ← HistoricoMensagem · ConfiguracaoWhatsApp (singleton, inclui validade_orcamento_dias)
 │   ├── zapi_client.py           ← enviar_texto(), enviar_documento(), status_conexao() · resolve número canônico via phone-exists · lança ZAPIError
@@ -201,6 +208,7 @@ arretado-crm/                    ← raiz React
 | Imagens de Inspiração | Galeria de imagens de referência anexada ao Orçamento (upload múltiplo, lightbox, uso interno, visível também no Evento após conversão) | ✅ Concluída |
 | Pagamentos Parciais de Evento | `eventos.PagamentoEvento` (parcelas), `Evento.sinal_pago` derivado, redesign do modal de detalhe do Evento (stepper + abas), edição de Orçamento antes da conversão | ✅ Concluída |
 | Dashboard Multi-Canal | App `dashboard/` (só leitura) — vendas do dia e histórico recente consolidado de iFood/PDV/Eventos (+ espaço reservado pra Anota AI), gráfico 7 dias, a receber, fila operacional, próximos eventos, ticket médio | ✅ Concluída |
+| Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`, substitui o "token" fake do frontend) + novo app `auditoria/` (log de login, CRUD de usuário, mudança de role/perms) — tela restrita a `role=admin`, primeiro sistema crítico da lista de auditoria a ser implementado | ✅ Concluída |
 
 ---
 
@@ -213,7 +221,8 @@ arretado-crm/                    ← raiz React
    - Médio prazo: NFC-e (nota fiscal — SEFAZ-PI)
    - Longo prazo: TEF integrado
 4. **Relatórios cobrem só iFood** — `relatorios/` tem apenas `RelatorioIFoodView`; expandir para PDV e Eventos/Orçamentos seguindo o mesmo padrão (resumo + agrupado + export Excel/PDF)
-5. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
+5. **Logging/observabilidade** — hoje é rudimentar: sem `LOGGING` dict em `config/settings.py` (usa o padrão implícito do Django), sem Sentry/monitoramento de erros. Só alguns apps chamam `logger.info/warning/error` (`notificacoes/`, `ifood/` — bem detalhado em `polling_worker.py`/`ifood_client.py`/`views.py` —, e uns warnings pontuais em `pdv/signals.py`, `eventos/signals.py`, `pedidos/apps.py`, `pedidos/views.py`); `clientes`, `fichas`, `relatorios`, `dashboard` não logam nada. `usuarios` agora grava eventos de segurança/negócio (login, CRUD, mudança de role/perms) em `auditoria.LogAuditoria` via `auditoria/utils.py::registrar()` — isso é **auditoria de negócio** ("quem fez o quê"), não logging operacional (`logger.info/warning/error`); a pendência de `LOGGING` dict/Sentry abaixo continua válida e é um conceito separado. Gunicorn (`arretado.service`) e o worker (`arretado-polling.service`) não redirecionam pra arquivo — tudo vai pro stdout/stderr, só acessível via `journalctl -u arretado`/`journalctl -u arretado-polling` na VPS; sem persistência em arquivo nem rotação. Considerar no futuro: `LOGGING` dict com `RotatingFileHandler`/`TimedRotatingFileHandler` e/ou integração com Sentry
+6. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
    ```
    ZAPI_INSTANCE_ID=3F44AD8FFA071145A7847A94F00847F6
    ZAPI_TOKEN=664FD7CD1788EFA5660A875F
@@ -295,6 +304,16 @@ GET                   /api/v1/eventos/agenda/
 GET  /api/v1/notificacoes/mensagens/
 POST /api/v1/notificacoes/mensagens/enviar/
 GET  /api/v1/notificacoes/mensagens/status-conexao/
+
+# Usuários
+GET/POST              /api/v1/usuarios/
+GET/PUT/PATCH/DELETE  /api/v1/usuarios/{id}/
+POST                  /api/v1/usuarios/login/           ← AllowAny — retorna dados do usuário + "token" (Usuario.auth_token)
+POST                  /api/v1/usuarios/logout/           ← autenticado — invalida o token no servidor
+POST                  /api/v1/usuarios/{id}/redefinir-senha/
+
+# Auditoria (restrito a role=admin)
+GET /api/v1/auditoria/logs/   ← query params: usuario, acao, data_inicio, data_fim
 
 # Catálogo / Fichas / Precificação
 GET/POST         /api/v1/fichas/materias-primas/
@@ -407,3 +426,7 @@ Infra já configurada em produção (não precisa recriar):
 - Não somar `Evento.valor_total` nem olhar status de entrega para calcular a receita de Eventos do dia no Dashboard — vem exclusivamente de `PagamentoEvento` pago com `data_pagamento` de hoje
 - Não criar nenhum model no app `dashboard/` — é um agregador só-leitura; qualquer novo dado exibido ali deve vir de um app de canal já existente
 - **Nunca rodar `npm run build`/`vite build` na VPS sem avisar antes** — o Nginx serve o frontend direto de `arretado-crm/dist/` (`root` no vhost), então qualquer build "de teste" já sobrescreve o que está em produção. Não existe build isolado nesse projeto; tratar todo `build` como deploy real
+- Não expor `Usuario.auth_token` em list/retrieve/update — só é devolvido explicitamente no payload de `/usuarios/login/`
+- Não criar `LogAuditoria` fora de `auditoria/utils.py::registrar()` — é o único ponto de escrita, sempre dentro de try/except (nunca pode derrubar login/CRUD)
+- Não checar `usuario.role == 'admin'` cru em views novas — usar `usuarios.permissions.IsAdminRole` (reusa a mesma regra em qualquer app)
+- Não estender `authentication_classes`/`permission_classes` globalmente em `config/settings.py` por causa da autenticação real — ela está restrita a `usuarios/` e `auditoria/`; os outros 9 apps continuam `AllowAny`/`CsrfExemptMixin` como antes

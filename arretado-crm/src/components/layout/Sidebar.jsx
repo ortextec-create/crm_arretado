@@ -46,6 +46,7 @@ const NAV = [
       { to: '/usuarios',        icon: 'shield-lock', label: 'Usuários' },
       { to: '/taxas-entrega',   icon: 'map-pin',     label: 'Taxas de Entrega' },
       { to: '/configuracoes',   icon: 'settings',    label: 'Configurações' },
+      { to: '/auditoria',       icon: 'history',     label: 'Log de Auditoria', adminOnly: true },
     ],
   },
 ]
@@ -56,8 +57,8 @@ export default function Sidebar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 
@@ -71,25 +72,29 @@ export default function Sidebar() {
       </div>
 
       <nav className={styles.nav}>
-        {NAV.map(({ section, items }) => (
-          <div key={section} className={styles.navSection}>
-            <span className={styles.sectionLabel}>{section}</span>
-            {items.map(({ to, icon, label, dot, sub }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === '/'}
-                className={({ isActive }) =>
-                  `${styles.navItem} ${isActive ? styles.active : ''} ${sub ? styles.navItemSub : ''}`
-                }
-              >
-                <i className={`ti ti-${icon}`} aria-hidden="true" />
-                {label}
-                {dot && <span className={styles.dot} />}
-              </NavLink>
-            ))}
-          </div>
-        ))}
+        {NAV.map(({ section, items }) => {
+          const visiveis = items.filter((item) => !item.adminOnly || user?.role === 'admin')
+          if (visiveis.length === 0) return null
+          return (
+            <div key={section} className={styles.navSection}>
+              <span className={styles.sectionLabel}>{section}</span>
+              {visiveis.map(({ to, icon, label, dot, sub }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  className={({ isActive }) =>
+                    `${styles.navItem} ${isActive ? styles.active : ''} ${sub ? styles.navItemSub : ''}`
+                  }
+                >
+                  <i className={`ti ti-${icon}`} aria-hidden="true" />
+                  {label}
+                  {dot && <span className={styles.dot} />}
+                </NavLink>
+              ))}
+            </div>
+          )
+        })}
       </nav>
 
       <div className={styles.footer}>

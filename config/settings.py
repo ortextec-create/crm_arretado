@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     'pdv',
     'eventos',
     'usuarios',
+    'auditoria',
     'notificacoes',
     'fichas',
     'relatorios',

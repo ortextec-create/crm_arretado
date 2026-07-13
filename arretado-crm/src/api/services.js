@@ -126,31 +126,44 @@ export const usuariosApi = {
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 // Conectado ao endpoint real: POST /api/v1/usuarios/login/
-// O backend valida email + senha (hash bcrypt), retorna os dados do usuário ou 401.
+// O backend valida email + senha (hash bcrypt) e retorna um token real
+// (Usuario.auth_token, validado por usuarios.authentication.TokenAuthentication),
+// não mais um valor derivado do id.
 
 export const authApi = {
   login: async (email, password) => {
     // Chama o endpoint real de autenticação
     const res = await api.post('/usuarios/login/', { email, password })
-    const user = res.data
+    const { token, ...user } = res.data
 
     // Persiste sessão no localStorage (mesmo padrão anterior)
     localStorage.setItem('auth_user', JSON.stringify(user))
-    // Token simples baseado no id — em produção substituir por JWT ou DRF Token
-    localStorage.setItem('auth_token', `user_${user.id}`)
+    localStorage.setItem('auth_token', token)
 
     return user
   },
 
-  logout: () => {
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('auth_user')
+  logout: async () => {
+    try {
+      await api.post('/usuarios/logout/')
+    } catch {
+      // mesmo se o backend falhar, a sessão local é limpa de qualquer forma
+    } finally {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_user')
+    }
   },
 
   me: () => {
     const raw = localStorage.getItem('auth_user')
     return raw ? JSON.parse(raw) : null
   },
+}
+
+// ─── AUDITORIA (restrito a role=admin) ───────────────────────────────────────
+
+export const auditoriaApi = {
+  listar: (params = {}) => api.get('/auditoria/logs/', { params }),
 }
 
 // ─── NOTIFICAÇÕES WHATSAPP ────────────────────────────────────────────────────

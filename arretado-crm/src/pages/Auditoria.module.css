@@ -1,0 +1,144 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--fundo);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 26px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 20px;
+  color: var(--texto);
+  margin: 0 0 2px;
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.filtros {
+  display: flex;
+  gap: 10px;
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+  background: var(--fundo);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.tableWrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 26px;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 200px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--surface);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+.table th {
+  text-align: left;
+  padding: 11px 14px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--fundo);
+}
+
+.table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--texto);
+  vertical-align: top;
+}
+
+.table tr:last-child td { border-bottom: none; }
+.table tbody tr:hover td { background: var(--hover); }
+
+.data { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+.acaoBadge {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pages {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.pageBtn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 7px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pageBtn:hover { border-color: var(--caramelo); color: var(--texto); }
+
+.pageBtnActive {
+  background: color-mix(in srgb, var(--caramelo) 15%, transparent);
+  color: var(--caramelo);
+  border-color: var(--caramelo);
+  font-weight: 600;
+}

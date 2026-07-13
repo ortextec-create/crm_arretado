@@ -1,5 +1,12 @@
+import secrets
+
 from django.db import models
 from django.contrib.auth.hashers import make_password, check_password as django_check_password
+
+
+def gerar_token():
+    """Token de sessão — 64 chars hex (256 bits), regenerado a cada login."""
+    return secrets.token_hex(32)
 
 
 ROLE_CHOICES = [
@@ -38,6 +45,9 @@ class Usuario(models.Model):
     perms      = models.JSONField('Permissões', default=dict)
     ativo      = models.BooleanField('Ativo', default=True)
     last_login = models.DateTimeField('Último acesso', null=True, blank=True)
+    auth_token = models.CharField(
+        'Token de sessão', max_length=64, unique=True, null=True, blank=True, editable=False,
+    )
     criado_em  = models.DateTimeField('Criado em', auto_now_add=True)
     atualizado_em = models.DateTimeField('Atualizado em', auto_now=True)
 
@@ -55,6 +65,15 @@ class Usuario(models.Model):
 
     def check_password(self, raw_password):
         return django_check_password(raw_password, self.password)
+
+    # Compatibilidade com DRF (Usuario não herda de AbstractBaseUser)
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
 
     def save(self, *args, **kwargs):
         # Garante que perms sempre tenha todas as chaves do perfil

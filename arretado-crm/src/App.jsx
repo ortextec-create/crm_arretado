@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import AppLayout from './components/layout/AppLayout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -22,6 +23,7 @@ import Catalogo from './pages/Catalogo'
 import FichasTecnicas from './pages/FichasTecnicas'
 import CentralPrecos from './pages/CentralPrecos'
 import Relatorios from './pages/Relatorios'
+import Auditoria from './pages/Auditoria'
 
 
 
@@ -66,6 +68,7 @@ export default function App() {
             <Route path="fichas-tecnicas" element={<FichasTecnicas />} />
             <Route path="central-precos" element={<CentralPrecos />} />
             <Route path="relatorios/ifood" element={<Relatorios />} />
+            <Route path="auditoria" element={<AdminRoute><Auditoria /></AdminRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
