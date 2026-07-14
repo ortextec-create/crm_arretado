@@ -59,6 +59,7 @@ class EventoListSerializer(serializers.ModelSerializer):
     saldo_restante       = serializers.ReadOnlyField()
     nome_cliente_display = serializers.ReadOnlyField()
     telefone_display     = serializers.ReadOnlyField()
+    ultima_modificacao   = serializers.SerializerMethodField()
 
     class Meta:
         model  = Evento
@@ -74,7 +75,7 @@ class EventoListSerializer(serializers.ModelSerializer):
             'subtotal', 'desconto', 'valor_total', 'sinal_pago', 'saldo_restante',
             'pode_confirmar', 'pode_iniciar_producao', 'pode_marcar_pronto',
             'pode_entregar', 'pode_cancelar',
-            'criado_em', 'atualizado_em',
+            'criado_em', 'atualizado_em', 'ultima_modificacao',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -82,6 +83,9 @@ class EventoListSerializer(serializers.ModelSerializer):
 
     def get_local_nome(self, obj):
         return obj.local.nome if obj.local else None
+
+    def get_ultima_modificacao(self, obj):
+        return (self.context.get('ultima_modificacao') or {}).get(obj.id)
 
 
 class PagamentoEventoSerializer(serializers.ModelSerializer):
@@ -262,6 +266,7 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
     cliente_nome_crm     = serializers.SerializerMethodField()
     evento_numero        = serializers.SerializerMethodField()
     local_nome           = serializers.SerializerMethodField()
+    ultima_modificacao   = serializers.SerializerMethodField()
 
     class Meta:
         model  = Orcamento
@@ -278,7 +283,7 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
             'pode_enviar', 'pode_aprovar', 'pode_recusar',
             'pode_converter', 'pode_cancelar', 'pode_restaurar',
             'evento', 'evento_numero',
-            'criado_em', 'atualizado_em',
+            'criado_em', 'atualizado_em', 'ultima_modificacao',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -289,6 +294,9 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
 
     def get_local_nome(self, obj):
         return obj.local.nome if obj.local else None
+
+    def get_ultima_modificacao(self, obj):
+        return (self.context.get('ultima_modificacao') or {}).get(obj.id)
 
 
 class OrcamentoDetailSerializer(OrcamentoListSerializer):

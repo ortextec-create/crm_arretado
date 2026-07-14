@@ -250,12 +250,14 @@ export default function Orcamentos() {
                 <th>Validade</th>
                 <th>Total</th>
                 <th>Status</th>
+                <th>Última modificação</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {orcamentos.map(orc => {
                 const sc = STATUS_CONFIG[orc.status] || {}
+                const um = orc.ultima_modificacao
                 return (
                   <tr key={orc.id} className={styles.row} onClick={() => openDetalhe(orc)}>
                     <td className={styles.numero}>{orc.numero}</td>
@@ -268,6 +270,16 @@ export default function Orcamentos() {
                       <span className={styles.badge} style={{ background: sc.color + '22', color: sc.color }}>
                         {sc.label || orc.status}
                       </span>
+                    </td>
+                    <td>
+                      {um ? (
+                        <div className={styles.ultimaMod}>
+                          <span className={styles.ultimaModNome}>{um.usuario || 'Sistema'}</span>
+                          <span className={styles.ultimaModData}>{dataFmt(um.data)}</span>
+                        </div>
+                      ) : (
+                        <span className={styles.ultimaModData}>—</span>
+                      )}
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       {orc.status === 'convertido' && orc.evento_numero && (

@@ -17,7 +17,7 @@ from .models import (
 from notificacoes.servico import notificar, _fone_pedido
 from usuarios.authentication import TokenAuthentication
 from auditoria.models import LogAuditoria
-from auditoria.utils import registrar, ator_ou_none
+from auditoria.utils import registrar, ator_ou_none, ultima_modificacao_por_id
 from auditoria.mixins import (
     AuditoriaCreateMixin, AuditoriaDestroyMixin, AuditoriaStatusMixin, AuditoriaUpdateMixin,
 )
@@ -157,6 +157,17 @@ class EventoViewSet(
             qs = qs.filter(data_evento__gte=timezone.localtime(timezone.now()).date())
 
         return qs
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        alvo = page if page is not None else queryset
+        contexto = self.get_serializer_context()
+        contexto['ultima_modificacao'] = ultima_modificacao_por_id('Evento', [obj.id for obj in alvo])
+        serializer = self.get_serializer(alvo, many=True, context=contexto)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
     # ── Ações de status ───────────────────────────────────────────────────
 
@@ -518,6 +529,17 @@ class OrcamentoViewSet(
             qs = qs.filter(tipo_evento=tipo_evento)
 
         return qs
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        alvo = page if page is not None else queryset
+        contexto = self.get_serializer_context()
+        contexto['ultima_modificacao'] = ultima_modificacao_por_id('Orcamento', [obj.id for obj in alvo])
+        serializer = self.get_serializer(alvo, many=True, context=contexto)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
     # ── Ações de status ───────────────────────────────────────────────────
 

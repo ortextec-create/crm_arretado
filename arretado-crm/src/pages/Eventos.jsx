@@ -89,6 +89,7 @@ export default function Eventos() {
   // Modais
   const [showNovo,    setShowNovo]    = useState(false)
   const [showDetalhe, setShowDetalhe] = useState(false)
+  const [showEditar,  setShowEditar]  = useState(false)
   const [eventoAtivo, setEventoAtivo] = useState(null)
 
   // ── Carregamento ──────────────────────────────────────────────────────────
@@ -273,10 +274,13 @@ export default function Eventos() {
                     <th>Total</th>
                     <th>Saldo</th>
                     <th>Status</th>
+                    <th>Última modificação</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {eventos.map(ev => (
+                  {eventos.map(ev => {
+                    const um = ev.ultima_modificacao
+                    return (
                     <tr key={ev.id} className={styles.tableRow} onClick={() => abrirDetalhe(ev.id)}>
                       <td className={styles.numero}>{ev.numero}</td>
                       <td>
@@ -298,8 +302,19 @@ export default function Eventos() {
                         {Number(ev.saldo_restante) > 0 ? fmt(ev.saldo_restante) : '✓ Quitado'}
                       </td>
                       <td><StatusBadge status={ev.status} /></td>
+                      <td>
+                        {um ? (
+                          <div className={styles.ultimaMod}>
+                            <span className={styles.ultimaModNome}>{um.usuario || 'Sistema'}</span>
+                            <span className={styles.ultimaModData}>{dataFmt(um.data)}</span>
+                          </div>
+                        ) : (
+                          <span className={styles.ultimaModData}>—</span>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -341,6 +356,20 @@ export default function Eventos() {
             loadEventos()
           }}
           onToast={setToast}
+          onEditar={() => setShowEditar(true)}
+        />
+      )}
+
+      {showEditar && eventoAtivo && (
+        <ModalEditarEvento
+          evento={eventoAtivo}
+          onClose={() => setShowEditar(false)}
+          onSalvo={(updated) => {
+            setEventoAtivo(updated)
+            setShowEditar(false)
+            loadEventos()
+            setToast({ message: 'Evento atualizado com sucesso!', type: 'success' })
+          }}
         />
       )}
 
@@ -907,7 +936,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
-function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
+function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar }) {
   const [abaAtiva,    setAbaAtiva]    = useState('itens')
   const [addingItem,  setAddingItem]  = useState(false)
   const [produtos,    setProdutos]    = useState([])
@@ -1141,6 +1170,9 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
 
           {/* Ações de status */}
           <div className={styles.acoesWrap}>
+            <Btn variant="secondary" onClick={onEditar} title="Editar dados do evento">
+              <i className="ti ti-edit" /> Editar
+            </Btn>
             {ACOES.filter(a => a.show).map(a => (
               <Btn
                 key={a.key}
@@ -1442,6 +1474,241 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast }) {
           <img className={styles.lightboxImg} src={lightboxImg} alt="Imagem ampliada" onClick={e => e.stopPropagation()} />
         </div>
       )}
+    </Modal>
+  )
+}
+
+// ─── Modal: Editar Evento ─────────────────────────────────────────────────────
+
+function ModalEditarEvento({ evento, onClose, onSalvo }) {
+  const [form, setForm] = useState({
+    cliente_nome:     evento.cliente ? '' : (evento.cliente_nome || ''),
+    cliente_telefone: evento.cliente ? '' : (evento.cliente_telefone || ''),
+    tipo_evento:      evento.tipo_evento || '',
+    data_evento:      evento.data_evento || '',
+    hora_evento:      evento.hora_evento ? evento.hora_evento.slice(0, 5) : '',
+    tipo_entrega:     evento.tipo_entrega || 'retirada_loja',
+    local:            evento.local || '',
+    endereco_avulso:  evento.endereco_avulso || '',
+    bairro_entrega:   evento.bairro_entrega || '',
+    taxa_entrega:     String(evento.taxa_entrega || '0'),
+    desconto:         String(evento.desconto || '0'),
+    observacoes:      evento.observacoes || '',
+  })
+  const [locais,      setLocais]      = useState([])
+  const [taxasBairro, setTaxasBairro] = useState([])
+  const [saving,      setSaving]      = useState(false)
+  const [erro,        setErro]        = useState('')
+
+  // Busca de cliente CRM
+  const [buscaCliente,    setBuscaCliente]    = useState('')
+  const [clienteOptions,  setClienteOptions]  = useState([])
+  const [clienteSel,      setClienteSel]      = useState(
+    evento.cliente
+      ? { id: evento.cliente, nome: evento.cliente_nome_crm || evento.nome_cliente_display, telefone_principal: evento.telefone_display }
+      : null
+  )
+  const [buscandoCliente, setBuscandoCliente] = useState(false)
+
+  useEffect(() => {
+    locaisEventoApi.list({ ativo: 'true' }).then(r => setLocais(r.data.results ?? r.data)).catch(() => {})
+    taxasEntregaApi.list({ ativo: true }).then(r => setTaxasBairro(r.data.results ?? r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!buscaCliente || buscaCliente.length < 2) { setClienteOptions([]); return }
+    setBuscandoCliente(true)
+    const t = setTimeout(async () => {
+      try {
+        const r = await clientesApi.list({ search: buscaCliente, status: 'ativo' })
+        setClienteOptions(r.data.results ?? r.data)
+      } finally { setBuscandoCliente(false) }
+    }, 350)
+    return () => clearTimeout(t)
+  }, [buscaCliente])
+
+  function set(field, value) { setForm(f => ({ ...f, [field]: value })) }
+
+  function handleClienteSel(c) {
+    setClienteSel(c)
+    set('cliente_nome', '')
+    set('cliente_telefone', '')
+    setClienteOptions([])
+    setBuscaCliente('')
+  }
+
+  function handleClienteClear() {
+    setClienteSel(null)
+  }
+
+  function selecionarBairroAvulso(bairro) {
+    const t = taxasBairro.find(x => x.bairro === bairro)
+    setForm(f => ({ ...f, bairro_entrega: bairro, taxa_entrega: t ? String(t.taxa) : f.taxa_entrega }))
+  }
+
+  async function handleSalvar() {
+    if (!clienteSel && !form.cliente_nome) { setErro('Informe o cliente ou nome do cliente.'); return }
+    if (!form.data_evento) { setErro('Informe a data do evento.'); return }
+    setSaving(true); setErro('')
+    try {
+      const payload = {
+        cliente:          clienteSel ? clienteSel.id : null,
+        cliente_nome:     clienteSel ? '' : form.cliente_nome,
+        cliente_telefone: clienteSel ? '' : form.cliente_telefone,
+        tipo_evento:      form.tipo_evento || '',
+        data_evento:      form.data_evento,
+        hora_evento:      form.hora_evento || null,
+        tipo_entrega:     form.tipo_entrega,
+        local:            form.tipo_entrega === 'entrega_local' && form.local ? Number(form.local) : null,
+        endereco_avulso:  form.tipo_entrega === 'entrega_local' && !form.local ? form.endereco_avulso : '',
+        bairro_entrega:   form.tipo_entrega === 'entrega_local' ? form.bairro_entrega : '',
+        taxa_entrega:     form.tipo_entrega === 'entrega_local' ? (parseFloat(form.taxa_entrega) || 0) : 0,
+        desconto:         parseFloat(form.desconto) || 0,
+        observacoes:      form.observacoes,
+      }
+      const res = await eventosApi.update(evento.id, payload)
+      onSalvo(res.data)
+    } catch (e) {
+      const errs = e?.response?.data
+      setErro(typeof errs === 'string' ? errs : (errs?.detail || JSON.stringify(errs)))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open title={`Editar Evento ${evento.numero}`} onClose={onClose} wide>
+      <AtorAcao acao="Editando" />
+      <div className={styles.formGrid}>
+        {/* Cliente */}
+        <div className={`${styles.formGroup} ${styles.fullRow}`}>
+          <label>Cliente do CRM</label>
+          {clienteSel ? (
+            <div className={styles.clienteSelecionado}>
+              <span>{clienteSel.nome}</span>
+              {clienteSel.telefone_principal && <span>{clienteSel.telefone_principal}</span>}
+              <button onClick={handleClienteClear}><i className="ti ti-x" /></button>
+            </div>
+          ) : (
+            <div className={styles.clienteBusca}>
+              <input
+                placeholder="Digite o nome ou telefone para buscar…"
+                value={buscaCliente}
+                onChange={e => setBuscaCliente(e.target.value)}
+              />
+              {buscandoCliente && <Spinner size={14} />}
+              {clienteOptions.length > 0 && (
+                <div className={styles.clienteDropdown}>
+                  {clienteOptions.map(c => (
+                    <button key={c.id} onClick={() => handleClienteSel(c)}>
+                      <strong>{c.nome}</strong>
+                      {c.telefone_principal && <span>{c.telefone_principal}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {!clienteSel && (
+          <>
+            <div className={styles.formGroup}>
+              <label>Nome do cliente *</label>
+              <input value={form.cliente_nome} onChange={e => set('cliente_nome', e.target.value)} placeholder="Nome completo" />
+            </div>
+            <div className={styles.formGroup}>
+              <label>Telefone</label>
+              <input value={form.cliente_telefone} onChange={e => set('cliente_telefone', e.target.value)} placeholder="(86) 9 0000-0000" />
+            </div>
+          </>
+        )}
+
+        {/* Tipo evento */}
+        <div className={styles.formGroup}>
+          <label>Tipo de evento</label>
+          <select value={form.tipo_evento} onChange={e => set('tipo_evento', e.target.value)}>
+            {Object.entries(TIPO_EVENTO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+
+        {/* Datas */}
+        <div className={styles.formGroup}>
+          <label>Data do evento *</label>
+          <input type="date" value={form.data_evento} onChange={e => set('data_evento', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Hora do evento</label>
+          <input type="time" value={form.hora_evento} onChange={e => set('hora_evento', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Desconto (R$)</label>
+          <input type="number" min="0" step="0.01" value={form.desconto} onChange={e => set('desconto', e.target.value)} />
+        </div>
+
+        {/* Entrega */}
+        <div className={`${styles.formGroup} ${styles.fullRow}`}>
+          <label>Tipo de entrega</label>
+          <div className={styles.radioGroup}>
+            <label className={`${styles.radioCard} ${form.tipo_entrega === 'retirada_loja' ? styles.radioCardActive : ''}`}>
+              <input type="radio" value="retirada_loja" checked={form.tipo_entrega === 'retirada_loja'} onChange={e => set('tipo_entrega', e.target.value)} />
+              <i className="ti ti-building-store" /> Retirada na loja
+            </label>
+            <label className={`${styles.radioCard} ${form.tipo_entrega === 'entrega_local' ? styles.radioCardActive : ''}`}>
+              <input type="radio" value="entrega_local" checked={form.tipo_entrega === 'entrega_local'} onChange={e => set('tipo_entrega', e.target.value)} />
+              <i className="ti ti-truck-delivery" /> Entrega no local
+            </label>
+          </div>
+        </div>
+
+        {form.tipo_entrega === 'entrega_local' && (
+          <>
+            <div className={`${styles.formGroup} ${styles.fullRow}`}>
+              <label>Local cadastrado</label>
+              <select value={form.local} onChange={e => set('local', e.target.value)}>
+                <option value="">— Endereço avulso —</option>
+                {locais.map(l => <option key={l.id} value={l.id}>{l.nome} — {l.bairro}</option>)}
+              </select>
+            </div>
+            {!form.local && (
+              <>
+                <div className={`${styles.formGroup} ${styles.fullRow}`}>
+                  <label>Endereço do local</label>
+                  <input value={form.endereco_avulso} onChange={e => set('endereco_avulso', e.target.value)} placeholder="Rua, número, bairro…" />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Bairro (para calcular a taxa)</label>
+                  <select value={form.bairro_entrega} onChange={e => selecionarBairroAvulso(e.target.value)}>
+                    <option value="">Selecione o bairro…</option>
+                    {taxasBairro.map(t => (
+                      <option key={t.id} value={t.bairro}>{t.bairro} — R$ {Number(t.taxa).toFixed(2)}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            <div className={styles.formGroup}>
+              <label>Taxa de entrega (R$)</label>
+              <input type="number" min="0" step="0.01" value={form.taxa_entrega} onChange={e => set('taxa_entrega', e.target.value)} />
+            </div>
+          </>
+        )}
+
+        {/* Observações */}
+        <div className={`${styles.formGroup} ${styles.fullRow}`}>
+          <label>Observações</label>
+          <textarea rows={2} value={form.observacoes} onChange={e => set('observacoes', e.target.value)} />
+        </div>
+      </div>
+
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={handleSalvar} disabled={saving}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-check" />}
+          {saving ? 'Salvando…' : 'Salvar alterações'}
+        </Btn>
+      </div>
     </Modal>
   )
 }
