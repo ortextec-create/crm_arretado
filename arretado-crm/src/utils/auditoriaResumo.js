@@ -22,6 +22,7 @@ export const ACAO_LABEL = {
   config_contrato_alterada: 'Configuração de contrato alterada',
   config_entrega_alterada: 'Configuração de entrega alterada',
   config_whatsapp_alterada: 'Configuração de WhatsApp alterada',
+  config_alerta_evento_alterada: 'Configuração de alertas de evento alterada',
   registro_excluido: 'Registro excluído',
   registro_criado: 'Registro criado',
   registro_atualizado: 'Registro atualizado',
@@ -50,6 +51,7 @@ export const ACAO_COR = {
   config_contrato_alterada: 'var(--caramelo)',
   config_entrega_alterada: 'var(--caramelo)',
   config_whatsapp_alterada: 'var(--caramelo)',
+  config_alerta_evento_alterada: 'var(--caramelo)',
   registro_excluido: '#ef4444',
   registro_criado: 'var(--verde)',
   registro_atualizado: 'var(--caramelo)',
@@ -95,6 +97,7 @@ export function resumo(log) {
     case 'config_contrato_alterada':
     case 'config_entrega_alterada':
     case 'config_whatsapp_alterada':
+    case 'config_alerta_evento_alterada':
       return Object.keys(d.depois ?? {}).join(', ') || '—'
     case 'registro_excluido':
       return `${d.model ?? '—'} #${d.id ?? '—'} — ${d.descricao ?? ''}`

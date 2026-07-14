@@ -52,6 +52,10 @@ arretado/                        ← raiz Django
 ├── eventos/                     ← Fase 4: gestão de eventos/encomendas + orçamentos + contratos
 │   ├── models.py                ← Orcamento, ItemOrcamento, Evento, ItemEvento, LocalEvento,
 │   │                               Contrato (snapshot, CTR-0001...), ConfiguracaoContrato (singleton — ver Contrato.md),
+│   │                               ConfiguracaoAlertaEvento (singleton, janelas/repetição dos 2 alertas de Evento),
+│   │                               TelefoneAlertaEvento (telefones internos da equipe que recebem os alertas),
+│   │                               AlertaEventoEnviado (rastreia último envio por evento+tipo, controla repetição —
+│   │                               ver "Alertas de Evento" abaixo),
 │   │                               ImagemInspiracao (galeria de imagens de referência do cliente, FK → Orcamento),
 │   │                               PagamentoEvento (parcelas de pagamento do Evento, FK → Evento — Evento.sinal_pago
 │   │                               é sempre derivado da soma dos pagamentos com status='pago', via
@@ -72,10 +76,15 @@ arretado/                        ← raiz Django
 │   ├── pdf_orcamento.py          ← gera PDF (ReportLab, canvas cru, 1 página) — inclui linha "Taxa de entrega" quando houver
 │   ├── pdf_contrato.py           ← gera PDF do contrato (ReportLab Platypus, multi-página) — texto e cláusulas vêm de
 │   │                               ConfiguracaoContrato.get() + snapshot do Contrato, nunca hardcoded
+│   ├── management/commands/alertar_eventos.py ← cron diário: alerta a equipe (WhatsApp, via telefones de
+│   │                               TelefoneAlertaEvento) sobre Evento com saldo pendente perto da data (janela/repetição
+│   │                               de ConfiguracaoAlertaEvento.get()) e sobre entrega (tipo_entrega=entrega_local) se
+│   │                               aproximando — ver "Alertas de Evento" abaixo
 │   └── views.py                 ← OrcamentoViewSet (converter-em-evento, gerar-contrato, imagens/, itens/{id}/editar/,
 │                                    historico/, update() restrito a status rascunho/enviado) + EventoViewSet
 │                                    (pagamentos/, pagamentos/{id}/remover/, historico/) +
-│                                    ContratoViewSet (só leitura + pdf/enviar-whatsapp) + ConfiguracaoContratoViewSet
+│                                    ContratoViewSet (só leitura + pdf/enviar-whatsapp) + ConfiguracaoContratoViewSet +
+│                                    ConfiguracaoAlertaEventoViewSet + TelefoneAlertaEventoViewSet
 ├── usuarios/                    ← Gestão de usuários + RBAC + autenticação real por token
 │   ├── models.py                ← Usuario (auth_token, gerar_token(), is_authenticated/is_anonymous — compatibilidade DRF)
 │   ├── authentication.py        ← TokenAuthentication (lê "Authorization: Token <valor>", popula request.user)
@@ -95,7 +104,8 @@ arretado/                        ← raiz Django
 │   └── views.py                 ← LogAuditoriaViewSet (só leitura, restrito a IsAdminRole) ·
 │                                    PresencaHeartbeatView (APIView, POST presenca/ — heartbeat + devolve quem mais está ativo)
 ├── notificacoes/                ← WhatsApp via Z-API
-│   ├── models.py                ← HistoricoMensagem · ConfiguracaoWhatsApp (singleton, inclui validade_orcamento_dias)
+│   ├── models.py                ← HistoricoMensagem (tipo inclui alerta_pagamento/alerta_entrega, ver eventos/ →
+│   │                               "Alertas de Evento") · ConfiguracaoWhatsApp (singleton, inclui validade_orcamento_dias)
 │   ├── zapi_client.py           ← enviar_texto(), enviar_documento(), status_conexao() · resolve número canônico via phone-exists · lança ZAPIError
 │   ├── servico.py               ← notificar() · notificar_documento() — nunca chamar zapi_client diretamente fora daqui
 │   ├── views.py                 ← MensagemViewSet (listar, enviar, status-conexao)
@@ -112,6 +122,8 @@ arretado/                        ← raiz Django
 ├── dashboard/                    ← Dashboard multi-canal (só leitura, sem models próprios)
 │   ├── views.py                 ← DashboardResumoView (APIView, GET) — agrega PedidoUnificado (iFood/PDV)
 │   │                               + PagamentoEvento/Evento (eventos) num único JSON, ver regras abaixo
+│   │                               (inclui `alertas`: mesma janela de eventos.ConfiguracaoAlertaEvento, sem
+│   │                               depender de AlertaEventoEnviado — mostra "o que está na janela agora")
 │   └── urls.py                  ← resumo/
 └── manage.py
 
@@ -121,6 +133,7 @@ arretado-crm/                    ← raiz React
     │   ├── client.js            ← axios base
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
     │                               eventosApi, locaisEventoApi, orcamentosApi, contratosApi, configContratoApi,
+    │                               alertasEventoApi (config + telefones.list/create/remove — ver "Alertas de Evento"),
     │                               notificacoesApi, usuariosApi, authApi, fichasApi,
     │                               taxasEntregaApi, configEntregaApi, relatoriosApi, dashboardApi, auditoriaApi,
     │                               presencaApi (heartbeat de presença — ver Padrões Obrigatórios)
@@ -182,8 +195,9 @@ arretado-crm/                    ← raiz React
 - **`pdv.ItemKit`** não pode conter kit-de-kit (`componente.tipo == 'kit'` é rejeitado tanto no `clean()` do model quanto no `ItemKitSerializer.validate_componente`) nem um kit se auto-referenciando
 - **`pdv.FaixaPreco`** guarda preço por quantidade mínima e canal opcional (`pdv`/`ifood`/`eventos`/vazio=todos). `Produto.preco_para(quantidade, canal)` resolve a prioridade: faixa específica do canal > faixa geral (`canal=null`) > `preco` base. Nunca hardcodar desconto por quantidade no frontend — sempre resolver via essa property/endpoint
 - **`pdv.DadosFiscaisProduto`** é opcional (`OneToOneField` de `Produto`, aninhado e gravável via `ProdutoSerializer.dados_fiscais` com `update_or_create`) e prepara o cadastro para NFC-e futura — ainda não é consumido por nenhuma integração fiscal real (ver pendência de NFC-e)
-- **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`. `PATCH /eventos/configuracao-contrato/1/` exige login e audita `config_contrato_alterada` (GET continua `AllowAny`)
+- **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/endereço/Instagram/telefone/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). `instagram_contratada`/`telefone_contratada` aparecem no rodapé do PDF (`pdf_contrato.py::_header_footer`), abaixo da linha razão social/CNPJ. Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`. `PATCH /eventos/configuracao-contrato/1/` exige login e audita `config_contrato_alterada` (GET continua `AllowAny`)
 - **`eventos.Contrato`** é um snapshot gravado no momento da emissão (mesma filosofia de `ItemOrcamento`/`SnapshotPrecos`) — `valor_total`/`percentual_sinal`/`valor_sinal`/`data_quitacao` nunca são recalculados ao reabrir/reimprimir um contrato já emitido
+- **Alertas de Evento** (`eventos.ConfiguracaoAlertaEvento`, singleton via `.get()`) — dois alertas de cron diário (`python manage.py alertar_eventos`), notificando só telefones internos da equipe cadastrados em `eventos.TelefoneAlertaEvento` (nunca o cliente): (1) **pagamento pendente**, dispara a partir de `dias_antes_pagamento` dias antes do `data_evento` enquanto `saldo_restante > 0` (`Evento.exclude(status__in=['cancelado','entregue']).annotate(saldo=F('valor_total')-F('sinal_pago')).filter(saldo__gt=0, ...)` — usa `F()` em vez da property Python `saldo_restante`, que não funciona em queryset); (2) **aviso de entrega**, a partir de `dias_antes_entrega` dias antes, só para `tipo_entrega='entrega_local'`. Ambos repetem a cada `repetir_pagamento_dias`/`repetir_entrega_dias` configurável, controlado por `eventos.AlertaEventoEnviado` (1 registro por envio de `(evento, tipo)`, não reaproveita `notificacoes.HistoricoMensagem` pra isso porque `HistoricoMensagem.cliente` é FK pra `Cliente`, não pra `Evento`, e aqui o destinatário é telefone da equipe). `PATCH /eventos/configuracao-alertas/1/` exige login e audita `config_alerta_evento_alterada` (GET continua `AllowAny`); `DELETE /eventos/telefones-alerta/{id}/` exige login e audita `registro_excluido` (mesmo padrão do `TaxaEntregaBairro` — só o DELETE exige login, list/create/update continuam `AllowAny`). O texto das mensagens é fixo no código (não é campo configurável como `mensagem_aniversario`/`mensagem_reengajamento` de `ConfiguracaoWhatsApp`) — só dias/intervalo/telefones são configuráveis, por escolha consciente de escopo. `dashboard.DashboardResumoView` expõe a mesma janela em `resumo['alertas']` (sem olhar `AlertaEventoEnviado` — mostra "o que está na janela agora", independente de já ter mandado WhatsApp)
 - **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só é permitida com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente preenchidos (podem estar vazios no cadastro normal — são exigidos só neste momento) — ver `Contrato.md`. Exige login (`IsAuthenticated`, único override de `get_permissions()` no `OrcamentoViewSet` — resto continua `AllowAny`) e grava `contrato_emitido` em `auditoria.LogAuditoria`. `ContratoViewSet.enviar_whatsapp` também exige login (`contrato_enviado` no log) — `list`/`retrieve`/`pdf` continuam `AllowAny`, sem mudança
 - **`eventos.ImagemInspiracao`** é a galeria de imagens de referência (uso interno da equipe, nunca entra no PDF/WhatsApp do orçamento) anexada ao `Orcamento` inteiro (não por item). `Evento` **não duplica** essas imagens — `EventoDetailSerializer.imagens_inspiracao` é um `SerializerMethodField` que lê direto de `evento.orcamento_origem.imagens_inspiracao` (mesma filosofia de nunca duplicar o que a relação já entrega, como o Contrato faz com os itens do Orçamento)
 - **`MEDIA_URL`/`MEDIA_ROOT`** estão configurados em `config/settings.py` (`/media/`, `BASE_DIR / 'media'`) desde a feature de Imagens de Inspiração — é o único `ImageField` do projeto de fato exercitado em produção. Em prod, o Nginx tem um `location /media/ { alias .../media/; }` próprio (não é servido pelo Django/Gunicorn) — qualquer novo `ImageField`/`FileField` já pode reaproveitar essa infra, não precisa recriar
@@ -244,6 +258,7 @@ arretado-crm/                    ← raiz React
 | Dashboard Multi-Canal | App `dashboard/` (só leitura) — vendas do dia e histórico recente consolidado de iFood/PDV/Eventos (+ espaço reservado pra Anota AI), gráfico 7 dias, a receber, fila operacional, próximos eventos, ticket médio | ✅ Concluída |
 | Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`) + app `auditoria/` cobrindo os 6 itens da lista priorizada: usuários (login/CRUD/permissões), pagamentos de evento, contrato, Central de Preços, configurações singleton (`ConfiguracaoContrato`/`ConfiguracaoEntrega`/`ConfiguracaoWhatsApp` — esta última também exige login no GET, já que expõe credencial Z-API) e exclusões em geral (`AuditoriaDestroyMixin` genérico, aplicado em `Cliente`/`Tag`/`Endereco`/`Produto`/`CategoriaProduto`/`TaxaEntregaBairro`/`PedidoPDV`/`Evento`/`Orcamento`/`LocalEvento`/`MateriaPrima`/`FichaTecnica` e os respectivos `remover-item`; `ConfiguracaoIFood` teve o DELETE bloqueado de vez, não só auditado) — tela restrita a `role=admin` | ✅ Concluída (lista completa) |
 | Auditoria de Criação/Edição/Status + Presença + Histórico no Modal | Extensão da auditoria de Orçamento/Evento: criação, edição (PATCH/PUT), mudança de status e adicionar/editar item agora também são auditados (`AuditoriaCreateMixin`/`AuditoriaUpdateMixin`/`AuditoriaStatusMixin`), exigindo login nessas ações (antes eram `AllowAny`). Presença via heartbeat REST (`auditoria.PresencaEdicao`, `PresencaAtiva.jsx`, polling a cada 15s — não WebSocket) mostrando quem mais está vendo o registro agora. Aba/seção "Histórico" dentro do próprio modal de detalhe (`historico/` em `OrcamentoViewSet`/`EventoViewSet`, `IsAuthenticated` — diferente da tela de Auditoria geral, que é restrita a admin) | ✅ Concluída |
+| Alertas de Evento (pagamento pendente / entrega próxima) | Cron diário (`alertar_eventos`) alerta telefones internos da equipe via WhatsApp sobre Evento com saldo pendente perto da data (configurável) e sobre entrega se aproximando (configurável, repete a cada X dias) — `ConfiguracaoAlertaEvento`/`TelefoneAlertaEvento`/`AlertaEventoEnviado`, seção "Alertas de Evento" em Configurações, card "Alertas" no Dashboard | ✅ Concluída |
 
 ---
 
@@ -329,6 +344,11 @@ GET           /api/v1/eventos/contratos/{id}/pdf/
 POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/    ← exige login · audita contrato_enviado
 GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton · PATCH exige login · audita config_contrato_alterada
 
+# Alertas de Evento (ver "Alertas de Evento" em Padrões Obrigatórios)
+GET/PATCH             /api/v1/eventos/configuracao-alertas/1/       ← singleton · PATCH exige login · audita config_alerta_evento_alterada
+GET/POST              /api/v1/eventos/telefones-alerta/             ← telefones internos da equipe (não é o cliente)
+GET/PATCH/DELETE      /api/v1/eventos/telefones-alerta/{id}/        ← DELETE exige login · audita registro_excluido
+
 # Eventos
 GET/POST              /api/v1/eventos/                                  ← POST exige login · aceita "sinal_pago" opcional (vira 1º PagamentoEvento) · audita registro_criado
 GET/PUT/PATCH/DELETE  /api/v1/eventos/{id}/                              ← PUT/PATCH exigem login, audita registro_atualizado (só campos alterados) · DELETE exige login · audita registro_excluido
@@ -407,7 +427,13 @@ python manage.py ifood_polling
 python manage.py lembrar_aniversarios
 
 # Reengajamento WhatsApp (cron diário — ex: 10:00)
-python manage.py avisar_sem_compras --dias 30
+python manage.py avisar_sem_compras
+# dias sem compra vem só de ConfiguracaoWhatsApp.get().dias_sem_compra (painel) — não aceita flag --dias
+
+# Alertas de Evento — pagamento pendente / entrega próxima (cron diário — ex: 08:00)
+python manage.py alertar_eventos
+# janelas/repetição vêm de ConfiguracaoAlertaEvento.get() (painel) · precisa de ao menos 1
+# eventos.TelefoneAlertaEvento ativo, senão não notifica ninguém
 
 # Importar planilha de precificação
 python manage.py importar_planilha --arquivo PLANILHA_DE_PRECIFICACAO_ARRETADO.xlsx
@@ -471,6 +497,8 @@ Infra já configurada em produção (não precisa recriar):
 - Não hardcodar desconto por quantidade/canal no frontend — sempre resolver via `Produto.preco_para()` (endpoint `/pdv/produtos/{id}/preco/`) em vez de recalcular a lógica de faixas no cliente
 - Ao sugerir automaticamente o bairro/taxa de entrega, o bairro do **Local de Evento** (quando selecionado) tem prioridade sobre o bairro do endereço do cliente — nunca inverter essa ordem (ver `FRETE.md`)
 - Não instanciar `ConfiguracaoContrato()` diretamente — sempre usar `ConfiguracaoContrato.get()`
+- Não instanciar `ConfiguracaoAlertaEvento()` diretamente — sempre usar `ConfiguracaoAlertaEvento.get()`
+- Os 2 alertas de Evento (`alertar_eventos`) só notificam telefones de `eventos.TelefoneAlertaEvento` — nunca enviar essas mensagens pro cliente do evento (decisão já confirmada com o usuário)
 - Não criar `ItemContrato` — o PDF do contrato lê os itens direto de `contrato.orcamento.itens`
 - Não permitir `gerar-contrato/` em orçamento que não esteja `status == 'aprovado'`, nem sem CPF/RG/nacionalidade/profissão/estado civil preenchidos
 - Ao mesclar o PDF do contrato com o timbre (`pdf_contrato.py::_mesclar_timbre`), reler o `PdfReader` do timbre a cada página — reutilizar o mesmo objeto entre iterações faz o `pypdf` duplicar o conteúdo da primeira página em todas (só aparece em PDFs multi-página; `pdf_orcamento.py` nunca bateu nisso por ser sempre 1 página)

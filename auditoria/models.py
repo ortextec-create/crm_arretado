@@ -23,6 +23,7 @@ class LogAuditoria(models.Model):
     ACAO_CONFIG_CONTRATO_ALTERADA = 'config_contrato_alterada'
     ACAO_CONFIG_ENTREGA_ALTERADA = 'config_entrega_alterada'
     ACAO_CONFIG_WHATSAPP_ALTERADA = 'config_whatsapp_alterada'
+    ACAO_CONFIG_ALERTA_EVENTO_ALTERADA = 'config_alerta_evento_alterada'
     ACAO_REGISTRO_EXCLUIDO = 'registro_excluido'
     ACAO_REGISTRO_CRIADO = 'registro_criado'
     ACAO_REGISTRO_ATUALIZADO = 'registro_atualizado'
@@ -55,6 +56,7 @@ class LogAuditoria(models.Model):
         (ACAO_CONFIG_CONTRATO_ALTERADA, 'Configuração de contrato alterada'),
         (ACAO_CONFIG_ENTREGA_ALTERADA, 'Configuração de entrega alterada'),
         (ACAO_CONFIG_WHATSAPP_ALTERADA, 'Configuração de WhatsApp alterada'),
+        (ACAO_CONFIG_ALERTA_EVENTO_ALTERADA, 'Configuração de alertas de evento alterada'),
         (ACAO_REGISTRO_EXCLUIDO, 'Registro excluído'),
         (ACAO_REGISTRO_CRIADO, 'Registro criado'),
         (ACAO_REGISTRO_ATUALIZADO, 'Registro atualizado'),

@@ -13,6 +13,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
     ImagemInspiracao, Contrato, ConfiguracaoContrato,
+    ConfiguracaoAlertaEvento, TelefoneAlertaEvento,
 )
 from notificacoes.servico import notificar, _fone_pedido
 from usuarios.authentication import TokenAuthentication
@@ -41,6 +42,8 @@ from .serializers import (
     ItemOrcamentoCreateSerializer,
     ContratoSerializer,
     ConfiguracaoContratoSerializer,
+    ConfiguracaoAlertaEventoSerializer,
+    TelefoneAlertaEventoSerializer,
 )
 
 
@@ -1142,3 +1145,48 @@ class ConfiguracaoContratoViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
             request=request,
         )
         return Response(serializer.data)
+
+
+# ─── Alertas de Evento (pagamento pendente / aviso de entrega) ────────────────
+
+class ConfiguracaoAlertaEventoViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
+    serializer_class   = ConfiguracaoAlertaEventoSerializer
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'partial_update':
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def get_object(self):
+        return ConfiguracaoAlertaEvento.get()
+
+    def retrieve(self, request, pk=None):
+        return Response(self.get_serializer(self.get_object()).data)
+
+    def partial_update(self, request, pk=None):
+        config  = self.get_object()
+        campos  = list(request.data.keys())
+        antes   = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
+        serializer = ConfiguracaoAlertaEventoSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        depois = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
+        registrar(
+            request.user, LogAuditoria.ACAO_CONFIG_ALERTA_EVENTO_ALTERADA,
+            detalhes={'antes': antes, 'depois': depois},
+            request=request,
+        )
+        return Response(serializer.data)
+
+
+class TelefoneAlertaEventoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
+    queryset           = TelefoneAlertaEvento.objects.all()
+    serializer_class   = TelefoneAlertaEventoSerializer
+    authentication_classes = [TokenAuthentication]
+    campos_log_exclusao = ['numero', 'nome']
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAuthenticated()]
+        return [AllowAny()]

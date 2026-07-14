@@ -253,6 +253,18 @@ export const configContratoApi = {
   update: (data) => api.patch('/eventos/configuracao-contrato/1/', data),
 }
 
+// ─── ALERTAS DE EVENTO ────────────────────────────────────────────────────────
+
+export const alertasEventoApi = {
+  configGet:    ()     => api.get('/eventos/configuracao-alertas/1/'),
+  configUpdate: (data) => api.patch('/eventos/configuracao-alertas/1/', data),
+  telefones: {
+    list:   ()     => api.get('/eventos/telefones-alerta/'),
+    create: (data) => api.post('/eventos/telefones-alerta/', data),
+    remove: (id)   => api.delete(`/eventos/telefones-alerta/${id}/`),
+  },
+}
+
 // ─── FICHAS / PRECIFICAÇÃO ────────────────────────────────────────────────────
 
 export const fichasApi = {

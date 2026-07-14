@@ -108,6 +108,40 @@
   margin-top: 0;
 }
 
+.telList {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.telItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--fundo);
+  font-size: 13px;
+}
+
+.telItem button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+}
+
+.telItem button:hover {
+  color: #ef4444;
+}
+
 /* ── Toggle ─────────────────────────────────────────────── */
 .toggle {
   display: flex;

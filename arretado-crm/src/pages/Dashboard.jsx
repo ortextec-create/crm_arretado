@@ -57,6 +57,7 @@ export default function Dashboard() {
   const aReceber = resumo?.a_receber ?? { total: 0, eventos: [] }
   const fila = resumo?.fila_operacional ?? { pendente: 0, em_preparo: 0, pronto: 0 }
   const proximosEventos = resumo?.proximos_eventos ?? []
+  const alertas = resumo?.alertas ?? []
   const ticketMedio = resumo?.ticket_medio ?? { ifood: 0, pdv: 0, eventos: 0 }
   const maxTicket = Math.max(1, ticketMedio.ifood, ticketMedio.pdv, ticketMedio.eventos)
   const comparativo = resumo?.comparativo_ontem_pct
@@ -101,6 +102,37 @@ export default function Dashboard() {
             <div className={styles.canalSub}>Em breve</div>
           </div>
         </div>
+
+        {/* ALERTAS (pagamento pendente / entrega próxima) */}
+        {alertas.length > 0 && (
+          <div className={styles.panel} style={{ marginBottom: 20 }}>
+            <div className={styles.sectionLabel}>
+              <i className="ti ti-bell-ringing" /> Alertas ({alertas.length})
+            </div>
+            {alertas.map((a) => (
+              <div
+                key={`${a.tipo}-${a.evento_id}`}
+                className={styles.tableRow}
+                style={{ gridTemplateColumns: '24px 1fr 110px 140px' }}
+                onClick={() => navigate('/eventos')}
+              >
+                <i className={`ti ${a.tipo === 'pagamento_pendente' ? 'ti-currency-dollar' : 'ti-map-pin'}`} />
+                <div>
+                  <div className={styles.clientName}>{a.cliente}</div>
+                  <div className={styles.clientSub}>
+                    {a.numero} · {a.tipo === 'pagamento_pendente'
+                      ? `Saldo: ${brl(a.saldo_restante)}`
+                      : `${a.local || 'Local não informado'}${a.bairro ? ` — ${a.bairro}` : ''}`}
+                  </div>
+                </div>
+                <div className={styles.clientSub}>{dataCurta(a.data_evento)}</div>
+                <div className={styles.clientSub}>
+                  {a.dias_restantes === 0 ? 'É hoje' : `Faltam ${a.dias_restantes} dia(s)`}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* LINHA 2 */}
         <div className={styles.row2}>

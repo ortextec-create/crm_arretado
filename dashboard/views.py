@@ -7,7 +7,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from pedidos.models import PedidoUnificado
-from eventos.models import Evento, PagamentoEvento
+from eventos.models import Evento, PagamentoEvento, ConfiguracaoAlertaEvento
 
 
 class CsrfExemptMixin:
@@ -69,6 +69,7 @@ class DashboardResumoView(CsrfExemptMixin, views.APIView):
             'fila_operacional':      self._fila_operacional(),
             'proximos_eventos':      self._proximos_eventos(hoje),
             'ticket_medio':          self._ticket_medio(hoje),
+            'alertas':               self._alertas(hoje),
         })
 
     # ── Canais (PedidoUnificado) ───────────────────────────────────────────
@@ -116,6 +117,54 @@ class DashboardResumoView(CsrfExemptMixin, views.APIView):
                 for e in qs.order_by('data_evento')[:5]
             ],
         }
+
+    # ── Alertas (eventos com pagamento pendente / entrega próxima) ─────────
+    # Mesmas janelas usadas por eventos/management/commands/alertar_eventos.py
+    # (não olha AlertaEventoEnviado — aqui é "o que está na janela agora",
+    # independente de já ter mandado WhatsApp ou não)
+
+    @staticmethod
+    def _alertas(hoje):
+        cfg = ConfiguracaoAlertaEvento.get()
+        alertas = []
+
+        if cfg.ativo_pagamento:
+            limite = hoje + timedelta(days=cfg.dias_antes_pagamento)
+            qs = (
+                Evento.objects.exclude(status__in=['cancelado', 'entregue'])
+                .annotate(saldo=F('valor_total') - F('sinal_pago'))
+                .filter(saldo__gt=0, data_evento__gte=hoje, data_evento__lte=limite)
+            )
+            for e in qs:
+                alertas.append({
+                    'tipo':            'pagamento_pendente',
+                    'evento_id':       e.id,
+                    'numero':          e.numero,
+                    'cliente':         e.nome_cliente_display,
+                    'data_evento':     str(e.data_evento),
+                    'dias_restantes':  (e.data_evento - hoje).days,
+                    'saldo_restante':  float(e.saldo),
+                })
+
+        if cfg.ativo_entrega:
+            limite = hoje + timedelta(days=cfg.dias_antes_entrega)
+            qs = (
+                Evento.objects.exclude(status__in=['cancelado', 'entregue'])
+                .filter(tipo_entrega='entrega_local', data_evento__gte=hoje, data_evento__lte=limite)
+            )
+            for e in qs:
+                alertas.append({
+                    'tipo':           'aviso_entrega',
+                    'evento_id':      e.id,
+                    'numero':         e.numero,
+                    'cliente':        e.nome_cliente_display,
+                    'data_evento':    str(e.data_evento),
+                    'dias_restantes': (e.data_evento - hoje).days,
+                    'local':          e.local.nome if e.local else e.endereco_avulso,
+                    'bairro':         e.bairro_entrega,
+                })
+
+        return sorted(alertas, key=lambda a: a['dias_restantes'])
 
     # ── Fila operacional (cruza os 3 canais via PedidoUnificado) ───────────
 

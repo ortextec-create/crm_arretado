@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { configWhatsappApi, notificacoesApi, configContratoApi } from '../api/services'
+import { configWhatsappApi, notificacoesApi, configContratoApi, alertasEventoApi } from '../api/services'
 import styles from './Configuracoes.module.css'
 
 const PLACEHOLDER_MSG = '{nome} será substituído pelo primeiro nome do cliente.'
@@ -44,6 +44,13 @@ export default function Configuracoes() {
   const [formContrato,   setFormContrato]   = useState(null)
   const [savingContrato, setSavingContrato] = useState(false)
 
+  const [formAlertas,   setFormAlertas]   = useState(null)
+  const [savingAlertas, setSavingAlertas] = useState(false)
+  const [telefones,     setTelefones]     = useState([])
+  const [novoTelNumero, setNovoTelNumero] = useState('')
+  const [novoTelNome,   setNovoTelNome]   = useState('')
+  const [addingTel,     setAddingTel]     = useState(false)
+
   const showToast = (msg, type = 'ok') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
@@ -79,15 +86,30 @@ export default function Configuracoes() {
     }
   }, [])
 
+  const loadAlertas = useCallback(async () => {
+    try {
+      const [cfg, tels] = await Promise.all([
+        alertasEventoApi.configGet(),
+        alertasEventoApi.telefones.list(),
+      ])
+      setFormAlertas(cfg.data)
+      setTelefones(tels.data.results ?? tels.data)
+    } catch {
+      showToast('Erro ao carregar configurações de alertas.', 'err')
+    }
+  }, [])
+
   useEffect(() => {
     load()
     loadContrato()
+    loadAlertas()
     pollRef.current = setInterval(refreshConn, 30_000)
     return () => clearInterval(pollRef.current)
-  }, [load, loadContrato, refreshConn])
+  }, [load, loadContrato, loadAlertas, refreshConn])
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }))
   const setContrato = (field, value) => setFormContrato(f => ({ ...f, [field]: value }))
+  const setAlertas = (field, value) => setFormAlertas(f => ({ ...f, [field]: value }))
 
   const salvar = async () => {
     setSaving(true)
@@ -112,6 +134,43 @@ export default function Configuracoes() {
       showToast('Erro ao salvar configurações de contrato.', 'err')
     } finally {
       setSavingContrato(false)
+    }
+  }
+
+  const salvarAlertas = async () => {
+    setSavingAlertas(true)
+    try {
+      const { data } = await alertasEventoApi.configUpdate(formAlertas)
+      setFormAlertas(data)
+      showToast('Configurações de alertas salvas com sucesso.')
+    } catch {
+      showToast('Erro ao salvar configurações de alertas.', 'err')
+    } finally {
+      setSavingAlertas(false)
+    }
+  }
+
+  const adicionarTelefone = async () => {
+    if (!novoTelNumero.trim()) return
+    setAddingTel(true)
+    try {
+      const { data } = await alertasEventoApi.telefones.create({ numero: novoTelNumero.trim(), nome: novoTelNome.trim() })
+      setTelefones(t => [...t, data])
+      setNovoTelNumero('')
+      setNovoTelNome('')
+    } catch {
+      showToast('Erro ao adicionar telefone.', 'err')
+    } finally {
+      setAddingTel(false)
+    }
+  }
+
+  const removerTelefone = async (id) => {
+    try {
+      await alertasEventoApi.telefones.remove(id)
+      setTelefones(t => t.filter(x => x.id !== id))
+    } catch {
+      showToast('Erro ao remover telefone.', 'err')
     }
   }
 
@@ -284,6 +343,115 @@ export default function Configuracoes() {
         <p className={styles.hint}>{PLACEHOLDER_MSG}</p>
       </section>
 
+      {/* ── Alertas de Evento ─────────────────────────────────── */}
+      {formAlertas && (
+        <section className={styles.card}>
+          <div className={styles.cardHeader}>
+            <i className="ti ti-bell-ringing" />
+            <h2>Alertas de Evento</h2>
+          </div>
+
+          <Toggle
+            label="Alertar pagamento pendente perto da data do evento (cron diário)"
+            checked={formAlertas.ativo_pagamento}
+            onChange={v => setAlertas('ativo_pagamento', v)}
+          />
+          <div className={styles.grid3} style={{ marginTop: 16 }}>
+            <label className={styles.field}>
+              <span>Disparar a partir de (dias antes)</span>
+              <input
+                type="number" min={1} max={365}
+                value={formAlertas.dias_antes_pagamento}
+                onChange={e => setAlertas('dias_antes_pagamento', parseInt(e.target.value) || 10)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Repetir a cada (dias)</span>
+              <input
+                type="number" min={1} max={365}
+                value={formAlertas.repetir_pagamento_dias}
+                onChange={e => setAlertas('repetir_pagamento_dias', parseInt(e.target.value) || 1)}
+              />
+            </label>
+          </div>
+
+          <Toggle
+            label="Alertar local/horário de entrega perto da data do evento (cron diário)"
+            checked={formAlertas.ativo_entrega}
+            onChange={v => setAlertas('ativo_entrega', v)}
+          />
+          <div className={styles.grid3} style={{ marginTop: 16 }}>
+            <label className={styles.field}>
+              <span>Disparar a partir de (dias antes)</span>
+              <input
+                type="number" min={1} max={365}
+                value={formAlertas.dias_antes_entrega}
+                onChange={e => setAlertas('dias_antes_entrega', parseInt(e.target.value) || 30)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Repetir a cada (dias)</span>
+              <input
+                type="number" min={1} max={365}
+                value={formAlertas.repetir_entrega_dias}
+                onChange={e => setAlertas('repetir_entrega_dias', parseInt(e.target.value) || 5)}
+              />
+            </label>
+          </div>
+
+          <button className={styles.btnTest} onClick={salvarAlertas} disabled={savingAlertas}>
+            {savingAlertas
+              ? <><i className="ti ti-loader-2" /> Salvando…</>
+              : <><i className="ti ti-device-floppy" /> Salvar configuração de alertas</>}
+          </button>
+
+          <p className={styles.subLabel} style={{ marginTop: 20 }}>
+            Telefones que recebem os alertas (equipe interna, não é o cliente)
+          </p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Telefone</span>
+              <input
+                type="text" placeholder="(86) 9 0000-0000"
+                value={novoTelNumero}
+                onChange={e => setNovoTelNumero(e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Label (opcional)</span>
+              <input
+                type="text" placeholder="Ex: Financeiro"
+                value={novoTelNome}
+                onChange={e => setNovoTelNome(e.target.value)}
+              />
+            </label>
+            <button
+              className={styles.btnTest}
+              style={{ alignSelf: 'end' }}
+              onClick={adicionarTelefone}
+              disabled={addingTel || !novoTelNumero.trim()}
+            >
+              <i className="ti ti-plus" /> Adicionar
+            </button>
+          </div>
+
+          {telefones.length === 0 ? (
+            <p className={styles.hint}>Nenhum telefone cadastrado ainda — os alertas não serão enviados.</p>
+          ) : (
+            <ul className={styles.telList}>
+              {telefones.map(t => (
+                <li key={t.id} className={styles.telItem}>
+                  <span>{t.nome ? `${t.nome} — ${t.numero}` : t.numero}</span>
+                  <button onClick={() => removerTelefone(t.id)} aria-label="Remover telefone">
+                    <i className="ti ti-x" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {/* ── Contrato ──────────────────────────────────────────── */}
       {formContrato && (
         <section className={styles.card}>
@@ -316,6 +484,22 @@ export default function Configuracoes() {
                 type="text"
                 value={formContrato.endereco_contratada}
                 onChange={e => setContrato('endereco_contratada', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Instagram</span>
+              <input
+                type="text" placeholder="@arretadodoces"
+                value={formContrato.instagram_contratada}
+                onChange={e => setContrato('instagram_contratada', e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Telefone</span>
+              <input
+                type="text" placeholder="(86) 99816-4324"
+                value={formContrato.telefone_contratada}
+                onChange={e => setContrato('telefone_contratada', e.target.value)}
               />
             </label>
           </div>

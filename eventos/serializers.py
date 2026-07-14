@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
     ImagemInspiracao, Contrato, ConfiguracaoContrato,
+    ConfiguracaoAlertaEvento, TelefoneAlertaEvento,
 )
 from auditoria.models import LogAuditoria
 from auditoria.utils import registrar
@@ -396,6 +397,7 @@ class ConfiguracaoContratoSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'razao_social_contratada', 'cnpj_contratada', 'endereco_contratada',
+            'instagram_contratada', 'telefone_contratada',
             'representante_nome', 'representante_nacionalidade', 'representante_estado_civil',
             'representante_profissao', 'representante_rg', 'representante_cpf', 'representante_endereco',
             'percentual_sinal', 'prazo_quitacao_dias', 'multa_inadimplencia_pct', 'juros_mora_pct_mes',
@@ -406,3 +408,22 @@ class ConfiguracaoContratoSerializer(serializers.ModelSerializer):
             'atualizado_em',
         ]
         read_only_fields = ['id', 'atualizado_em']
+
+
+class ConfiguracaoAlertaEventoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ConfiguracaoAlertaEvento
+        fields = [
+            'id',
+            'ativo_pagamento', 'dias_antes_pagamento', 'repetir_pagamento_dias',
+            'ativo_entrega', 'dias_antes_entrega', 'repetir_entrega_dias',
+            'atualizado_em',
+        ]
+        read_only_fields = ['id', 'atualizado_em']
+
+
+class TelefoneAlertaEventoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = TelefoneAlertaEvento
+        fields = ['id', 'numero', 'nome', 'ativo', 'criado_em']
+        read_only_fields = ['id', 'criado_em']

@@ -531,6 +531,8 @@ class ConfiguracaoContrato(models.Model):
         max_length=400, blank=True,
         default='Avenida João Antônio Leitão, nº 3733, Bairro Piçarreira, CEP 64.055-400, Teresina/PI',
     )
+    instagram_contratada     = models.CharField(max_length=50, blank=True, default='@arretadodoces')
+    telefone_contratada      = models.CharField(max_length=20, blank=True, default='(86) 99816-4324')
 
     # Representante da CONTRATADA
     representante_nome          = models.CharField(max_length=200, blank=True, default='Edvan Lima Silva')
@@ -647,3 +649,89 @@ class Contrato(models.Model):
     @property
     def pode_enviar(self):
         return self.status in ('gerado', 'enviado')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Alertas de Evento (pagamento pendente / aviso de entrega) — cron diário
+# ver eventos/management/commands/alertar_eventos.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ConfiguracaoAlertaEvento(models.Model):
+    """Singleton — sempre acessado via ConfiguracaoAlertaEvento.get()."""
+
+    # Pagamento pendente
+    ativo_pagamento        = models.BooleanField('Alerta de pagamento pendente ativo', default=True)
+    dias_antes_pagamento   = models.PositiveIntegerField(
+        'Disparar a partir de quantos dias antes do evento', default=10,
+    )
+    repetir_pagamento_dias = models.PositiveIntegerField(
+        'Repetir a cada quantos dias (enquanto não pago)', default=1,
+    )
+
+    # Aviso de local/horário de entrega
+    ativo_entrega        = models.BooleanField('Alerta de local/horário de entrega ativo', default=True)
+    dias_antes_entrega   = models.PositiveIntegerField(
+        'Disparar a partir de quantos dias antes do evento', default=30,
+    )
+    repetir_entrega_dias = models.PositiveIntegerField('Repetir a cada quantos dias', default=5)
+
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Configuração de Alertas de Evento'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return 'Configuração de Alertas de Evento'
+
+
+class TelefoneAlertaEvento(models.Model):
+    """Telefones internos da equipe que recebem os alertas de evento (não é o cliente)."""
+
+    numero    = models.CharField(max_length=30)
+    nome      = models.CharField('Nome/label (opcional)', max_length=100, blank=True, default='')
+    ativo     = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Telefone de Alerta de Evento'
+        verbose_name_plural = 'Telefones de Alerta de Evento'
+        ordering            = ['nome', 'numero']
+
+    def __str__(self):
+        return f'{self.nome or "—"} ({self.numero})'
+
+
+class AlertaEventoEnviado(models.Model):
+    """
+    Rastreia o envio mais recente de cada tipo de alerta por evento, pra
+    controlar o intervalo de repetição (repetir_pagamento_dias/
+    repetir_entrega_dias em ConfiguracaoAlertaEvento). Não usa
+    notificacoes.HistoricoMensagem pra isso porque HistoricoMensagem.cliente
+    é FK pra Cliente, não pra Evento, e os destinatários aqui são telefones
+    da equipe (sem Cliente associado).
+    """
+
+    TIPO_CHOICES = [
+        ('pagamento_pendente', 'Pagamento pendente'),
+        ('aviso_entrega',      'Aviso de entrega'),
+    ]
+
+    evento     = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='alertas_enviados')
+    tipo       = models.CharField(max_length=30, choices=TIPO_CHOICES)
+    enviado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Alerta de Evento Enviado'
+        verbose_name_plural = 'Alertas de Evento Enviados'
+        ordering            = ['-enviado_em']
+        indexes = [
+            models.Index(fields=['evento', 'tipo', '-enviado_em']),
+        ]
+
+    def __str__(self):
+        return f'{self.evento.numero} — {self.get_tipo_display()} ({self.enviado_em:%d/%m %H:%M})'

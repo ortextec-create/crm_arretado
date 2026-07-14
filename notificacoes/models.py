@@ -64,6 +64,8 @@ class HistoricoMensagem(models.Model):
         ('lembrete',      'Lembrete'),
         ('orcamento',     'Orçamento PDF'),
         ('contrato',      'Contrato PDF'),
+        ('alerta_pagamento', 'Alerta de Pagamento Pendente'),
+        ('alerta_entrega',   'Alerta de Entrega Próxima'),
     ]
 
     STATUS_CHOICES = [

@@ -136,6 +136,10 @@ def _header_footer(c, doc, cfg):
     c.drawString(ML, 34, f'{cfg.razao_social_contratada} — CNPJ {cfg.cnpj_contratada}')
     c.drawRightString(MR, 34, f'Página {doc.page}')
 
+    contato = ' — '.join(filter(None, [cfg.instagram_contratada, cfg.telefone_contratada]))
+    if contato:
+        c.drawString(ML, 24, contato)
+
     c.restoreState()
 
 
