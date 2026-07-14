@@ -245,3 +245,43 @@ class PedidoPDVDestroyAuditoriaTests(AuditoriaPDVTestCase):
         log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
         self.assertEqual(log.detalhes['model'], 'ItemPedidoPDV')
         self.assertEqual(log.detalhes['pedido_id'], self.pedido.id)
+
+
+class ValorTotalItemPDVTests(AuditoriaPDVTestCase):
+    """
+    Regressão: o cache do prefetch_related('itens') do get_object() fica
+    stale dentro da mesma request quando o item é criado/apagado via manager
+    direto — recalcular_totais() lia esse cache velho e persistia um total
+    errado no banco. Corrigido com refresh_from_db() antes de
+    recalcular_totais() (mesmo padrão de eventos.OrcamentoViewSet/EventoViewSet).
+    """
+    def test_adicionar_item_atualiza_total(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero())
+        view = PedidoPDVViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/pdv/pedidos/{pedido.id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '50.00', 'quantidade': 2}, format='json',
+        )
+        resp = view(req, pk=pedido.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(str(resp.data['total']), '100.00')
+
+        pedido.refresh_from_db()
+        self.assertEqual(str(pedido.total), '100.00')
+
+    def test_remover_item_atualiza_total(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero())
+        item = ItemPedidoPDV.objects.create(pedido=pedido, nome='Bolo', preco_unit=50, quantidade=2)
+        pedido.recalcular_totais()
+
+        view = PedidoPDVViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(
+            f'/api/v1/pdv/pedidos/{pedido.id}/itens/{item.id}/remover/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=pedido.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(str(resp.data['total']), '0.00')
+
+        pedido.refresh_from_db()
+        self.assertEqual(str(pedido.total), '0.00')

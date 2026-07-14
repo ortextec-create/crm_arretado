@@ -99,7 +99,10 @@ class FichaTecnica(models.Model):
 
     @property
     def custo_ingredientes(self):
-        return sum(item.custo_proporcional for item in self.itens.all())
+        # start=Decimal('0') evita que uma ficha sem itens caia no int 0 do sum()
+        # vazio, o que faria a divisão em custo_total_unitario virar float (e
+        # float + Decimal explode com TypeError)
+        return sum((item.custo_proporcional for item in self.itens.all()), Decimal('0'))
 
     @property
     def custo_total_unitario(self):

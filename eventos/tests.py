@@ -941,3 +941,107 @@ class HistoricoPorObjetoTests(AuditoriaEventosDestroyTestCase):
 
         acoes = [log['acao'] for log in resp.data]
         self.assertIn(LogAuditoria.ACAO_PAGAMENTO_REGISTRADO, acoes)
+
+
+class ValorTotalItemAuditoriaTests(AuditoriaEventosDestroyTestCase):
+    """
+    Regressão: o cache do prefetch_related('itens') do get_object() fica
+    stale dentro da mesma request quando o item é criado/apagado via manager
+    direto (ItemOrcamento.objects.create/item.delete()) — recalcular_totais()
+    lia esse cache velho e persistia um valor_total errado no banco. Corrigido
+    com refresh_from_db() antes de recalcular_totais() (mesmo padrão já usado
+    em adicionar_imagens/adicionar_pagamento — ver CLAUDE.md).
+    """
+    def test_orcamento_adicionar_item_atualiza_valor_total(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+        view = OrcamentoViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{orc.id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '100.00', 'quantidade': 1}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=orc.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(str(resp.data['valor_total']), '100.00')
+
+        orc.refresh_from_db()
+        self.assertEqual(str(orc.valor_total), '100.00')
+
+    def test_orcamento_remover_item_atualiza_valor_total(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+        item = ItemOrcamento.objects.create(orcamento=orc, nome='Bolo', preco_unit=100, quantidade=1)
+        orc.recalcular_totais()
+
+        view = OrcamentoViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/orcamentos/{orc.id}/itens/{item.id}/remover/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=orc.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(str(resp.data['valor_total']), '0.00')
+
+        orc.refresh_from_db()
+        self.assertEqual(str(orc.valor_total), '0.00')
+
+    def test_orcamento_editar_item_atualiza_valor_total(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario', status='rascunho',
+        )
+        item = ItemOrcamento.objects.create(orcamento=orc, nome='Bolo', preco_unit=100, quantidade=1)
+        orc.recalcular_totais()
+
+        view = OrcamentoViewSet.as_view({'patch': 'editar_item'})
+        req = self.factory.patch(
+            f'/api/v1/eventos/orcamentos/{orc.id}/itens/{item.id}/editar/',
+            {'nome': 'Bolo', 'preco_unit': '60.00', 'quantidade': 2}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=orc.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(str(resp.data['valor_total']), '120.00')
+
+        orc.refresh_from_db()
+        self.assertEqual(str(orc.valor_total), '120.00')
+
+    def test_evento_adicionar_item_atualiza_valor_total(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        view = EventoViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/eventos/{evento.id}/itens/',
+            {'nome': 'Bolo', 'preco_unit': '80.00', 'quantidade': 1}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=evento.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(str(resp.data['valor_total']), '80.00')
+
+        evento.refresh_from_db()
+        self.assertEqual(str(evento.valor_total), '80.00')
+
+    def test_evento_remover_item_atualiza_valor_total(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        item = ItemEvento.objects.create(evento=evento, nome='Bolo', preco_unit=80, quantidade=1)
+        evento.recalcular_totais()
+
+        view = EventoViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/{evento.id}/itens/{item.id}/remover/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=evento.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(str(resp.data['valor_total']), '0.00')
+
+        evento.refresh_from_db()
+        self.assertEqual(str(evento.valor_total), '0.00')

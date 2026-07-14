@@ -245,6 +245,7 @@ class EventoViewSet(
                 preco_total=price * qty,
                 **data,
             )
+            evento.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
             evento.recalcular_totais()
             registrar(
                 ator_ou_none(request), LogAuditoria.ACAO_ITEM_ADICIONADO,
@@ -279,6 +280,7 @@ class EventoViewSet(
             request=request,
         )
         item.delete()
+        evento.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
         evento.recalcular_totais()
         return Response(EventoDetailSerializer(evento).data)
 
@@ -669,6 +671,7 @@ class OrcamentoViewSet(
                 preco_total=price * qty,
                 **data,
             )
+            orc.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
             orc.recalcular_totais()
             registrar(
                 ator_ou_none(request), LogAuditoria.ACAO_ITEM_ADICIONADO,
@@ -703,6 +706,7 @@ class OrcamentoViewSet(
             request=request,
         )
         item.delete()
+        orc.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
         orc.recalcular_totais()
         return Response(OrcamentoDetailSerializer(orc).data)
 
@@ -730,6 +734,7 @@ class OrcamentoViewSet(
                 setattr(item, attr, value)
             item.preco_total = price * qty
             item.save()
+            orc.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
             orc.recalcular_totais()
 
             depois = {c: str(getattr(item, c, None)) for c in campos_auditados}

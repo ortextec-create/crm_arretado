@@ -249,3 +249,42 @@ class ParametrosNegocioAuditoriaTests(AuditoriaFichasTestCase):
         req = self.factory.get('/api/v1/fichas/parametros/1/')
         resp = view(req, pk=1)
         self.assertEqual(resp.status_code, 200)
+
+
+class CustoTotalItemFichaTests(AuditoriaFichasTestCase):
+    """
+    Regressão: o cache do prefetch_related('itens__materia_prima') do
+    get_object() fica stale dentro da mesma request quando o item é
+    criado/apagado via manager direto — o custo_total_unitario (property
+    calculada a partir de self.itens.all()) saía errado na resposta.
+    Corrigido com refresh_from_db() antes de serializar (mesmo padrão de
+    eventos.OrcamentoViewSet/EventoViewSet e pdv.PedidoPDVViewSet).
+    """
+    def setUp(self):
+        super().setUp()
+        self.ficha = FichaTecnica.objects.create(nome='Bolo Teste', rendimento=1, embalagem_custo=0)
+        self.materia = MateriaPrima.objects.create(
+            nome='Chocolate', unidade_medida='g', valor_compra=10, quantidade_compra=10,
+        )
+
+    def test_adicionar_item_atualiza_custo_na_resposta(self):
+        view = FichaTecnicaViewSet.as_view({'post': 'adicionar_item'})
+        req = self.factory.post(
+            f'/api/v1/fichas/fichas/{self.ficha.id}/adicionar-item/',
+            {'materia_prima': self.materia.id, 'quantidade': '5'}, format='json',
+        )
+        resp = view(req, pk=self.ficha.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        # custo_unitario da matéria = 10/10 = 1.0 · 5 unidades = 5.0
+        self.assertEqual(float(resp.data['custo_total_unitario']), 5.0)
+
+    def test_remover_item_atualiza_custo_na_resposta(self):
+        item = ItemFichaTecnica.objects.create(ficha=self.ficha, materia_prima=self.materia, quantidade=5)
+        view = FichaTecnicaViewSet.as_view({'delete': 'remover_item'})
+        req = self.factory.delete(
+            f'/api/v1/fichas/fichas/{self.ficha.id}/remover-item/{item.id}/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.ficha.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(float(resp.data['custo_total_unitario']), 0.0)

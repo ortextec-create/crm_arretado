@@ -346,6 +346,7 @@ class PedidoPDVViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
             qty   = data.get('quantidade', 1)
             price = data['preco_unit']
             ItemPedidoPDV.objects.create(pedido=pedido, preco_total=price * qty, **data)
+            pedido.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
             pedido.recalcular_totais()
             return Response(PedidoPDVDetailSerializer(pedido).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -366,6 +367,7 @@ class PedidoPDVViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelVie
             request=request,
         )
         item.delete()
+        pedido.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
         pedido.recalcular_totais()
         return Response(PedidoPDVDetailSerializer(pedido).data)
 

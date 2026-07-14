@@ -150,6 +150,7 @@ class FichaTecnicaViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.Model
             ficha=ficha, materia_prima=materia,
             defaults={'quantidade': Decimal(str(quantidade))},
         )
+        ficha.refresh_from_db()  # evita cache stale do prefetch_related('itens__materia_prima') — ver CLAUDE.md
         return Response(FichaTecnicaDetailSerializer(ficha).data)
 
     @action(detail=True, methods=['delete'], url_path=r'remover-item/(?P<item_id>[0-9]+)')
@@ -168,6 +169,7 @@ class FichaTecnicaViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.Model
             request=request,
         )
         item.delete()
+        ficha.refresh_from_db()  # evita cache stale do prefetch_related('itens__materia_prima') — ver CLAUDE.md
         return Response(FichaTecnicaDetailSerializer(ficha).data)
 
 
