@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
-import { eventosApi, locaisEventoApi, clientesApi } from '../api/services'
+import { eventosApi, locaisEventoApi, clientesApi, contratosApi } from '../api/services'
 import { pdvApi, taxasEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast, Empty } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
@@ -91,6 +91,7 @@ export default function Eventos() {
   const [showDetalhe, setShowDetalhe] = useState(false)
   const [showEditar,  setShowEditar]  = useState(false)
   const [eventoAtivo, setEventoAtivo] = useState(null)
+  const [reenviarInfo, setReenviarInfo] = useState(null) // { contrato, nomeCliente, telefoneDisplay }
 
   // ── Carregamento ──────────────────────────────────────────────────────────
 
@@ -153,6 +154,24 @@ export default function Eventos() {
     } catch {
       setToast({ message: 'Erro ao carregar evento.', type: 'error' })
     }
+  }
+
+  const abrirReenviarContrato = (ev) => {
+    if (!ev.contrato) return
+    setReenviarInfo({
+      contrato: ev.contrato,
+      nomeCliente: ev.nome_cliente_display,
+      telefoneDisplay: ev.telefone_display,
+    })
+  }
+
+  const handleContratoReenviado = () => {
+    setReenviarInfo(null)
+    loadEventos()
+    if (eventoAtivo) {
+      eventosApi.detail(eventoAtivo.id).then(r => setEventoAtivo(r.data)).catch(() => {})
+    }
+    setToast({ message: 'Contrato reenviado por WhatsApp com sucesso!', type: 'success' })
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -275,6 +294,7 @@ export default function Eventos() {
                     <th>Saldo</th>
                     <th>Status</th>
                     <th>Última modificação</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -310,6 +330,17 @@ export default function Eventos() {
                           </div>
                         ) : (
                           <span className={styles.ultimaModData}>—</span>
+                        )}
+                      </td>
+                      <td onClick={e => e.stopPropagation()}>
+                        {ev.contrato && (
+                          <button
+                            className={styles.linkContrato}
+                            onClick={() => abrirReenviarContrato(ev)}
+                            title={`Reenviar contrato ${ev.contrato.numero} por WhatsApp`}
+                          >
+                            <i className="ti ti-brand-whatsapp" /> Contrato
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -357,6 +388,15 @@ export default function Eventos() {
           }}
           onToast={setToast}
           onEditar={() => setShowEditar(true)}
+          onReenviarContrato={() => abrirReenviarContrato(eventoAtivo)}
+        />
+      )}
+
+      {reenviarInfo && (
+        <ModalReenviarContrato
+          {...reenviarInfo}
+          onClose={() => setReenviarInfo(null)}
+          onEnviado={handleContratoReenviado}
         />
       )}
 
@@ -936,7 +976,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
-function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar }) {
+function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato }) {
   const [abaAtiva,    setAbaAtiva]    = useState('itens')
   const [addingItem,  setAddingItem]  = useState(false)
   const [produtos,    setProdutos]    = useState([])
@@ -1173,6 +1213,11 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             <Btn variant="secondary" onClick={onEditar} title="Editar dados do evento">
               <i className="ti ti-edit" /> Editar
             </Btn>
+            {evento.contrato && (
+              <Btn variant="secondary" onClick={onReenviarContrato} title={`Reenviar contrato ${evento.contrato.numero} por WhatsApp`}>
+                <i className="ti ti-brand-whatsapp" /> Reenviar Contrato
+              </Btn>
+            )}
             {ACOES.filter(a => a.show).map(a => (
               <Btn
                 key={a.key}
@@ -1707,6 +1752,67 @@ function ModalEditarEvento({ evento, onClose, onSalvo }) {
         <Btn onClick={handleSalvar} disabled={saving}>
           {saving ? <Spinner size={14} /> : <i className="ti ti-check" />}
           {saving ? 'Salvando…' : 'Salvar alterações'}
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Modal: Reenviar Contrato já emitido ──────────────────────────────────────
+// Usado pela listagem e pelo modal de detalhe do Evento — o backend
+// (ContratoViewSet.enviar_whatsapp) não trava por status do evento/contrato.
+
+function ModalReenviarContrato({ contrato, nomeCliente, telefoneDisplay, onClose, onEnviado }) {
+  const [mensagem, setMensagem] = useState('')
+  const [sending,  setSending]  = useState(false)
+  const [erro,     setErro]     = useState('')
+
+  async function handleEnviar() {
+    setSending(true)
+    setErro('')
+    try {
+      await contratosApi.enviarWhatsApp(contrato.id, { mensagem })
+      onEnviado()
+    } catch (e) {
+      const data = e?.response?.data
+      setErro(data?.mensagem || data?.detail || 'Erro ao enviar via WhatsApp. Verifique as credenciais Z-API em Configurações.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Modal open title={`Reenviar Contrato ${contrato.numero}`} onClose={onClose}>
+      <div className={styles.wppDestinatarioCard}>
+        <i className="ti ti-brand-whatsapp" style={{ color: '#25D366', fontSize: 22 }} />
+        <div>
+          <div className={styles.wppLabel}>Destinatário</div>
+          <div className={styles.wppNome}>{nomeCliente || contrato.contratante_nome}</div>
+          <div className={styles.wppFone}>{telefoneDisplay || '—'}</div>
+        </div>
+      </div>
+
+      <div className={styles.wppDocCard}>
+        <i className="ti ti-file-type-pdf" style={{ color: '#DC2626', fontSize: 18 }} />
+        <span>{contrato.numero}.pdf — Contrato de Aquisição de Produtos</span>
+      </div>
+
+      <div className={styles.formGroup} style={{ marginTop: 14 }}>
+        <label>Mensagem que acompanha o PDF (opcional)</label>
+        <textarea
+          rows={3}
+          value={mensagem}
+          onChange={e => setMensagem(e.target.value)}
+          placeholder="Segue novamente o contrato para assinatura. Qualquer dúvida, é só chamar!"
+        />
+      </div>
+
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={sending}>Cancelar</Btn>
+        <Btn onClick={handleEnviar} disabled={sending} className={styles.btnWppSend}>
+          {sending ? <Spinner size={14} /> : <i className="ti ti-brand-whatsapp" />} Reenviar contrato
         </Btn>
       </div>
     </Modal>

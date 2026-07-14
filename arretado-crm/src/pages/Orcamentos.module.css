@@ -141,6 +141,28 @@
 
 .linkEvento:hover { background: var(--hover); }
 
+.linkContrato {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #25D36655;
+  background: transparent;
+  color: #25D366;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.linkContrato:hover { background: #25D36618; }
+
+.acoesCol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Estados vazios */
 .spinnerWrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 

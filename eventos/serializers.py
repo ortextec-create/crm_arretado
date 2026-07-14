@@ -49,6 +49,16 @@ class ItemEventoCreateSerializer(serializers.ModelSerializer):
         return data
 
 
+class ContratoResumoSerializer(serializers.ModelSerializer):
+    """Versão enxuta de Contrato para embutir na listagem de Orçamento/Evento
+    (reenvio de contrato) — não confundir com o ContratoSerializer completo."""
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model  = Contrato
+        fields = ['id', 'numero', 'status', 'status_display', 'contratante_nome']
+
+
 # ─── Evento ───────────────────────────────────────────────────────────────────
 
 class EventoListSerializer(serializers.ModelSerializer):
@@ -61,6 +71,7 @@ class EventoListSerializer(serializers.ModelSerializer):
     nome_cliente_display = serializers.ReadOnlyField()
     telefone_display     = serializers.ReadOnlyField()
     ultima_modificacao   = serializers.SerializerMethodField()
+    contrato             = serializers.SerializerMethodField()
 
     class Meta:
         model  = Evento
@@ -76,7 +87,7 @@ class EventoListSerializer(serializers.ModelSerializer):
             'subtotal', 'desconto', 'valor_total', 'sinal_pago', 'saldo_restante',
             'pode_confirmar', 'pode_iniciar_producao', 'pode_marcar_pronto',
             'pode_entregar', 'pode_cancelar',
-            'criado_em', 'atualizado_em', 'ultima_modificacao',
+            'criado_em', 'atualizado_em', 'ultima_modificacao', 'contrato',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -87,6 +98,10 @@ class EventoListSerializer(serializers.ModelSerializer):
 
     def get_ultima_modificacao(self, obj):
         return (self.context.get('ultima_modificacao') or {}).get(obj.id)
+
+    def get_contrato(self, obj):
+        contrato = next(iter(obj.contratos.all()), None)
+        return ContratoResumoSerializer(contrato).data if contrato else None
 
 
 class PagamentoEventoSerializer(serializers.ModelSerializer):
@@ -268,6 +283,7 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
     evento_numero        = serializers.SerializerMethodField()
     local_nome           = serializers.SerializerMethodField()
     ultima_modificacao   = serializers.SerializerMethodField()
+    contrato             = serializers.SerializerMethodField()
 
     class Meta:
         model  = Orcamento
@@ -284,7 +300,7 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
             'pode_enviar', 'pode_aprovar', 'pode_recusar',
             'pode_converter', 'pode_cancelar', 'pode_restaurar',
             'evento', 'evento_numero',
-            'criado_em', 'atualizado_em', 'ultima_modificacao',
+            'criado_em', 'atualizado_em', 'ultima_modificacao', 'contrato',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -298,6 +314,10 @@ class OrcamentoListSerializer(serializers.ModelSerializer):
 
     def get_ultima_modificacao(self, obj):
         return (self.context.get('ultima_modificacao') or {}).get(obj.id)
+
+    def get_contrato(self, obj):
+        contrato = next(iter(obj.contratos.all()), None)
+        return ContratoResumoSerializer(contrato).data if contrato else None
 
 
 class OrcamentoDetailSerializer(OrcamentoListSerializer):

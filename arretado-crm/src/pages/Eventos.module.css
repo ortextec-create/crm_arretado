@@ -463,6 +463,51 @@
   margin-top: 8px;
 }
 
+/* ── Contrato (reenvio por WhatsApp) ─────────────────────────────────────── */
+.linkContrato {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #25D36655;
+  background: transparent;
+  color: #25D366;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.linkContrato:hover { background: #25D36618; }
+
+.wppDestinatarioCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--fundo);
+}
+
+.wppLabel { font-size: 11px; color: var(--muted); }
+.wppNome  { font-size: 13px; font-weight: 600; color: var(--texto); }
+.wppFone  { font-size: 12px; color: var(--muted); }
+
+.wppDocCard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.btnWppSend { background: #25D366 !important; }
+.btnWppSend:hover { background: #1ebe5d !important; }
+
 /* ── Busca de cliente ─────────────────────────────────────────────────────── */
 .buscaWrap { position: relative; }
 .buscaWrap input {

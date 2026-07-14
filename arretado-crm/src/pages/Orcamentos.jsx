@@ -63,6 +63,7 @@ export default function Orcamentos() {
   const [showWpp,       setShowWpp]       = useState(false)
   const [showContrato,  setShowContrato]  = useState(false)
   const [orcAtivo,      setOrcAtivo]      = useState(null)
+  const [reenviarInfo,  setReenviarInfo]  = useState(null) // { contrato, nomeCliente, telefoneDisplay }
 
   // ── Carregamento ──────────────────────────────────────────────────────────
 
@@ -158,6 +159,24 @@ export default function Orcamentos() {
     setOrcAtivo(updatedOrc)
     loadOrcamentos()
     showToast(`PDF ${updatedOrc.numero} enviado por WhatsApp com sucesso!`)
+  }
+
+  function handleAbrirReenviarContrato(orc) {
+    if (!orc.contrato) return
+    setReenviarInfo({
+      contrato: orc.contrato,
+      nomeCliente: orc.nome_cliente_display,
+      telefoneDisplay: orc.telefone_display,
+    })
+  }
+
+  function handleContratoReenviado() {
+    setReenviarInfo(null)
+    loadOrcamentos()
+    if (orcAtivo) {
+      orcamentosApi.detail(orcAtivo.id).then(res => setOrcAtivo(res.data)).catch(() => {})
+    }
+    showToast('Contrato reenviado por WhatsApp com sucesso!')
   }
 
   async function handleRemoverItem(itemId) {
@@ -281,7 +300,7 @@ export default function Orcamentos() {
                         <span className={styles.ultimaModData}>—</span>
                       )}
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td onClick={e => e.stopPropagation()} className={styles.acoesCol}>
                       {orc.status === 'convertido' && orc.evento_numero && (
                         <button
                           className={styles.linkEvento}
@@ -289,6 +308,15 @@ export default function Orcamentos() {
                           title={`Ver evento ${orc.evento_numero}`}
                         >
                           <i className="ti ti-calendar-event" /> {orc.evento_numero}
+                        </button>
+                      )}
+                      {orc.contrato && (
+                        <button
+                          className={styles.linkContrato}
+                          onClick={() => handleAbrirReenviarContrato(orc)}
+                          title={`Reenviar contrato ${orc.contrato.numero} por WhatsApp`}
+                        >
+                          <i className="ti ti-brand-whatsapp" /> Contrato
                         </button>
                       )}
                     </td>
@@ -320,6 +348,7 @@ export default function Orcamentos() {
           onItemAdicionado={(updated) => { setOrcAtivo(updated); loadOrcamentos() }}
           onConverter={() => setShowConverter(true)}
           onEmitirContrato={() => setShowContrato(true)}
+          onReenviarContrato={() => handleAbrirReenviarContrato(orcAtivo)}
           onEditar={() => setShowEditar(true)}
         />
       )}
@@ -357,6 +386,15 @@ export default function Orcamentos() {
           orc={orcAtivo}
           onClose={() => setShowContrato(false)}
           onGerado={() => loadOrcamentos()}
+        />
+      )}
+
+      {/* Modal: reenviar contrato já emitido */}
+      {reenviarInfo && (
+        <ModalReenviarContrato
+          {...reenviarInfo}
+          onClose={() => setReenviarInfo(null)}
+          onEnviado={handleContratoReenviado}
         />
       )}
 
@@ -731,7 +769,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
 
 // ─── Modal: Detalhe do Orçamento ──────────────────────────────────────────────
 
-function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter, onEmitirContrato, onEditar }) {
+function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter, onEmitirContrato, onReenviarContrato, onEditar }) {
   const sc = STATUS_CONFIG[orc.status] || {}
   const [produtos,  setProdutos]  = useState([])
   const [novoItem,  setNovoItem]  = useState({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' })
@@ -1097,6 +1135,11 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
         {orc.status === 'aprovado' && (
           <Btn onClick={onEmitirContrato} style={{ background: 'var(--caramelo)' }}>
             <i className="ti ti-file-signature" /> Emitir Contrato
+          </Btn>
+        )}
+        {orc.contrato && (
+          <Btn variant="secondary" onClick={onReenviarContrato}>
+            <i className="ti ti-brand-whatsapp" /> Reenviar Contrato
           </Btn>
         )}
       </div>
@@ -1717,6 +1760,67 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={handleGerar} loading={saving}>
           <i className="ti ti-file-signature" /> Gerar contrato
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Modal: Reenviar Contrato já emitido ──────────────────────────────────────
+// Usado pela listagem (coluna de ações), independente do status do orçamento —
+// o backend (ContratoViewSet.enviar_whatsapp) não trava por status.
+
+function ModalReenviarContrato({ contrato, nomeCliente, telefoneDisplay, onClose, onEnviado }) {
+  const [mensagem, setMensagem] = useState('')
+  const [sending,  setSending]  = useState(false)
+  const [erro,     setErro]     = useState('')
+
+  async function handleEnviar() {
+    setSending(true)
+    setErro('')
+    try {
+      await contratosApi.enviarWhatsApp(contrato.id, { mensagem })
+      onEnviado()
+    } catch (e) {
+      const data = e?.response?.data
+      setErro(data?.mensagem || data?.detail || 'Erro ao enviar via WhatsApp. Verifique as credenciais Z-API em Configurações.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Modal open title={`Reenviar Contrato ${contrato.numero}`} onClose={onClose}>
+      <div className={styles.wppDestinatarioCard}>
+        <i className="ti ti-brand-whatsapp" style={{ color: '#25D366', fontSize: 22 }} />
+        <div>
+          <div className={styles.wppLabel}>Destinatário</div>
+          <div className={styles.wppNome}>{nomeCliente || contrato.contratante_nome}</div>
+          <div className={styles.wppFone}>{telefoneDisplay || '—'}</div>
+        </div>
+      </div>
+
+      <div className={styles.wppDocCard}>
+        <i className="ti ti-file-type-pdf" style={{ color: '#DC2626', fontSize: 18 }} />
+        <span>{contrato.numero}.pdf — Contrato de Aquisição de Produtos</span>
+      </div>
+
+      <div className={styles.formGroup} style={{ marginTop: 14 }}>
+        <label>Mensagem que acompanha o PDF (opcional)</label>
+        <textarea
+          rows={3}
+          value={mensagem}
+          onChange={e => setMensagem(e.target.value)}
+          placeholder="Segue novamente o contrato para assinatura. Qualquer dúvida, é só chamar!"
+        />
+      </div>
+
+      {erro && <p className={styles.erro}>{erro}</p>}
+
+      <div className={styles.modalActions}>
+        <Btn variant="ghost" onClick={onClose} disabled={sending}>Cancelar</Btn>
+        <Btn onClick={handleEnviar} loading={sending} className={styles.btnWppSend}>
+          <i className="ti ti-brand-whatsapp" /> Reenviar contrato
         </Btn>
       </div>
     </Modal>

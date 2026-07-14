@@ -84,7 +84,7 @@ class EventoViewSet(
     CsrfExemptMixin, viewsets.ModelViewSet,
 ):
     queryset           = Evento.objects.prefetch_related(
-        'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
+        'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao', 'contratos',
     ).select_related('cliente', 'local', 'orcamento_origem').all()
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['data_evento', 'criado_em', 'valor_total']
@@ -455,7 +455,7 @@ class OrcamentoViewSet(
     AuditoriaStatusMixin, AuditoriaUpdateMixin, AuditoriaCreateMixin, AuditoriaDestroyMixin,
     CsrfExemptMixin, viewsets.ModelViewSet,
 ):
-    queryset           = Orcamento.objects.prefetch_related('itens', 'imagens_inspiracao').select_related('cliente', 'evento').all()
+    queryset           = Orcamento.objects.prefetch_related('itens', 'imagens_inspiracao', 'contratos').select_related('cliente', 'evento').all()
     # authentication_classes real (ver abaixo) — algumas actions continuam AllowAny
     # (permission depende de get_permissions), só permitindo capturar o ator de forma
     # oportunista quando o token vier, para auditar o sinal inicial em converter_em_evento.
