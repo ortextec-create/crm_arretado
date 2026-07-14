@@ -1,0 +1,17 @@
+.ator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--fundo);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.texto strong {
+  color: var(--texto);
+  font-weight: 600;
+}

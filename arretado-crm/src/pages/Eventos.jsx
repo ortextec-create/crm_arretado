@@ -3,6 +3,7 @@ import { eventosApi, locaisEventoApi, clientesApi } from '../api/services'
 import { pdvApi, taxasEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast, Empty } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
+import AtorAcao from '../components/ui/AtorAcao'
 import { ACAO_LABEL, ACAO_COR, dataFmt, resumo } from '../utils/auditoriaResumo'
 import styles from './Eventos.module.css'
 
@@ -592,6 +593,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 
   return (
     <Modal open title="Novo Evento" onClose={onClose} wide>
+      <AtorAcao acao="Criando" />
       {/* Stepper */}
       <div className={styles.stepper}>
         {STEP_LABELS.map((l, i) => (

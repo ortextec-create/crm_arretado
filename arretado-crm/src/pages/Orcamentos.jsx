@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { orcamentosApi, contratosApi, clientesApi, pdvApi, locaisEventoApi, taxasEntregaApi, configEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast, Empty } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
+import AtorAcao from '../components/ui/AtorAcao'
 import { ACAO_LABEL, ACAO_COR, dataFmt, resumo } from '../utils/auditoriaResumo'
 import styles from './Orcamentos.module.css'
 
@@ -508,6 +509,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
 
   return (
     <Modal open title="Novo Orçamento" onClose={onClose} wide>
+      <AtorAcao acao="Criando" />
       <div className={styles.formGrid}>
         {/* Cliente */}
         <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
@@ -1198,6 +1200,7 @@ function ModalEditarOrcamento({ orc, onClose, onSalvo }) {
 
   return (
     <Modal open title={`Editar Orçamento ${orc.numero}`} onClose={onClose} wide>
+      <AtorAcao acao="Editando" />
       <div className={styles.formGrid}>
         {/* Cliente */}
         <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
