@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 14/jul/2026.
+> Última atualização: 15/jul/2026.
 
 ---
 
@@ -232,6 +232,8 @@ arretado-crm/                    ← raiz React
 - **Busca de cliente CRM** (padrão usado em `Eventos.jsx` e `Orcamentos.jsx`): input com debounce 350ms → `clientesApi.list({ search })` → dropdown com seleção → chip com nome/telefone e botão X para limpar. Nunca usar `<select>` com todos os clientes pré-carregados.
 - **Upload de arquivo/imagem via axios**: `api/client.js` fixa `headers: {'Content-Type': 'application/json'}` na instância do axios, e isso **não** é sobrescrito automaticamente quando o corpo é um `FormData` — sem correção, o navegador não define o boundary do multipart e o backend recebe a requisição sem o arquivo (`request.FILES` vazio). Sempre que enviar `FormData`, passar `{ headers: { 'Content-Type': undefined } }` na chamada (ver `orcamentosApi.adicionarImagens`, `pdvApi.updateFoto` e `eventosApi.adicionarPagamento` — este último condicional, só monta `FormData` quando há arquivo de comprovante anexado — em `services.js`) para o navegador definir o header correto.
 - **Lightbox de imagem ampliada**: padrão usado em `Orcamentos.jsx`/`Eventos.jsx` para a galeria de `imagens_inspiracao` — clique na thumbnail abre um overlay `position: fixed` (z-index 400, acima do Modal que é 200) com a imagem em `object-fit: contain`, fecha no clique fora ou no X. Reaproveitar esse padrão para qualquer nova galeria de imagens.
+- **Confirmação antes de enviar WhatsApp**: todo `handleEnviar*` que dispara `enviarWhatsApp` (orçamento e contrato — envio inicial ou reenvio, em `Orcamentos.jsx` e `Eventos.jsx`) abre um `window.confirm()` com nome/telefone do destinatário antes de chamar a API, pra evitar disparo acidental. Reaproveitar esse padrão em qualquer novo envio de WhatsApp disparado por clique direto de botão.
+- **Modal de emitir contrato não fecha sozinho após gerar**: `onGerado` (callback passado a `ModalEmitirContrato`/`ModalEmitirContratoEvento`) deve só recarregar a listagem/detalhe — nunca fechar o modal. O modal só fecha pelo botão "Fechar" explícito do usuário, depois que ele já viu o PDF e/ou enviou por WhatsApp na mesma tela (bug real corrigido em `Eventos.jsx`: o `onGerado` chamava `setEmitirEvento(null)` e fechava o modal antes do usuário conseguir ver o contrato recém-criado).
 
 ---
 
