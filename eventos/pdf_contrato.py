@@ -408,8 +408,11 @@ def _gerar_conteudo(contrato) -> bytes:
     story.append(HRFlowable(width='100%', thickness=1.2, color=CARAMELO, spaceAfter=8))
     story.append(Paragraph('ANEXO 1 — NOTA DE PEDIDOS', st['secao']))
 
-    orc   = contrato.orcamento
-    itens = list(orc.itens.all())
+    # Contrato emitido a partir de Evento (dados podem ter divergido do
+    # orçamento original após a conversão) lê os itens/agregados do Evento;
+    # senão, do Orçamento — ver CLAUDE.md ("Não criar ItemContrato").
+    fonte = contrato.evento if contrato.evento_id else contrato.orcamento
+    itens = list(fonte.itens.all())
     n     = len(itens)
 
     table_data = [['Descrição', 'Qtd', 'Preço Unit.', 'Total']]
@@ -419,13 +422,13 @@ def _gerar_conteudo(contrato) -> bytes:
             nome += f'  ({item.observacao})'
         table_data.append([nome, str(item.quantidade), _brl(item.preco_unit), _brl(item.preco_total)])
 
-    table_data.append(['', '', 'Subtotal', _brl(orc.subtotal)])
+    table_data.append(['', '', 'Subtotal', _brl(fonte.subtotal)])
     n_sub = len(table_data) - 1
-    if float(orc.desconto) > 0:
-        table_data.append(['', '', 'Desconto', f'− {_brl(orc.desconto)}'])
-    if float(orc.taxa_entrega) > 0:
-        table_data.append(['', '', 'Taxa de entrega', _brl(orc.taxa_entrega)])
-    table_data.append(['', '', 'TOTAL', _brl(orc.valor_total)])
+    if float(fonte.desconto) > 0:
+        table_data.append(['', '', 'Desconto', f'− {_brl(fonte.desconto)}'])
+    if float(fonte.taxa_entrega) > 0:
+        table_data.append(['', '', 'Taxa de entrega', _brl(fonte.taxa_entrega)])
+    table_data.append(['', '', 'TOTAL', _brl(fonte.valor_total)])
     n_total = len(table_data) - 1
 
     col_w = [MW * 0.50, MW * 0.10, MW * 0.20, MW * 0.20]

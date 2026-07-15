@@ -92,6 +92,7 @@ export default function Eventos() {
   const [showEditar,  setShowEditar]  = useState(false)
   const [eventoAtivo, setEventoAtivo] = useState(null)
   const [reenviarInfo, setReenviarInfo] = useState(null) // { contrato, nomeCliente, telefoneDisplay }
+  const [emitirEvento, setEmitirEvento] = useState(null) // evento ativo pro modal de Emitir Contrato
 
   // ── Carregamento ──────────────────────────────────────────────────────────
 
@@ -172,6 +173,20 @@ export default function Eventos() {
       eventosApi.detail(eventoAtivo.id).then(r => setEventoAtivo(r.data)).catch(() => {})
     }
     setToast({ message: 'Contrato reenviado por WhatsApp com sucesso!', type: 'success' })
+  }
+
+  const abrirEmitirContrato = (ev) => {
+    if (!ev.tem_orcamento_origem) return
+    setEmitirEvento(ev)
+  }
+
+  const handleContratoEmitido = () => {
+    setEmitirEvento(null)
+    loadEventos()
+    if (eventoAtivo) {
+      eventosApi.detail(eventoAtivo.id).then(r => setEventoAtivo(r.data)).catch(() => {})
+    }
+    setToast({ message: 'Contrato emitido com sucesso!', type: 'success' })
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -342,6 +357,15 @@ export default function Eventos() {
                             <i className="ti ti-brand-whatsapp" /> Contrato
                           </button>
                         )}
+                        {ev.tem_orcamento_origem && (
+                          <button
+                            className={styles.linkContrato}
+                            onClick={() => abrirEmitirContrato(ev)}
+                            title="Emitir contrato com os dados atuais do evento"
+                          >
+                            <i className="ti ti-file-signature" /> Emitir
+                          </button>
+                        )}
                       </td>
                     </tr>
                     )
@@ -389,6 +413,7 @@ export default function Eventos() {
           onToast={setToast}
           onEditar={() => setShowEditar(true)}
           onReenviarContrato={() => abrirReenviarContrato(eventoAtivo)}
+          onEmitirContrato={() => abrirEmitirContrato(eventoAtivo)}
         />
       )}
 
@@ -397,6 +422,14 @@ export default function Eventos() {
           {...reenviarInfo}
           onClose={() => setReenviarInfo(null)}
           onEnviado={handleContratoReenviado}
+        />
+      )}
+
+      {emitirEvento && (
+        <ModalEmitirContratoEvento
+          evento={emitirEvento}
+          onClose={() => setEmitirEvento(null)}
+          onGerado={handleContratoEmitido}
         />
       )}
 
@@ -976,7 +1009,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
-function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato }) {
+function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato, onEmitirContrato }) {
   const [abaAtiva,    setAbaAtiva]    = useState('itens')
   const [addingItem,  setAddingItem]  = useState(false)
   const [produtos,    setProdutos]    = useState([])
@@ -1216,6 +1249,11 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             {evento.contrato && (
               <Btn variant="secondary" onClick={onReenviarContrato} title={`Reenviar contrato ${evento.contrato.numero} por WhatsApp`}>
                 <i className="ti ti-brand-whatsapp" /> Reenviar Contrato
+              </Btn>
+            )}
+            {evento.tem_orcamento_origem && (
+              <Btn variant="secondary" onClick={onEmitirContrato} title="Emitir contrato com os dados atuais do evento">
+                <i className="ti ti-file-signature" /> Emitir Contrato
               </Btn>
             )}
             {ACOES.filter(a => a.show).map(a => (
@@ -1813,6 +1851,198 @@ function ModalReenviarContrato({ contrato, nomeCliente, telefoneDisplay, onClose
         <Btn variant="ghost" onClick={onClose} disabled={sending}>Cancelar</Btn>
         <Btn onClick={handleEnviar} disabled={sending} className={styles.btnWppSend}>
           {sending ? <Spinner size={14} /> : <i className="ti ti-brand-whatsapp" />} Reenviar contrato
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Modal: Emitir Contrato a partir dos dados atuais do Evento ───────────────
+// Diferente do "Emitir Contrato" de Orçamentos.jsx (que usa o orçamento
+// congelado), este usa evento.valor_total/itens ATUAIS — pode divergir do
+// orçamento original se o evento foi editado após a conversão. Sempre gera
+// um contrato NOVO (CTR-xxxx seguinte), nunca substitui um já existente.
+
+const ESTADO_CIVIL_OPTS = [
+  ['solteiro',      'Solteiro(a)'],
+  ['casado',        'Casado(a)'],
+  ['divorciado',    'Divorciado(a)'],
+  ['viuvo',         'Viúvo(a)'],
+  ['uniao_estavel', 'União Estável'],
+]
+
+function ModalEmitirContratoEvento({ evento, onClose, onGerado }) {
+  const [loadingCliente,       setLoadingCliente]       = useState(true)
+  const [temEnderecoPrincipal, setTemEnderecoPrincipal] = useState(false)
+  const [form, setForm] = useState({
+    cpf: '', rg: '', rg_orgao_emissor: '', nacionalidade: 'brasileira',
+    profissao: '', estado_civil: '', endereco_avulso: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [erro,   setErro]   = useState('')
+  const [contrato, setContrato] = useState(null)
+
+  const [mensagem,   setMensagem]   = useState('')
+  const [sendingWpp, setSendingWpp] = useState(false)
+  const [erroWpp,    setErroWpp]    = useState('')
+
+  useEffect(() => {
+    if (!evento.cliente) { setLoadingCliente(false); return }
+    clientesApi.get(evento.cliente)
+      .then(r => {
+        const c = r.data
+        setForm(f => ({
+          ...f,
+          cpf:              c.cpf || '',
+          rg:               c.rg || '',
+          rg_orgao_emissor: c.rg_orgao_emissor || '',
+          nacionalidade:    c.nacionalidade || 'brasileira',
+          profissao:        c.profissao || '',
+          estado_civil:     c.estado_civil || '',
+        }))
+        setTemEnderecoPrincipal((c.enderecos || []).some(e => e.principal))
+      })
+      .finally(() => setLoadingCliente(false))
+  }, [evento.cliente])
+
+  function set(field, value) { setForm(f => ({ ...f, [field]: value })) }
+
+  async function handleGerar() {
+    if (!form.cpf || !form.rg || !form.nacionalidade || !form.profissao || !form.estado_civil) {
+      setErro('Preencha CPF, RG, nacionalidade, profissão e estado civil do CONTRATANTE.')
+      return
+    }
+    if (!temEnderecoPrincipal && !form.endereco_avulso) {
+      setErro('O cliente não tem endereço principal cadastrado — informe um endereço para o contrato.')
+      return
+    }
+    setSaving(true); setErro('')
+    try {
+      const res = await eventosApi.gerarContrato(evento.id, form)
+      setContrato(res.data)
+      onGerado?.(res.data)
+    } catch (e) {
+      const data = e?.response?.data
+      const msg = data?.mensagem || (data?.campos_faltando ? `Faltam: ${data.campos_faltando.join(', ')}` : data?.detail)
+      setErro(msg || 'Erro ao emitir contrato.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleVerPdf() {
+    try {
+      const res = await contratosApi.pdf(contrato.id)
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+    } catch {
+      setErro('Erro ao gerar PDF do contrato.')
+    }
+  }
+
+  async function handleEnviarWpp() {
+    setSendingWpp(true); setErroWpp('')
+    try {
+      const res = await contratosApi.enviarWhatsApp(contrato.id, { mensagem })
+      setContrato(res.data)
+    } catch (e) {
+      const data = e?.response?.data
+      setErroWpp(data?.mensagem || data?.detail || 'Erro ao enviar via WhatsApp.')
+    } finally {
+      setSendingWpp(false)
+    }
+  }
+
+  if (loadingCliente) {
+    return (
+      <Modal open title="Emitir Contrato" onClose={onClose}>
+        <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={22} /></div>
+      </Modal>
+    )
+  }
+
+  if (contrato) {
+    return (
+      <Modal open title={`Contrato ${contrato.numero}`} onClose={onClose}>
+        <p>Contrato gerado com sucesso para <strong>{contrato.contratante_nome}</strong>.</p>
+        <div className={styles.wppDocCard}>
+          <i className="ti ti-file-type-pdf" style={{ color: '#DC2626', fontSize: 18 }} />
+          <span>{contrato.numero}.pdf — Contrato de Aquisição de Produtos</span>
+        </div>
+        <div className={styles.formGroup} style={{ marginTop: 14 }}>
+          <label>Mensagem que acompanha o PDF (opcional)</label>
+          <textarea
+            rows={3}
+            value={mensagem}
+            onChange={e => setMensagem(e.target.value)}
+            placeholder="Segue o contrato para assinatura. Qualquer dúvida, é só chamar!"
+          />
+        </div>
+        {erroWpp && <p className={styles.error}><i className="ti ti-alert-circle" /> {erroWpp}</p>}
+        <div className={styles.stepNav}>
+          <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+          <Btn variant="secondary" onClick={handleVerPdf}>
+            <i className="ti ti-file-type-pdf" /> Ver PDF
+          </Btn>
+          {contrato.status === 'enviado' ? (
+            <span style={{ background: '#05966922', color: '#059669', padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>Enviado</span>
+          ) : (
+            <Btn onClick={handleEnviarWpp} disabled={sendingWpp} className={styles.btnWppSend}>
+              {sendingWpp ? <Spinner size={14} /> : <i className="ti ti-brand-whatsapp" />} Enviar por WhatsApp
+            </Btn>
+          )}
+        </div>
+      </Modal>
+    )
+  }
+
+  return (
+    <Modal open title="Emitir Contrato" onClose={onClose}>
+      <p>Complete os dados do CONTRATANTE para gerar o contrato do evento <strong>{evento.numero}</strong> com os dados atuais dele.</p>
+      <div className={styles.formGrid}>
+        <div className={styles.formGroup}>
+          <label>CPF *</label>
+          <input value={form.cpf} onChange={e => set('cpf', e.target.value)} placeholder="000.000.000-00" />
+        </div>
+        <div className={styles.formGroup}>
+          <label>RG *</label>
+          <input value={form.rg} onChange={e => set('rg', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Órgão emissor</label>
+          <input value={form.rg_orgao_emissor} onChange={e => set('rg_orgao_emissor', e.target.value)} placeholder="SSP-PI" />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Nacionalidade *</label>
+          <input value={form.nacionalidade} onChange={e => set('nacionalidade', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Profissão *</label>
+          <input value={form.profissao} onChange={e => set('profissao', e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Estado civil *</label>
+          <select value={form.estado_civil} onChange={e => set('estado_civil', e.target.value)}>
+            <option value="">— Selecione —</option>
+            {ESTADO_CIVIL_OPTS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        {!temEnderecoPrincipal && (
+          <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+            <label>Endereço do CONTRATANTE * (cliente sem endereço principal cadastrado)</label>
+            <input
+              value={form.endereco_avulso}
+              onChange={e => set('endereco_avulso', e.target.value)}
+              placeholder="Rua, número, bairro, cidade/estado"
+            />
+          </div>
+        )}
+      </div>
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Btn>
+        <Btn onClick={handleGerar} disabled={saving}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-file-signature" />} Gerar contrato
         </Btn>
       </div>
     </Modal>

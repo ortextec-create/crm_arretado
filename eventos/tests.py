@@ -72,6 +72,29 @@ class GerarContratoTests(TestCase):
         resp = self._post({})
         self.assertEqual(resp.status_code, 400)
 
+    def test_permite_gerar_contrato_com_orcamento_convertido(self):
+        # Orçamento convertido em Evento (status vira 'convertido') não pode
+        # mais ficar travado para emitir contrato — ver CLAUDE.md.
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente,
+            tipo_evento='aniversario', data_evento=self.orc.data_evento, status='confirmado',
+        )
+        self.orc.status = 'convertido'
+        self.orc.evento = evento
+        self.orc.save(update_fields=['status', 'evento'])
+
+        payload = {
+            'cpf': '123.456.789-00', 'rg': '1234567', 'nacionalidade': 'brasileira',
+            'profissao': 'Professora', 'estado_civil': 'solteiro',
+            'endereco_avulso': 'Rua das Flores, 100 - Centro, Teresina/PI',
+        }
+        resp = self._post(payload)
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        contrato = Contrato.objects.get(orcamento=self.orc)
+        self.assertEqual(contrato.evento_id, evento.id)
+
     def test_bloqueia_dados_incompletos(self):
         resp = self._post({})
         resp.render()
@@ -152,6 +175,126 @@ class GerarContratoTests(TestCase):
         )
         resp = view(req, pk=contrato.id)
         self.assertEqual(resp.status_code, 401)
+
+
+class GerarContratoEventoTests(TestCase):
+    """
+    Contrato emitido a partir do Evento (não do Orçamento congelado) — usa
+    os itens/valores ATUAIS do evento, que podem já ter divergido do
+    orçamento original que o gerou.
+    """
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Teste', email='admin@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+
+        self.cliente = Cliente.objects.create(nome='Maria Teste', telefone_principal='86999998888')
+        self.orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente,
+            tipo_evento='aniversario', data_evento=datetime.date.today() + datetime.timedelta(days=30),
+            status='aprovado',
+        )
+        ItemOrcamento.objects.create(
+            orcamento=self.orc, nome='Bolo teste', preco_unit=100, quantidade=2, preco_total=200,
+        )
+        self.orc.recalcular_totais()
+        self.orc.refresh_from_db()
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _converter(self):
+        token = self._token()
+        view = OrcamentoViewSet.as_view({'post': 'converter_em_evento'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/converter-em-evento/', {}, format='json',
+            HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        resp = view(req, pk=self.orc.id)
+        resp.render()
+        return Evento.objects.get(id=resp.data['evento']['id'])
+
+    def _post(self, evento, data, autenticado=True):
+        view = EventoViewSet.as_view({'post': 'gerar_contrato'})
+        extra = {'HTTP_AUTHORIZATION': f'Token {self._token()}'} if autenticado else {}
+        req = self.factory.post(
+            f'/api/v1/eventos/{evento.id}/gerar-contrato/', data, format='json', **extra,
+        )
+        return view(req, pk=evento.id)
+
+    def test_bloqueia_sem_token_401(self):
+        evento = self._converter()
+        resp = self._post(evento, {}, autenticado=False)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_bloqueia_evento_sem_orcamento_origem(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente,
+            tipo_evento='aniversario', data_evento=datetime.date.today() + datetime.timedelta(days=15),
+            status='orcamento',
+        )
+        resp = self._post(evento, {})
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['detail'], 'sem_orcamento_origem')
+
+    def test_bloqueia_evento_cancelado(self):
+        evento = self._converter()
+        evento.status = 'cancelado'
+        evento.save(update_fields=['status'])
+        resp = self._post(evento, {})
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['detail'], 'evento_cancelado')
+
+    def test_bloqueia_dados_incompletos(self):
+        evento = self._converter()
+        resp = self._post(evento, {})
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['detail'], 'dados_incompletos')
+        self.assertFalse(Contrato.objects.exists())
+
+    def _payload_completo(self):
+        return {
+            'cpf': '123.456.789-00', 'rg': '1234567', 'rg_orgao_emissor': 'SSP-PI',
+            'nacionalidade': 'brasileira', 'profissao': 'Professora', 'estado_civil': 'solteiro',
+            'endereco_avulso': 'Rua das Flores, 100 - Centro, Teresina/PI',
+        }
+
+    def test_gera_contrato_reflete_itens_divergentes_do_evento(self):
+        evento = self._converter()
+
+        # Evento diverge do orçamento original depois da conversão.
+        ItemEvento.objects.create(
+            evento=evento, nome='Docinho extra', preco_unit=10, quantidade=5, preco_total=50,
+        )
+        evento.refresh_from_db()
+        evento.recalcular_totais()
+        evento.refresh_from_db()
+        self.assertNotEqual(evento.valor_total, self.orc.valor_total)
+
+        resp = self._post(evento, self._payload_completo())
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        contrato = Contrato.objects.get(id=resp.data['id'])
+        self.assertEqual(contrato.orcamento_id, self.orc.id)
+        self.assertEqual(contrato.evento_id, evento.id)
+        self.assertEqual(contrato.valor_total, evento.valor_total)
+        self.assertNotEqual(contrato.valor_total, self.orc.valor_total)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_CONTRATO_EMITIDO).latest('id')
+        self.assertEqual(log.detalhes['evento_id'], evento.id)
+
+        from .pdf_contrato import gerar_pdf_contrato
+        pdf_bytes = gerar_pdf_contrato(contrato)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
 
 
 class PagamentoEventoAuditoriaTests(TestCase):

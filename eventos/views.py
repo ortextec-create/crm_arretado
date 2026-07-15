@@ -107,7 +107,7 @@ class EventoViewSet(
             'adicionar_pagamento', 'remover_pagamento', 'destroy', 'remover_item',
             'create', 'update', 'partial_update',
             'confirmar', 'iniciar_producao', 'marcar_pronto', 'entregar', 'cancelar',
-            'adicionar_item', 'historico',
+            'adicionar_item', 'historico', 'gerar_contrato',
         ):
             return [IsAuthenticated()]
         return [AllowAny()]
@@ -298,6 +298,147 @@ class EventoViewSet(
         evento.recalcular_totais()
         return Response(EventoDetailSerializer(evento).data)
 
+    # ── Contrato ──────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='gerar-contrato')
+    def gerar_contrato(self, request, pk=None):
+        """
+        Gera um novo Contrato usando os dados ATUAIS do Evento (não o
+        Orçamento congelado) — útil quando o evento foi alterado depois da
+        conversão (itens/valor divergentes do orçamento original). Exige que
+        o evento tenha vindo de um orçamento (Contrato.orcamento é FK
+        obrigatória) — ver CLAUDE.md.
+        """
+        evento = self.get_object()
+
+        if not getattr(evento, 'orcamento_origem', None):
+            return Response(
+                {
+                    'detail': 'sem_orcamento_origem',
+                    'mensagem': (
+                        'Este evento não foi criado a partir de um orçamento — não é possível '
+                        'emitir contrato.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if evento.status == 'cancelado':
+            return Response(
+                {
+                    'detail': 'evento_cancelado',
+                    'mensagem': 'Não é possível emitir contrato de um evento cancelado.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cliente = evento.cliente
+        if not cliente:
+            return Response(
+                {
+                    'detail': 'sem_cliente',
+                    'mensagem': (
+                        'Este evento não está vinculado a um cliente do CRM. '
+                        'Vincule um cliente antes de emitir o contrato.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not evento.data_evento:
+            return Response(
+                {
+                    'detail': 'sem_data_evento',
+                    'mensagem': 'Este evento não tem a data definida. Preencha-a antes de emitir o contrato.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Campos do CONTRATANTE — opcionais no cadastro, exigidos aqui (ver Contrato.md)
+        campos_atualizaveis = ['cpf', 'rg', 'rg_orgao_emissor', 'nacionalidade', 'profissao', 'estado_civil']
+        campos_obrigatorios = ['cpf', 'rg', 'nacionalidade', 'profissao', 'estado_civil']
+
+        dados_cliente = {c: request.data[c] for c in campos_atualizaveis if request.data.get(c)}
+        if dados_cliente:
+            from clientes.serializers import ClienteDetailSerializer
+            serializer = ClienteDetailSerializer(cliente, data=dados_cliente, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+
+        faltando = [c for c in campos_obrigatorios if not getattr(cliente, c)]
+        if faltando:
+            return Response(
+                {
+                    'detail': 'dados_incompletos',
+                    'campos_faltando': faltando,
+                    'mensagem': (
+                        'Complete os dados do CONTRATANTE (CPF, RG, nacionalidade, profissão e estado '
+                        'civil) para emitir o contrato.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        endereco_avulso    = (request.data.get('endereco_avulso') or '').strip()
+        endereco_principal = cliente.enderecos.filter(principal=True).first()
+        if endereco_principal:
+            contratante_endereco = endereco_principal.endereco_completo
+        elif endereco_avulso:
+            contratante_endereco = endereco_avulso
+        else:
+            return Response(
+                {
+                    'detail': 'sem_endereco',
+                    'mensagem': (
+                        'O cliente não tem endereço principal cadastrado. Informe um endereço avulso '
+                        'para o contrato.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        local_evento = evento.local.endereco_completo if evento.local else evento.endereco_avulso
+
+        cfg              = ConfiguracaoContrato.get()
+        percentual_sinal = cfg.percentual_sinal
+        valor_sinal      = (evento.valor_total * percentual_sinal / Decimal('100')).quantize(Decimal('0.01'))
+        data_quitacao    = evento.data_evento - datetime.timedelta(days=cfg.prazo_quitacao_dias)
+
+        contrato = Contrato.objects.create(
+            numero=Contrato.proximo_numero(),
+            orcamento=evento.orcamento_origem,
+            evento=evento,
+            cliente=cliente,
+            contratante_nome=cliente.nome,
+            contratante_nacionalidade=cliente.nacionalidade,
+            contratante_profissao=cliente.profissao,
+            contratante_rg=cliente.rg,
+            contratante_rg_orgao_emissor=cliente.rg_orgao_emissor,
+            contratante_cpf=cliente.cpf,
+            contratante_estado_civil=cliente.estado_civil,
+            contratante_endereco=contratante_endereco,
+            data_evento=evento.data_evento,
+            hora_evento=evento.hora_evento,
+            local_evento=local_evento,
+            valor_total=evento.valor_total,
+            percentual_sinal=percentual_sinal,
+            valor_sinal=valor_sinal,
+            data_quitacao=data_quitacao,
+        )
+
+        registrar(
+            request.user, LogAuditoria.ACAO_CONTRATO_EMITIDO,
+            detalhes={
+                'contrato_numero': contrato.numero,
+                'orcamento_id': evento.orcamento_origem.id, 'orcamento_numero': evento.orcamento_origem.numero,
+                'evento_id': evento.id, 'evento_numero': evento.numero,
+                'cliente': cliente.nome, 'valor_total': str(contrato.valor_total),
+            },
+            request=request,
+        )
+
+        return Response(ContratoSerializer(contrato).data, status=status.HTTP_201_CREATED)
+
     # ── Pagamentos ────────────────────────────────────────────────────────
 
     @action(detail=True, methods=['post'], url_path='pagamentos')
@@ -358,6 +499,10 @@ class EventoViewSet(
             Q(detalhes__model='ItemEvento', detalhes__evento_id=evento.id) |
             Q(
                 acao__in=[LogAuditoria.ACAO_PAGAMENTO_REGISTRADO, LogAuditoria.ACAO_PAGAMENTO_REMOVIDO],
+                detalhes__evento_id=evento.id,
+            ) |
+            Q(
+                acao__in=[LogAuditoria.ACAO_CONTRATO_EMITIDO, LogAuditoria.ACAO_CONTRATO_ENVIADO],
                 detalhes__evento_id=evento.id,
             )
         ).select_related('usuario').order_by('-criado_em')
@@ -923,7 +1068,7 @@ class OrcamentoViewSet(
     def gerar_contrato(self, request, pk=None):
         orc = self.get_object()
 
-        if orc.status != 'aprovado':
+        if orc.status not in ('aprovado', 'convertido'):
             return Response(
                 {'detail': 'Só é possível emitir contrato de um orçamento aprovado.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1004,6 +1149,7 @@ class OrcamentoViewSet(
         contrato = Contrato.objects.create(
             numero=Contrato.proximo_numero(),
             orcamento=orc,
+            evento=orc.evento,
             cliente=cliente,
             contratante_nome=cliente.nome,
             contratante_nacionalidade=cliente.nacionalidade,
@@ -1105,6 +1251,7 @@ class ContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListMod
             request.user, LogAuditoria.ACAO_CONTRATO_ENVIADO,
             detalhes={
                 'contrato_numero': contrato.numero, 'orcamento_id': contrato.orcamento_id,
+                'evento_id': contrato.evento_id,
                 'cliente': contrato.cliente.nome if contrato.cliente else None,
                 'telefone': telefone,
             },

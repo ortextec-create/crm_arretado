@@ -72,6 +72,7 @@ class EventoListSerializer(serializers.ModelSerializer):
     telefone_display     = serializers.ReadOnlyField()
     ultima_modificacao   = serializers.SerializerMethodField()
     contrato             = serializers.SerializerMethodField()
+    tem_orcamento_origem = serializers.SerializerMethodField()
 
     class Meta:
         model  = Evento
@@ -87,7 +88,7 @@ class EventoListSerializer(serializers.ModelSerializer):
             'subtotal', 'desconto', 'valor_total', 'sinal_pago', 'saldo_restante',
             'pode_confirmar', 'pode_iniciar_producao', 'pode_marcar_pronto',
             'pode_entregar', 'pode_cancelar',
-            'criado_em', 'atualizado_em', 'ultima_modificacao', 'contrato',
+            'criado_em', 'atualizado_em', 'ultima_modificacao', 'contrato', 'tem_orcamento_origem',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -102,6 +103,9 @@ class EventoListSerializer(serializers.ModelSerializer):
     def get_contrato(self, obj):
         contrato = next(iter(obj.contratos.all()), None)
         return ContratoResumoSerializer(contrato).data if contrato else None
+
+    def get_tem_orcamento_origem(self, obj):
+        return bool(getattr(obj, 'orcamento_origem', None))
 
 
 class PagamentoEventoSerializer(serializers.ModelSerializer):
@@ -121,12 +125,11 @@ class EventoDetailSerializer(EventoListSerializer):
     local_detalhe = LocalEventoSerializer(source='local', read_only=True)
     pagamentos = PagamentoEventoSerializer(many=True, read_only=True)
     imagens_inspiracao = serializers.SerializerMethodField()
-    tem_orcamento_origem = serializers.SerializerMethodField()
 
     class Meta(EventoListSerializer.Meta):
         fields = EventoListSerializer.Meta.fields + [
             'itens', 'local_detalhe', 'pagamentos',
-            'imagens_inspiracao', 'tem_orcamento_origem', 'observacoes',
+            'imagens_inspiracao', 'observacoes',
         ]
 
     def get_imagens_inspiracao(self, obj):
@@ -134,9 +137,6 @@ class EventoDetailSerializer(EventoListSerializer):
         if not origem:
             return []
         return ImagemInspiracaoSerializer(origem.imagens_inspiracao.all(), many=True).data
-
-    def get_tem_orcamento_origem(self, obj):
-        return bool(getattr(obj, 'orcamento_origem', None))
 
 
 class EventoCreateSerializer(serializers.ModelSerializer):

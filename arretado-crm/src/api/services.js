@@ -211,6 +211,7 @@ export const eventosApi = {
   agenda:          (mes)   => api.get('/eventos/agenda/', { params: { mes } }),
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
   historico:       (id)    => api.get(`/eventos/${id}/historico/`),
+  gerarContrato:   (id, data) => api.post(`/eventos/${id}/gerar-contrato/`, data),
 }
 
 // ─── ORÇAMENTOS ──────────────────────────────────────────────────────────────
