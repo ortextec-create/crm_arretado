@@ -1400,6 +1400,7 @@ function ModalEnviarWhatsApp({ orc, onClose, onEnviado }) {
   const [erro,     setErro]     = useState('')
 
   async function handleEnviar() {
+    if (!window.confirm(`Enviar o orçamento ${orc.numero} por WhatsApp para ${orc.nome_cliente_display} (${orc.telefone_display})?`)) return
     setSending(true)
     setErro('')
     try {
@@ -1654,6 +1655,7 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
   }
 
   async function handleEnviarWpp() {
+    if (!window.confirm(`Enviar o contrato ${contrato.numero} por WhatsApp para ${orc.nome_cliente_display} (${orc.telefone_display})?`)) return
     setSendingWpp(true); setErroWpp('')
     try {
       const res = await contratosApi.enviarWhatsApp(contrato.id, { mensagem })
@@ -1776,6 +1778,7 @@ function ModalReenviarContrato({ contrato, nomeCliente, telefoneDisplay, onClose
   const [erro,     setErro]     = useState('')
 
   async function handleEnviar() {
+    if (!window.confirm(`Enviar o contrato ${contrato.numero} por WhatsApp para ${nomeCliente || contrato.contratante_nome} (${telefoneDisplay || '—'})?`)) return
     setSending(true)
     setErro('')
     try {

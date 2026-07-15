@@ -181,7 +181,6 @@ export default function Eventos() {
   }
 
   const handleContratoEmitido = () => {
-    setEmitirEvento(null)
     loadEventos()
     if (eventoAtivo) {
       eventosApi.detail(eventoAtivo.id).then(r => setEventoAtivo(r.data)).catch(() => {})
@@ -348,15 +347,6 @@ export default function Eventos() {
                         )}
                       </td>
                       <td onClick={e => e.stopPropagation()}>
-                        {ev.contrato && (
-                          <button
-                            className={styles.linkContrato}
-                            onClick={() => abrirReenviarContrato(ev)}
-                            title={`Reenviar contrato ${ev.contrato.numero} por WhatsApp`}
-                          >
-                            <i className="ti ti-brand-whatsapp" /> Contrato
-                          </button>
-                        )}
                         {ev.tem_orcamento_origem && (
                           <button
                             className={styles.linkContrato}
@@ -364,6 +354,15 @@ export default function Eventos() {
                             title="Emitir contrato com os dados atuais do evento"
                           >
                             <i className="ti ti-file-signature" /> Emitir
+                          </button>
+                        )}
+                        {ev.contrato && (
+                          <button
+                            className={styles.linkContrato}
+                            onClick={() => abrirReenviarContrato(ev)}
+                            title={`Reenviar contrato ${ev.contrato.numero} por WhatsApp`}
+                          >
+                            <i className="ti ti-brand-whatsapp" /> Contrato
                           </button>
                         )}
                       </td>
@@ -1246,14 +1245,14 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             <Btn variant="secondary" onClick={onEditar} title="Editar dados do evento">
               <i className="ti ti-edit" /> Editar
             </Btn>
+            {evento.tem_orcamento_origem && (
+              <Btn onClick={onEmitirContrato} style={{ background: 'var(--caramelo)' }} title="Emitir contrato com os dados atuais do evento">
+                <i className="ti ti-file-signature" /> Emitir Contrato
+              </Btn>
+            )}
             {evento.contrato && (
               <Btn variant="secondary" onClick={onReenviarContrato} title={`Reenviar contrato ${evento.contrato.numero} por WhatsApp`}>
                 <i className="ti ti-brand-whatsapp" /> Reenviar Contrato
-              </Btn>
-            )}
-            {evento.tem_orcamento_origem && (
-              <Btn variant="secondary" onClick={onEmitirContrato} title="Emitir contrato com os dados atuais do evento">
-                <i className="ti ti-file-signature" /> Emitir Contrato
               </Btn>
             )}
             {ACOES.filter(a => a.show).map(a => (
@@ -1806,6 +1805,7 @@ function ModalReenviarContrato({ contrato, nomeCliente, telefoneDisplay, onClose
   const [erro,     setErro]     = useState('')
 
   async function handleEnviar() {
+    if (!window.confirm(`Enviar o contrato ${contrato.numero} por WhatsApp para ${nomeCliente || contrato.contratante_nome} (${telefoneDisplay || '—'})?`)) return
     setSending(true)
     setErro('')
     try {
@@ -1941,6 +1941,7 @@ function ModalEmitirContratoEvento({ evento, onClose, onGerado }) {
   }
 
   async function handleEnviarWpp() {
+    if (!window.confirm(`Enviar o contrato ${contrato.numero} por WhatsApp para ${evento.nome_cliente_display} (${evento.telefone_display})?`)) return
     setSendingWpp(true); setErroWpp('')
     try {
       const res = await contratosApi.enviarWhatsApp(contrato.id, { mensagem })
