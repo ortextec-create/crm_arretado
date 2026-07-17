@@ -302,6 +302,30 @@ export const fichasApi = {
   atualizarProduto:(id, d)  => api.patch(`/pdv/produtos/${id}/`, d),
 }
 
+// ─── ESTOQUE ──────────────────────────────────────────────────────────────────
+
+export const estoqueApi = {
+  movimentos: {
+    list: (params = {}) => api.get('/estoque/movimentos/', { params }),
+  },
+  registrarCompra:   (data) => api.post('/estoque/compras/registrar/', data),
+  ajusteInventario:  (data) => api.post('/estoque/ajuste-inventario/', data),
+  producoes: {
+    list:    (params = {}) => api.get('/estoque/producoes/', { params }),
+    create:  (data)        => api.post('/estoque/producoes/', data),
+    preview: (params)      => api.get('/estoque/producoes/preview/', { params }),
+  },
+  configuracao: {
+    get:    ()     => api.get('/estoque/configuracao/1/'),
+    update: (data) => api.patch('/estoque/configuracao/1/', data),
+  },
+  telefonesAlerta: {
+    list:   ()     => api.get('/estoque/telefones-alerta/'),
+    create: (data) => api.post('/estoque/telefones-alerta/', data),
+    remove: (id)   => api.delete(`/estoque/telefones-alerta/${id}/`),
+  },
+}
+
 // ─── RELATÓRIOS ───────────────────────────────────────────────────────────────
 
 export const relatoriosApi = {

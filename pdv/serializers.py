@@ -90,7 +90,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'ativo', 'tipo', 'materia_prima_origem', 'materia_prima_nome', 'margem_desejada_pct',
             'custo', 'custo_origem', 'margem_pct', 'preco_sugerido_revenda',
             'faixas_preco', 'itens_kit', 'dados_fiscais',
+            'modo_estoque', 'quantidade_estoque', 'estoque_minimo',
         ]
+        read_only_fields = ['quantidade_estoque']
 
     def get_custo(self, obj):
         c = obj.custo
@@ -110,6 +112,11 @@ class ProdutoSerializer(serializers.ModelSerializer):
         if materia_prima_origem and tipo != 'revenda':
             raise serializers.ValidationError({
                 'materia_prima_origem': 'Só pode ser preenchido quando o tipo do produto é "revenda".'
+            })
+        modo_estoque = data.get('modo_estoque', getattr(self.instance, 'modo_estoque', None))
+        if modo_estoque and tipo != 'fabricado':
+            raise serializers.ValidationError({
+                'modo_estoque': 'Só pode ser preenchido quando o tipo do produto é "fabricado".'
             })
         return data
 

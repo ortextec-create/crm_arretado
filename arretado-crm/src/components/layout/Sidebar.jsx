@@ -23,6 +23,7 @@ const NAV = [
       { to: '/catalogo',       icon: 'book-2',           label: 'Catálogo' },
       { to: '/fichas-tecnicas',icon: 'flask',            label: 'Fichas Técnicas', sub: true },
       { to: '/central-precos', icon: 'currency-dollar',  label: 'Central de Preços' },
+      { to: '/estoque',        icon: 'boxes',            label: 'Estoque' },
     ],
   },
   {

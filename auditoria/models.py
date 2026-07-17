@@ -30,6 +30,10 @@ class LogAuditoria(models.Model):
     ACAO_STATUS_ALTERADO = 'status_alterado'
     ACAO_ITEM_ADICIONADO = 'item_adicionado'
     ACAO_ORCAMENTO_CONVERTIDO = 'orcamento_convertido_em_evento'
+    ACAO_ENTRADA_ESTOQUE_REGISTRADA = 'entrada_estoque_registrada'
+    ACAO_AJUSTE_INVENTARIO_REGISTRADO = 'ajuste_inventario_registrado'
+    ACAO_PRODUCAO_REGISTRADA = 'producao_registrada'
+    ACAO_CONFIG_ESTOQUE_ALTERADA = 'config_estoque_alterada'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -63,6 +67,10 @@ class LogAuditoria(models.Model):
         (ACAO_STATUS_ALTERADO, 'Status alterado'),
         (ACAO_ITEM_ADICIONADO, 'Item adicionado'),
         (ACAO_ORCAMENTO_CONVERTIDO, 'Orçamento convertido em evento'),
+        (ACAO_ENTRADA_ESTOQUE_REGISTRADA, 'Entrada de estoque registrada'),
+        (ACAO_AJUSTE_INVENTARIO_REGISTRADO, 'Ajuste de inventário registrado'),
+        (ACAO_PRODUCAO_REGISTRADA, 'Produção registrada'),
+        (ACAO_CONFIG_ESTOQUE_ALTERADA, 'Configuração de estoque alterada'),
     ]
 
     usuario = models.ForeignKey(

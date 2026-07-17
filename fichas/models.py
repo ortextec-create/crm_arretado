@@ -56,6 +56,15 @@ class MateriaPrima(models.Model):
     atualizado_em     = models.DateTimeField(auto_now=True)
     criado_em         = models.DateTimeField(auto_now_add=True)
 
+    quantidade_estoque = models.DecimalField(
+        max_digits=10, decimal_places=3, default=Decimal('0'),
+        help_text="Saldo atual em estoque, na unidade_medida. Derivado — nunca editar direto, sempre via estoque.MovimentoEstoque.registrar()"
+    )
+    estoque_minimo = models.DecimalField(
+        max_digits=10, decimal_places=3, default=Decimal('0'),
+        help_text="Limite mínimo para disparo de alerta de estoque baixo. 0 = sem alerta"
+    )
+
     class Meta:
         verbose_name        = "Matéria-Prima"
         verbose_name_plural = "Matérias-Primas"

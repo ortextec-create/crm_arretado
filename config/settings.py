@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'auditoria',
     'notificacoes',
     'fichas',
+    'estoque',
     'relatorios',
     'dashboard',
 ]

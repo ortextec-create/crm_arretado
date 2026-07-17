@@ -8,6 +8,8 @@ from rest_framework.response import Response
 
 from pedidos.models import PedidoUnificado
 from eventos.models import Evento, PagamentoEvento, ConfiguracaoAlertaEvento
+from fichas.models import MateriaPrima
+from pdv.models import Produto
 
 
 class CsrfExemptMixin:
@@ -62,6 +64,7 @@ class DashboardResumoView(CsrfExemptMixin, views.APIView):
                 },
                 'anotaai': None,
             },
+            'estoque':               self._estoque(),
             'total_recebido_hoje':   total_recebido_hoje,
             'comparativo_ontem_pct': comparativo_ontem_pct,
             'grafico_7dias':         grafico_7dias,
@@ -196,6 +199,22 @@ class DashboardResumoView(CsrfExemptMixin, views.APIView):
             }
             for e in qs
         ]
+
+    # ── Estoque (itens abaixo do mínimo) ───────────────────────────────────
+
+    @staticmethod
+    def _estoque():
+        materias_baixas = MateriaPrima.objects.filter(
+            estoque_minimo__gt=0, quantidade_estoque__lt=F('estoque_minimo'), ativo=True,
+        )
+        produtos_baixos = Produto.objects.filter(
+            estoque_minimo__gt=0, quantidade_estoque__lt=F('estoque_minimo'), ativo=True,
+        ).exclude(tipo='kit')
+        return {
+            'itens_abaixo_minimo': materias_baixas.count() + produtos_baixos.count(),
+            'insumos': list(materias_baixas.values_list('nome', flat=True)[:5]),
+            'produtos': list(produtos_baixos.values_list('nome', flat=True)[:5]),
+        }
 
     # ── Ticket médio (últimos 30 dias) ─────────────────────────────────────
 

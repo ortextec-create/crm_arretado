@@ -121,6 +121,24 @@ class Produto(models.Model):
         help_text="Opcional. Sugere preço de venda para produtos de revenda (não substitui `preco`)."
     )
 
+    MODO_ESTOQUE_CHOICES = [
+        ('estoque',       'Mantém estoque (produção antecipada)'),
+        ('sob_encomenda', 'Sob encomenda (sem saldo próprio)'),
+    ]
+    modo_estoque = models.CharField(
+        max_length=15, choices=MODO_ESTOQUE_CHOICES, null=True, blank=True,
+        help_text="Só relevante quando tipo == 'fabricado'. Revenda equivale sempre a 'estoque'; kit não usa este campo (estoque virtual)."
+    )
+    quantidade_estoque = models.DecimalField(
+        max_digits=10, decimal_places=3, default=Decimal('0'),
+        help_text="Saldo atual. Só é escrito quando tipo == 'revenda' ou (tipo == 'fabricado' e modo_estoque == 'estoque'). "
+                   "Derivado — nunca editar direto, sempre via estoque.MovimentoEstoque.registrar()"
+    )
+    estoque_minimo = models.DecimalField(
+        max_digits=10, decimal_places=3, default=Decimal('0'),
+        help_text="Limite mínimo para disparo de alerta de estoque baixo. 0 = sem alerta"
+    )
+
     ativo       = models.BooleanField(default=True, db_index=True)
     criado_em   = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)

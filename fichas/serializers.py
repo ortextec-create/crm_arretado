@@ -11,7 +11,9 @@ class MateriaPrimaSerializer(serializers.ModelSerializer):
             'id', 'nome', 'unidade_compra', 'quantidade_compra',
             'unidade_medida', 'valor_compra', 'custo_unitario',
             'ativo', 'atualizado_em',
+            'quantidade_estoque', 'estoque_minimo',
         ]
+        read_only_fields = ['quantidade_estoque']
 
     def get_custo_unitario(self, obj):
         return float(obj.custo_unitario)

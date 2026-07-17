@@ -137,6 +137,10 @@ class ProdutoViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewS
         elif ativo == 'false':
             qs = qs.filter(ativo=False)
 
+        tipo = params.get('tipo')
+        if tipo:
+            qs = qs.filter(tipo=tipo)
+
         return qs
 
     @action(detail=True, methods=['post'], url_path='ativar')

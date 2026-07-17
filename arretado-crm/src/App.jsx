@@ -24,6 +24,7 @@ import FichasTecnicas from './pages/FichasTecnicas'
 import CentralPrecos from './pages/CentralPrecos'
 import Relatorios from './pages/Relatorios'
 import Auditoria from './pages/Auditoria'
+import Estoque from './pages/Estoque'
 
 
 
@@ -67,6 +68,7 @@ export default function App() {
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="fichas-tecnicas" element={<FichasTecnicas />} />
             <Route path="central-precos" element={<CentralPrecos />} />
+            <Route path="estoque" element={<Estoque />} />
             <Route path="relatorios/ifood" element={<Relatorios />} />
             <Route path="auditoria" element={<AdminRoute><Auditoria /></AdminRoute>} />
           </Route>
