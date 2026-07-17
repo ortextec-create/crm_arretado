@@ -1,14 +1,21 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from rest_framework.test import APIRequestFactory
 
 from eventos.models import Evento, ItemEvento
 from fichas.models import FichaTecnica, ItemFichaTecnica, MateriaPrima
 from ifood.models import ItemPedidoIFood, PedidoIFood
 from pdv.models import ItemKit, ItemPedidoPDV, PedidoPDV, Produto
+from usuarios.models import Usuario
+from usuarios.views import UsuarioViewSet
 
-from .models import MovimentoEstoque, Producao
+from .claude_client import ClaudeAPIError
+from .extracao_nota import extrair_ia, extrair_texto_pdf, extrair_xml, resolver_materia_prima
+from .models import ImportacaoNotaFiscal, ItemNotaImportada, MovimentoEstoque, Producao
+from .views import ImportacaoNotaFiscalViewSet
 
 
 def _materia(nome='Farinha', quantidade_estoque=Decimal('10'), **kwargs):
@@ -224,3 +231,204 @@ class DebitoVendaIFoodTests(TestCase):
         self.assertEqual(
             MovimentoEstoque.objects.filter(origem_tipo='pedido_ifood', origem_id=pedido.id).count(), 0,
         )
+
+
+NFE_XML_EXEMPLO = """<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
+  <NFe>
+    <infNFe>
+      <ide><nNF>8821</nNF></ide>
+      <emit><xNome>Distribuidora Center Doces</xNome></emit>
+      <det nItem="1">
+        <prod>
+          <xProd>Choc. Fracionado 70% 1kg</xProd>
+          <qCom>3.0000</qCom>
+          <vUnCom>42.50</vUnCom>
+        </prod>
+      </det>
+      <det nItem="2">
+        <prod>
+          <xProd>Leite Cond. Moca 395g</xProd>
+          <qCom>24.0000</qCom>
+          <vUnCom>6.80</vUnCom>
+        </prod>
+      </det>
+    </infNFe>
+  </NFe>
+</nfeProc>"""
+
+
+class ExtrairXMLTests(TestCase):
+    def test_extrai_itens_numero_e_fornecedor(self):
+        dados = extrair_xml('nota.xml', NFE_XML_EXEMPLO.encode('utf-8'))
+        self.assertIsNotNone(dados)
+        self.assertEqual(dados['numero_nota'], '8821')
+        self.assertEqual(dados['fornecedor_nome'], 'Distribuidora Center Doces')
+        self.assertEqual(len(dados['itens']), 2)
+        self.assertEqual(dados['itens'][0]['descricao'], 'Choc. Fracionado 70% 1kg')
+        self.assertEqual(dados['itens'][0]['quantidade'], Decimal('3.0000'))
+        self.assertEqual(dados['itens'][0]['valor_unitario'], Decimal('42.50'))
+
+    def test_ignora_arquivo_sem_extensao_xml(self):
+        self.assertIsNone(extrair_xml('nota.pdf', NFE_XML_EXEMPLO.encode('utf-8')))
+
+    def test_xml_invalido_retorna_none(self):
+        self.assertIsNone(extrair_xml('nota.xml', b'isso nao e xml'))
+
+    def test_xml_sem_det_retorna_none(self):
+        xml_vazio = '<?xml version="1.0"?><root></root>'
+        self.assertIsNone(extrair_xml('nota.xml', xml_vazio.encode('utf-8')))
+
+
+TEXTO_PDF_EXEMPLO = (
+    "DANFE - Distribuidora Center Doces\n"
+    "001 Choc. Fracionado 70% 1kg UN 3,00 42,5000 127,50\n"
+    "002 Leite Cond. Moca 395g UN 24,00 6,8000 163,20\n"
+    "003 linha qualquer sem numeros suficientes\n"
+)
+
+
+class ExtrairTextoPdfTests(TestCase):
+    @patch('pypdf.PdfReader')
+    def test_extrai_itens_com_heuristica(self, mock_reader):
+        pagina = type('Pagina', (), {'extract_text': lambda self: TEXTO_PDF_EXEMPLO})()
+        mock_reader.return_value.pages = [pagina]
+
+        dados = extrair_texto_pdf('nota.pdf', b'conteudo-pdf-fake')
+        self.assertIsNotNone(dados)
+        self.assertEqual(len(dados['itens']), 2)
+        self.assertEqual(dados['itens'][0]['quantidade'], Decimal('3.00'))
+        self.assertEqual(dados['itens'][0]['valor_unitario'], Decimal('42.5000'))
+
+    @patch('pypdf.PdfReader')
+    def test_pdf_sem_texto_retorna_none(self, mock_reader):
+        pagina = type('Pagina', (), {'extract_text': lambda self: ''})()
+        mock_reader.return_value.pages = [pagina]
+        self.assertIsNone(extrair_texto_pdf('nota.pdf', b'conteudo-pdf-fake'))
+
+    def test_ignora_arquivo_sem_extensao_pdf(self):
+        self.assertIsNone(extrair_texto_pdf('nota.xml', b'qualquer coisa'))
+
+
+class ResolverMateriaPrimaTests(TestCase):
+    def test_match_exato(self):
+        materia = _materia(nome='Chocolate 70%')
+        self.assertEqual(resolver_materia_prima('Chocolate 70%', MateriaPrima), materia)
+
+    def test_match_parcial(self):
+        materia = _materia(nome='Chocolate 70%')
+        self.assertEqual(resolver_materia_prima('Chocolate Fracionado', MateriaPrima), materia)
+
+    def test_sem_match(self):
+        self.assertIsNone(resolver_materia_prima('Item Totalmente Desconhecido XYZ', MateriaPrima))
+
+
+class ExtrairIATests(TestCase):
+    @patch('estoque.claude_client.extrair_nota_fiscal')
+    def test_falha_da_api_vira_none_sem_lancar(self, mock_extrair):
+        mock_extrair.side_effect = ClaudeAPIError('sem API key')
+        self.assertIsNone(extrair_ia('nota.jpg', b'fake', 'image/jpeg'))
+
+    @patch('estoque.claude_client.extrair_nota_fiscal')
+    def test_sucesso_normaliza_decimais(self, mock_extrair):
+        mock_extrair.return_value = {
+            'numero_nota': '123', 'fornecedor_nome': 'Fornecedor X',
+            'itens': [{'descricao': 'Item A', 'quantidade': 2, 'valor_unitario': 10.5}],
+        }
+        dados = extrair_ia('nota.jpg', b'fake', 'image/jpeg')
+        self.assertIsNotNone(dados)
+        self.assertEqual(dados['itens'][0]['quantidade'], Decimal('2'))
+        self.assertEqual(dados['itens'][0]['valor_unitario'], Decimal('10.5'))
+
+
+class ImportacaoNotaFiscalViewSetTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Teste', email='admin-nf@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+        self.materia = _materia(nome='Chocolate 70%', quantidade_estoque=Decimal('0'))
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin-nf@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _auth_header(self):
+        return {'HTTP_AUTHORIZATION': f'Token {self._token()}'}
+
+    def _criar_importacao(self):
+        return ImportacaoNotaFiscal.objects.create(metodo_extracao='xml', numero_nota='123', status='em_revisao')
+
+    def test_confirmar_rejeita_item_pendente_de_revisao(self):
+        importacao = self._criar_importacao()
+        ItemNotaImportada.objects.create(
+            importacao=importacao, descricao_extraida='Item Desconhecido',
+            quantidade=Decimal('1'), valor_unitario=Decimal('5'), status_match='revisar',
+        )
+        view = ImportacaoNotaFiscalViewSet.as_view({'post': 'confirmar'})
+        req = self.factory.post(f'/api/v1/estoque/notas/{importacao.id}/confirmar/', **self._auth_header())
+        resp = view(req, pk=importacao.id)
+        self.assertEqual(resp.status_code, 400)
+        importacao.refresh_from_db()
+        self.assertEqual(importacao.status, 'em_revisao')
+
+    def test_confirmar_gera_movimento_e_atualiza_custo(self):
+        importacao = self._criar_importacao()
+        ItemNotaImportada.objects.create(
+            importacao=importacao, descricao_extraida='Chocolate 70%', quantidade=Decimal('3'),
+            valor_unitario=Decimal('42.50'), materia_prima=self.materia, status_match='encontrado',
+        )
+        view = ImportacaoNotaFiscalViewSet.as_view({'post': 'confirmar'})
+        req = self.factory.post(f'/api/v1/estoque/notas/{importacao.id}/confirmar/', **self._auth_header())
+        resp = view(req, pk=importacao.id)
+        self.assertEqual(resp.status_code, 200)
+
+        importacao.refresh_from_db()
+        self.materia.refresh_from_db()
+        self.assertEqual(importacao.status, 'confirmada')
+        self.assertEqual(self.materia.quantidade_estoque, Decimal('3.000'))
+        self.assertEqual(self.materia.valor_compra, Decimal('127.50'))
+        self.assertEqual(
+            MovimentoEstoque.objects.filter(origem_tipo='nota_fiscal', origem_id=importacao.id).count(), 1,
+        )
+
+    def test_confirmar_ignora_item_descartado(self):
+        importacao = self._criar_importacao()
+        ItemNotaImportada.objects.create(
+            importacao=importacao, descricao_extraida='Item Descartado', quantidade=Decimal('1'),
+            valor_unitario=Decimal('5'), status_match='revisar', descartado=True,
+        )
+        view = ImportacaoNotaFiscalViewSet.as_view({'post': 'confirmar'})
+        req = self.factory.post(f'/api/v1/estoque/notas/{importacao.id}/confirmar/', **self._auth_header())
+        resp = view(req, pk=importacao.id)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(MovimentoEstoque.objects.filter(origem_tipo='nota_fiscal').count(), 0)
+
+    def test_editar_item_cria_nova_materia_prima(self):
+        importacao = self._criar_importacao()
+        item = ItemNotaImportada.objects.create(
+            importacao=importacao, descricao_extraida='Corante Gel Vermelho', quantidade=Decimal('2'),
+            valor_unitario=Decimal('11.30'), status_match='revisar',
+        )
+        view = ImportacaoNotaFiscalViewSet.as_view({'patch': 'editar_item'})
+        req = self.factory.patch(
+            f'/api/v1/estoque/notas/{importacao.id}/itens/{item.id}/',
+            {'criar_nova_materia_prima': True}, format='json', **self._auth_header(),
+        )
+        resp = view(req, pk=importacao.id, item_id=item.id)
+        self.assertEqual(resp.status_code, 200)
+
+        item.refresh_from_db()
+        self.assertEqual(item.status_match, 'encontrado')
+        self.assertIsNotNone(item.materia_prima)
+        self.assertEqual(item.materia_prima.nome, 'Corante Gel Vermelho')
+        self.assertEqual(item.materia_prima.valor_compra, Decimal('22.60'))
+
+    def test_bloqueia_sem_token_401(self):
+        importacao = self._criar_importacao()
+        view = ImportacaoNotaFiscalViewSet.as_view({'post': 'confirmar'})
+        req = self.factory.post(f'/api/v1/estoque/notas/{importacao.id}/confirmar/')
+        resp = view(req, pk=importacao.id)
+        self.assertEqual(resp.status_code, 401)

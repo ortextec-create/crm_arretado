@@ -373,28 +373,57 @@ const TIPO_MOVIMENTO_LABEL = {
   ajuste_inventario: 'Ajuste — inventário',
 }
 
+const PERIODO_DIAS = { '7d': 7, '30d': 30, mes: null }
+
+function inicioPeriodo(periodo) {
+  if (!periodo) return null
+  const hoje = new Date()
+  if (periodo === 'mes') {
+    return new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10)
+  }
+  const dias = PERIODO_DIAS[periodo]
+  const d = new Date(hoje)
+  d.setDate(d.getDate() - dias)
+  return d.toISOString().slice(0, 10)
+}
+
 function AbaMovimentacoes() {
   const [movimentos, setMovimentos] = useState([])
   const [loading, setLoading] = useState(true)
   const [tipoFiltro, setTipoFiltro] = useState('')
   const [origemFiltro, setOrigemFiltro] = useState('')
+  const [periodoFiltro, setPeriodoFiltro] = useState('')
+  const [itemFiltro, setItemFiltro] = useState('') // '' | 'materia_prima' | 'produto'
 
   const load = useCallback(() => {
     setLoading(true)
     const params = { page_size: 100 }
     if (tipoFiltro) params.tipo_movimento = tipoFiltro
     if (origemFiltro) params.origem_tipo = origemFiltro
+    const dataInicio = inicioPeriodo(periodoFiltro)
+    if (dataInicio) params.data_inicio = dataInicio
     estoqueApi.movimentos.list(params)
       .then((r) => setMovimentos(r.data.results ?? r.data))
       .catch(() => setMovimentos([]))
       .finally(() => setLoading(false))
-  }, [tipoFiltro, origemFiltro])
+  }, [tipoFiltro, origemFiltro, periodoFiltro])
 
   useEffect(() => { load() }, [load])
+
+  const movimentosFiltrados = movimentos.filter((m) => {
+    if (itemFiltro === 'materia_prima') return !!m.materia_prima
+    if (itemFiltro === 'produto') return !!m.produto
+    return true
+  })
 
   return (
     <div className={styles.abaInner}>
       <div className={styles.toolbarRow}>
+        <Select value={itemFiltro} onChange={(e) => setItemFiltro(e.target.value)} style={{ width: 160 }}>
+          <option value="">Todos os itens</option>
+          <option value="materia_prima">Insumos</option>
+          <option value="produto">Produtos</option>
+        </Select>
         <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} style={{ width: 220 }}>
           <option value="">Todos os tipos</option>
           {Object.entries(TIPO_MOVIMENTO_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -406,10 +435,17 @@ function AbaMovimentacoes() {
           <option value="pedido_pdv">Pedido PDV</option>
           <option value="pedido_ifood">Pedido iFood</option>
           <option value="evento">Evento</option>
+          <option value="nota_fiscal">Nota Fiscal</option>
+        </Select>
+        <Select value={periodoFiltro} onChange={(e) => setPeriodoFiltro(e.target.value)} style={{ width: 180 }}>
+          <option value="">Todo o período</option>
+          <option value="7d">Últimos 7 dias</option>
+          <option value="30d">Últimos 30 dias</option>
+          <option value="mes">Este mês</option>
         </Select>
       </div>
 
-      {loading ? <div className={styles.center}><Spinner /></div> : movimentos.length === 0 ? (
+      {loading ? <div className={styles.center}><Spinner /></div> : movimentosFiltrados.length === 0 ? (
         <Empty icon="history" message="Nenhuma movimentação encontrada." />
       ) : (
         <div className={styles.tableWrap}>
@@ -424,7 +460,7 @@ function AbaMovimentacoes() {
               </tr>
             </thead>
             <tbody>
-              {movimentos.map((m) => {
+              {movimentosFiltrados.map((m) => {
                 const isSaida = m.tipo_movimento.startsWith('saida')
                 const isAjuste = m.tipo_movimento === 'ajuste_inventario'
                 return (
@@ -454,7 +490,17 @@ function AbaMovimentacoes() {
 
 // ─── Modal: Registrar Compra (manual) ─────────────────────────────────────────
 
+const METODO_EXTRACAO_LABEL = {
+  xml: 'Lido via XML da NF-e',
+  texto_pdf: 'Lido via texto do PDF',
+  ia: 'Lido via IA',
+  falhou: 'Não foi possível ler automaticamente',
+}
+
 function ModalRegistrarCompra({ onClose, onSaved }) {
+  const [modo, setModo] = useState('manual') // 'manual' | 'importar'
+
+  // ── modo manual ──────────────────────────────────────────────────────
   const [tipoItem, setTipoItem] = useState('materia_prima')
   const [materias, setMaterias] = useState([])
   const [produtos, setProdutos] = useState([])
@@ -464,6 +510,13 @@ function ModalRegistrarCompra({ onClose, onSaved }) {
   const [numeroNota, setNumeroNota] = useState('')
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState('')
+
+  // ── modo importar ────────────────────────────────────────────────────
+  const [arquivoNota, setArquivoNota] = useState(null)
+  const [processando, setProcessando] = useState(false)
+  const [importacao, setImportacao] = useState(null)
+  const [confirmando, setConfirmando] = useState(false)
+  const [erroImportar, setErroImportar] = useState('')
 
   useEffect(() => {
     fichasApi.listarMaterias({ ativo: 'true', page_size: 300 }).then((r) => setMaterias(r.data.results ?? r.data)).catch(() => {})
@@ -489,41 +542,212 @@ function ModalRegistrarCompra({ onClose, onSaved }) {
     } finally { setSaving(false) }
   }
 
-  return (
-    <Modal
-      open title="Registrar Compra" onClose={onClose} width={440}
-      footer={<>
+  const handleProcessarNota = async () => {
+    if (!arquivoNota) return
+    setProcessando(true); setErroImportar('')
+    try {
+      const formData = new FormData()
+      formData.append('arquivo', arquivoNota)
+      const r = await estoqueApi.notas.importar(formData)
+      setImportacao(r.data)
+    } catch (e) {
+      const d = e?.response?.data
+      setErroImportar(typeof d === 'string' ? d : d?.detail || 'Erro ao processar a nota.')
+    } finally { setProcessando(false) }
+  }
+
+  const handleEditarItem = async (itemNotaId, dados) => {
+    const r = await estoqueApi.notas.editarItem(importacao.id, itemNotaId, dados)
+    setImportacao(r.data)
+  }
+
+  const handleConfirmarEntrada = async () => {
+    setConfirmando(true); setErroImportar('')
+    try {
+      await estoqueApi.notas.confirmar(importacao.id)
+      onSaved()
+    } catch (e) {
+      const d = e?.response?.data
+      setErroImportar(typeof d === 'string' ? d : d?.detail || 'Erro ao confirmar entrada.')
+    } finally { setConfirmando(false) }
+  }
+
+  const voltarParaUpload = () => { setImportacao(null); setErroImportar('') }
+
+  const itensPendentes = importacao?.itens.some((it) => !it.descartado && it.status_match === 'revisar')
+
+  let titulo = 'Registrar Compra'
+  if (modo === 'importar') titulo = importacao ? 'Revisar Itens da Nota' : 'Importar Nota Fiscal'
+
+  let footer
+  if (modo === 'manual') {
+    footer = (
+      <>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={handleSalvar} loading={saving}>Registrar Entrada</Btn>
-      </>}
-    >
+      </>
+    )
+  } else if (!importacao) {
+    footer = (
+      <>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn icon="scan" onClick={handleProcessarNota} loading={processando} disabled={!arquivoNota}>Processar Nota</Btn>
+      </>
+    )
+  } else {
+    footer = (
+      <>
+        <Btn variant="ghost" onClick={voltarParaUpload}>Voltar</Btn>
+        <Btn onClick={handleConfirmarEntrada} loading={confirmando} disabled={itensPendentes}>
+          Confirmar Entrada e Atualizar Estoque
+        </Btn>
+      </>
+    )
+  }
+
+  return (
+    <Modal open title={titulo} onClose={onClose} width={modo === 'importar' && importacao ? 720 : 440} footer={footer}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className={styles.radioRow}>
-          <button className={`${styles.radioChip} ${tipoItem === 'materia_prima' ? styles.radioChipSel : ''}`} onClick={() => setTipoItem('materia_prima')}>
-            <i className="ti ti-wheat" /> Insumo
+          <button className={`${styles.radioChip} ${modo === 'manual' ? styles.radioChipSel : ''}`} onClick={() => setModo('manual')}>
+            <i className="ti ti-keyboard" /> Entrada manual
           </button>
-          <button className={`${styles.radioChip} ${tipoItem === 'produto' ? styles.radioChipSel : ''}`} onClick={() => setTipoItem('produto')}>
-            <i className="ti ti-package" /> Produto (revenda)
+          <button className={`${styles.radioChip} ${modo === 'importar' ? styles.radioChipSel : ''}`} onClick={() => setModo('importar')}>
+            <i className="ti ti-file-upload" /> Importar nota fiscal
           </button>
         </div>
-        <Field label="Item">
-          <Select value={itemId} onChange={(e) => setItemId(e.target.value)}>
-            <option value="">— selecionar —</option>
-            {opcoes.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
-          </Select>
-        </Field>
-        <Field label="Quantidade comprada">
-          <Input type="number" min="0" step="0.001" placeholder="Ex: 5" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} />
-        </Field>
-        <Field label="Valor total da nota (opcional — atualiza custo)">
-          <Input type="number" min="0" step="0.01" placeholder="R$" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
-        </Field>
-        <Field label="Nº da nota fiscal (opcional)">
-          <Input type="text" placeholder="Ex: 8821" value={numeroNota} onChange={(e) => setNumeroNota(e.target.value)} />
-        </Field>
-        {erro && <p className={styles.erro}>{erro}</p>}
+
+        {modo === 'manual' && (
+          <>
+            <div className={styles.radioRow}>
+              <button className={`${styles.radioChip} ${tipoItem === 'materia_prima' ? styles.radioChipSel : ''}`} onClick={() => setTipoItem('materia_prima')}>
+                <i className="ti ti-wheat" /> Insumo
+              </button>
+              <button className={`${styles.radioChip} ${tipoItem === 'produto' ? styles.radioChipSel : ''}`} onClick={() => setTipoItem('produto')}>
+                <i className="ti ti-package" /> Produto (revenda)
+              </button>
+            </div>
+            <Field label="Item">
+              <Select value={itemId} onChange={(e) => setItemId(e.target.value)}>
+                <option value="">— selecionar —</option>
+                {opcoes.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+              </Select>
+            </Field>
+            <Field label="Quantidade comprada">
+              <Input type="number" min="0" step="0.001" placeholder="Ex: 5" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} />
+            </Field>
+            <Field label="Valor total da nota (opcional — atualiza custo)">
+              <Input type="number" min="0" step="0.01" placeholder="R$" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
+            </Field>
+            <Field label="Nº da nota fiscal (opcional)">
+              <Input type="text" placeholder="Ex: 8821" value={numeroNota} onChange={(e) => setNumeroNota(e.target.value)} />
+            </Field>
+            {erro && <p className={styles.erro}>{erro}</p>}
+          </>
+        )}
+
+        {modo === 'importar' && !importacao && (
+          <>
+            <label className={styles.dropzone}>
+              <i className="ti ti-file-upload" />
+              <div className={styles.dzTitle}>{arquivoNota ? arquivoNota.name : 'Clique para escolher o arquivo da nota'}</div>
+              <div className={styles.dzSub}>PDF ou imagem (foto/scan) — DANFE, cupom ou XML da NF-e</div>
+              <input
+                type="file" accept="application/pdf,image/*,.xml" style={{ display: 'none' }}
+                onChange={(e) => setArquivoNota(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <p className={styles.hintSmall}>
+              O sistema tenta ler a nota automaticamente (XML → texto do PDF → IA). Você sempre
+              confere e ajusta os itens antes de confirmar — nada é gravado automaticamente.
+            </p>
+            {erroImportar && <p className={styles.erro}>{erroImportar}</p>}
+          </>
+        )}
+
+        {modo === 'importar' && importacao && (
+          <ModalRevisaoNota importacao={importacao} materias={materias} onEditarItem={handleEditarItem} erro={erroImportar} />
+        )}
       </div>
     </Modal>
+  )
+}
+
+function ModalRevisaoNota({ importacao, materias, onEditarItem, erro }) {
+  return (
+    <>
+      <div className={styles.extractionBanner}>
+        <i className="ti ti-file-text" />
+        <div>
+          <strong>{METODO_EXTRACAO_LABEL[importacao.metodo_extracao] || importacao.metodo_extracao}</strong>
+          {importacao.numero_nota && <> — nº da nota {importacao.numero_nota}</>}
+          {importacao.fornecedor_nome && <>, fornecedor "{importacao.fornecedor_nome}"</>}
+        </div>
+      </div>
+
+      {importacao.itens.length === 0 ? (
+        <Empty icon="file-off" message="Não foi possível identificar itens nessa nota. Registre a entrada manualmente." />
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Item na nota</th>
+                <th className={styles.thRight}>Qtd</th>
+                <th className={styles.thRight}>Valor unit.</th>
+                <th>Corresponde a</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {importacao.itens.map((item) => (
+                <tr key={item.id} className={item.descartado ? styles.rowDescartada : (item.status_match === 'revisar' ? styles.rowRevisar : '')}>
+                  <td className={item.descartado ? styles.tdMuted : styles.tdNome}>{item.descricao_extraida}</td>
+                  <td className={styles.tdRight}>{fmtQtd(item.quantidade)}</td>
+                  <td className={styles.tdRight}>{fmt(item.valor_unitario)}</td>
+                  <td>
+                    <select
+                      className={`${styles.miniSelect} ${item.status_match === 'revisar' ? styles.miniSelectWarn : ''}`}
+                      value={item.materia_prima ?? ''}
+                      disabled={item.descartado}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (v === '__novo__') onEditarItem(item.id, { criar_nova_materia_prima: true })
+                        else if (v) onEditarItem(item.id, { materia_prima: Number(v) })
+                      }}
+                    >
+                      <option value="" disabled>— selecionar correspondência —</option>
+                      {item.materia_prima && !materias.some((m) => m.id === item.materia_prima) && (
+                        <option value={item.materia_prima}>{item.materia_prima_nome}</option>
+                      )}
+                      {materias.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                      <option value="__novo__">+ Criar nova matéria-prima "{item.descricao_extraida}"</option>
+                    </select>
+                  </td>
+                  <td>
+                    <span className={`${styles.badge} ${item.status_match === 'encontrado' ? styles.badge_ok : styles.badge_baixo}`}>
+                      {item.status_match === 'encontrado' ? 'Encontrado' : 'Revisar'}
+                    </span>
+                  </td>
+                  <td>
+                    <button className={styles.iconBtn} title={item.descartado ? 'Restaurar item' : 'Remover item'}
+                      onClick={() => onEditarItem(item.id, { descartado: !item.descartado })}>
+                      <i className={`ti ti-${item.descartado ? 'rotate-left' : 'trash'}`} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className={styles.hintSmall}>
+        Itens marcados como "Revisar" não foram encontrados no catálogo — escolha uma matéria-prima
+        existente ou crie uma nova antes de confirmar.
+      </p>
+      {erro && <p className={styles.erro}>{erro}</p>}
+    </>
   )
 }
 

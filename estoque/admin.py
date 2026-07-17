@@ -3,6 +3,9 @@ from django.contrib import admin
 from .models import (
     AlertaEstoqueEnviado,
     ConfiguracaoEstoque,
+    ConfiguracaoIA,
+    ImportacaoNotaFiscal,
+    ItemNotaImportada,
     MovimentoEstoque,
     Producao,
     TelefoneAlertaEstoque,
@@ -44,3 +47,20 @@ class TelefoneAlertaEstoqueAdmin(admin.ModelAdmin):
 @admin.register(AlertaEstoqueEnviado)
 class AlertaEstoqueEnviadoAdmin(admin.ModelAdmin):
     list_display = ['materia_prima', 'produto', 'tipo', 'enviado_em']
+
+
+@admin.register(ConfiguracaoIA)
+class ConfiguracaoIAAdmin(admin.ModelAdmin):
+    list_display = ['extracao_ia_ativa', 'modelo', 'timeout_segundos']
+
+
+class ItemNotaImportadaInline(admin.TabularInline):
+    model = ItemNotaImportada
+    extra = 0
+
+
+@admin.register(ImportacaoNotaFiscal)
+class ImportacaoNotaFiscalAdmin(admin.ModelAdmin):
+    list_display = ['id', 'numero_nota', 'fornecedor_nome', 'metodo_extracao', 'status', 'criado_em']
+    list_filter = ['status', 'metodo_extracao']
+    inlines = [ItemNotaImportadaInline]

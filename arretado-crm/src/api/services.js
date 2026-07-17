@@ -324,6 +324,18 @@ export const estoqueApi = {
     create: (data) => api.post('/estoque/telefones-alerta/', data),
     remove: (id)   => api.delete(`/estoque/telefones-alerta/${id}/`),
   },
+  configuracaoIA: {
+    get:    ()     => api.get('/estoque/configuracao-ia/1/'),
+    update: (data) => api.patch('/estoque/configuracao-ia/1/', data),
+  },
+  notas: {
+    importar:   (formData) => api.post('/estoque/notas/', formData, { headers: { 'Content-Type': undefined } }),
+    list:       (params = {}) => api.get('/estoque/notas/', { params }),
+    retrieve:   (id) => api.get(`/estoque/notas/${id}/`),
+    editarItem: (notaId, itemId, data) => api.patch(`/estoque/notas/${notaId}/itens/${itemId}/`, data),
+    confirmar:  (id) => api.post(`/estoque/notas/${id}/confirmar/`),
+    descartar:  (id) => api.post(`/estoque/notas/${id}/descartar/`),
+  },
 }
 
 // ─── RELATÓRIOS ───────────────────────────────────────────────────────────────

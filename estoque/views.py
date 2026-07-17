@@ -11,13 +11,25 @@ from rest_framework.views import APIView
 from auditoria.mixins import AuditoriaDestroyMixin
 from auditoria.models import LogAuditoria
 from auditoria.utils import ator_ou_none, registrar
-from fichas.models import FichaTecnica
+from fichas.models import FichaTecnica, MateriaPrima
+from pdv.models import Produto
 from usuarios.authentication import TokenAuthentication
 
-from .models import ConfiguracaoEstoque, MovimentoEstoque, Producao, TelefoneAlertaEstoque
+from .extracao_nota import extrair_ia, extrair_texto_pdf, extrair_xml, resolver_materia_prima
+from .models import (
+    ConfiguracaoEstoque,
+    ConfiguracaoIA,
+    ImportacaoNotaFiscal,
+    ItemNotaImportada,
+    MovimentoEstoque,
+    Producao,
+    TelefoneAlertaEstoque,
+)
 from .serializers import (
     AjusteInventarioSerializer,
     ConfiguracaoEstoqueSerializer,
+    ConfiguracaoIASerializer,
+    ImportacaoNotaFiscalSerializer,
     MovimentoEstoqueSerializer,
     ProducaoPreviewSerializer,
     ProducaoSerializer,
@@ -238,3 +250,191 @@ class TelefoneAlertaEstoqueViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, views
         if self.action == 'destroy':
             return [IsAuthenticated()]
         return [AllowAny()]
+
+
+# ─── Configuração de IA (singleton) ───────────────────────────────────────────
+
+class ConfiguracaoIAViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
+    serializer_class = ConfiguracaoIASerializer
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'partial_update':
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def get_object(self):
+        return ConfiguracaoIA.get()
+
+    def retrieve(self, request, pk=None):
+        return Response(self.get_serializer(self.get_object()).data)
+
+    def partial_update(self, request, pk=None):
+        config = self.get_object()
+        campos = list(request.data.keys())
+        antes = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
+        serializer = ConfiguracaoIASerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        depois = {c: str(getattr(config, c)) for c in campos if hasattr(config, c)}
+        registrar(
+            request.user, LogAuditoria.ACAO_CONFIG_IA_ALTERADA,
+            detalhes={'antes': antes, 'depois': depois},
+            request=request,
+        )
+        return Response(serializer.data)
+
+
+# ─── Importação de Nota Fiscal ─────────────────────────────────────────────────
+
+def _media_type(nome):
+    ext = nome.rsplit('.', 1)[-1].lower() if '.' in nome else ''
+    return {
+        'pdf': 'application/pdf',
+        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+        'png': 'image/png', 'webp': 'image/webp',
+    }.get(ext, 'application/octet-stream')
+
+
+class ImportacaoNotaFiscalViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+    queryset = (
+        ImportacaoNotaFiscal.objects
+        .prefetch_related('itens__materia_prima', 'itens__produto')
+        .select_related('criado_por')
+        .all()
+    )
+    serializer_class = ImportacaoNotaFiscalSerializer
+    authentication_classes = [TokenAuthentication]
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action in ('create', 'confirmar', 'descartar', 'editar_item', 'partial_update'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def create(self, request, *args, **kwargs):
+        arquivo = request.FILES.get('arquivo')
+        if not arquivo:
+            return Response({'detail': 'arquivo é obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        conteudo = arquivo.read()
+        nome = arquivo.name
+
+        dados = extrair_xml(nome, conteudo)
+        metodo = 'xml'
+        if dados is None:
+            dados = extrair_texto_pdf(nome, conteudo)
+            metodo = 'texto_pdf'
+        if dados is None:
+            dados = extrair_ia(nome, conteudo, _media_type(nome))
+            metodo = 'ia'
+        if dados is None:
+            metodo = 'falhou'
+            dados = {'numero_nota': '', 'fornecedor_nome': '', 'itens': []}
+
+        arquivo.seek(0)
+        importacao = ImportacaoNotaFiscal.objects.create(
+            arquivo=arquivo, metodo_extracao=metodo,
+            numero_nota=dados['numero_nota'], fornecedor_nome=dados['fornecedor_nome'],
+            criado_por=ator_ou_none(request),
+        )
+        for item in dados['itens']:
+            materia = resolver_materia_prima(item['descricao'], MateriaPrima)
+            ItemNotaImportada.objects.create(
+                importacao=importacao, descricao_extraida=item['descricao'],
+                quantidade=item['quantidade'], valor_unitario=item['valor_unitario'],
+                materia_prima=materia, status_match='encontrado' if materia else 'revisar',
+            )
+
+        importacao.refresh_from_db()
+        return Response(ImportacaoNotaFiscalSerializer(importacao).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch'], url_path=r'itens/(?P<item_id>[0-9]+)')
+    def editar_item(self, request, pk=None, item_id=None):
+        importacao = self.get_object()
+        item = importacao.itens.filter(pk=item_id).first()
+        if not item:
+            return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        if importacao.status != 'em_revisao':
+            return Response({'detail': 'Nota já confirmada/descartada.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.data.get('criar_nova_materia_prima'):
+            materia, _created = MateriaPrima.objects.get_or_create(
+                nome=item.descricao_extraida,
+                defaults={
+                    'unidade_compra': f'{item.quantidade} un (nota fiscal)',
+                    'quantidade_compra': item.quantidade,
+                    'unidade_medida': 'un',
+                    'valor_compra': item.valor_unitario * item.quantidade,
+                },
+            )
+            item.materia_prima = materia
+            item.produto = None
+            item.status_match = 'encontrado'
+        else:
+            if 'materia_prima' in request.data:
+                item.materia_prima = MateriaPrima.objects.filter(pk=request.data['materia_prima']).first()
+                item.produto = None
+                item.status_match = 'encontrado' if item.materia_prima else 'revisar'
+            if 'produto' in request.data:
+                item.produto = Produto.objects.filter(pk=request.data['produto']).first()
+                item.materia_prima = None
+                item.status_match = 'encontrado' if item.produto else 'revisar'
+
+        if 'quantidade' in request.data:
+            item.quantidade = request.data['quantidade']
+        if 'valor_unitario' in request.data:
+            item.valor_unitario = request.data['valor_unitario']
+        if 'descartado' in request.data:
+            item.descartado = bool(request.data['descartado'])
+
+        item.save()
+        importacao.refresh_from_db()
+        return Response(ImportacaoNotaFiscalSerializer(importacao).data)
+
+    @action(detail=True, methods=['post'], url_path='confirmar')
+    def confirmar(self, request, pk=None):
+        importacao = self.get_object()
+        if importacao.status != 'em_revisao':
+            return Response({'detail': 'Nota não está em revisão.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pendentes = importacao.itens.filter(descartado=False, status_match='revisar')
+        if pendentes.exists():
+            return Response(
+                {'detail': 'Existem itens sem correspondência definida. Selecione uma matéria-prima/produto ou descarte o item antes de confirmar.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for item in importacao.itens.filter(descartado=False):
+            if item.materia_prima_id:
+                item.materia_prima.valor_compra = item.valor_unitario * item.quantidade
+                item.materia_prima.quantidade_compra = item.quantidade
+                item.materia_prima.save(update_fields=['valor_compra', 'quantidade_compra', 'atualizado_em'])
+                movimento_kwargs = {'materia_prima': item.materia_prima}
+            else:
+                movimento_kwargs = {'produto': item.produto}
+
+            MovimentoEstoque.registrar(
+                tipo_movimento='entrada_compra', quantidade=item.quantidade,
+                origem_tipo='nota_fiscal', origem_id=importacao.id,
+                custo_unitario_snapshot=item.valor_unitario, criado_por=ator_ou_none(request),
+                **movimento_kwargs,
+            )
+
+        importacao.status = 'confirmada'
+        importacao.save(update_fields=['status'])
+        registrar(
+            request.user, LogAuditoria.ACAO_ENTRADA_NOTA_CONFIRMADA,
+            detalhes={'importacao_id': importacao.id, 'numero_nota': importacao.numero_nota},
+            request=request,
+        )
+        return Response(ImportacaoNotaFiscalSerializer(importacao).data)
+
+    @action(detail=True, methods=['post'], url_path='descartar')
+    def descartar(self, request, pk=None):
+        importacao = self.get_object()
+        if importacao.status != 'em_revisao':
+            return Response({'detail': 'Nota não está em revisão.'}, status=status.HTTP_400_BAD_REQUEST)
+        importacao.status = 'descartada'
+        importacao.save(update_fields=['status'])
+        return Response(ImportacaoNotaFiscalSerializer(importacao).data)

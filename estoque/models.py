@@ -244,3 +244,84 @@ class AlertaEstoqueEnviado(models.Model):
     def __str__(self):
         alvo = self.materia_prima or self.produto
         return f'{alvo} — {self.enviado_em:%d/%m/%Y %H:%M}'
+
+
+class ConfiguracaoIA(models.Model):
+    """Singleton — sempre acessado via ConfiguracaoIA.get(). A API key nunca
+    fica aqui nem em nenhuma tabela do banco — vive em variável de ambiente
+    (ANTHROPIC_API_KEY)."""
+    extracao_ia_ativa = models.BooleanField(
+        default=True, help_text="Permite desativar o fallback de IA sem tocar código",
+    )
+    modelo = models.CharField(max_length=40, default='claude-sonnet-5')
+    timeout_segundos = models.PositiveIntegerField(default=30)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Configuração de IA'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return 'Configuração de IA'
+
+
+class ImportacaoNotaFiscal(models.Model):
+    METODO_CHOICES = [
+        ('xml', 'XML da NF-e'),
+        ('texto_pdf', 'Texto do PDF'),
+        ('ia', 'IA multimodal'),
+        ('falhou', 'Falhou'),
+    ]
+    STATUS_CHOICES = [
+        ('em_revisao', 'Em revisão'),
+        ('confirmada', 'Confirmada'),
+        ('descartada', 'Descartada'),
+    ]
+
+    arquivo = models.FileField(upload_to='estoque/notas_fiscais/%Y/%m/')
+    metodo_extracao = models.CharField(max_length=15, choices=METODO_CHOICES)
+    numero_nota = models.CharField(max_length=50, blank=True, default='')
+    fornecedor_nome = models.CharField(max_length=200, blank=True, default='')
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='em_revisao')
+    criado_por = models.ForeignKey('usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Importação de Nota Fiscal'
+        verbose_name_plural = 'Importações de Nota Fiscal'
+        ordering = ['-criado_em']
+
+    def __str__(self):
+        return f'NF {self.numero_nota or "?"} — {self.get_status_display()}'
+
+
+class ItemNotaImportada(models.Model):
+    STATUS_MATCH_CHOICES = [
+        ('encontrado', 'Encontrado'),
+        ('revisar', 'Revisar'),
+    ]
+
+    importacao = models.ForeignKey(ImportacaoNotaFiscal, on_delete=models.CASCADE, related_name='itens')
+    descricao_extraida = models.CharField(max_length=300)
+    quantidade = models.DecimalField(max_digits=10, decimal_places=3)
+    valor_unitario = models.DecimalField(max_digits=10, decimal_places=4)
+    materia_prima = models.ForeignKey(
+        'fichas.MateriaPrima', null=True, blank=True, on_delete=models.SET_NULL, related_name='itens_nota_importada',
+    )
+    produto = models.ForeignKey(
+        'pdv.Produto', null=True, blank=True, on_delete=models.SET_NULL, related_name='itens_nota_importada',
+    )
+    status_match = models.CharField(max_length=12, choices=STATUS_MATCH_CHOICES)
+    descartado = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = 'Item de Nota Importada'
+        verbose_name_plural = 'Itens de Nota Importada'
+        ordering = ['id']
+
+    def __str__(self):
+        return f'{self.descricao_extraida} ({self.quantidade})'

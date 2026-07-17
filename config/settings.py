@@ -116,6 +116,11 @@ EVOLUTION_API_URL  = os.getenv('EVOLUTION_API_URL', '')
 EVOLUTION_API_KEY  = os.getenv('EVOLUTION_API_KEY', '')
 EVOLUTION_INSTANCE = os.getenv('EVOLUTION_INSTANCE', 'arretado')
 
+# Fallback de IA na importação de nota fiscal (estoque/claude_client.py) —
+# key da Ortex, nunca fica em model/banco. Sem isso, a camada de IA falha
+# graciosamente (metodo_extracao='falhou'), nunca trava o fluxo.
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+
 # WhatsApp — Twilio (desativado)
 TWILIO_ACCOUNT_SID    = os.getenv('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN     = os.getenv('TWILIO_AUTH_TOKEN', '')

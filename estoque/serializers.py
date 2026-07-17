@@ -8,6 +8,9 @@ from pdv.models import Produto
 from .models import (
     AlertaEstoqueEnviado,
     ConfiguracaoEstoque,
+    ConfiguracaoIA,
+    ImportacaoNotaFiscal,
+    ItemNotaImportada,
     MovimentoEstoque,
     Producao,
     TelefoneAlertaEstoque,
@@ -110,3 +113,37 @@ class AjusteInventarioSerializer(serializers.Serializer):
 class ProducaoPreviewSerializer(serializers.Serializer):
     ficha_tecnica = serializers.PrimaryKeyRelatedField(queryset=FichaTecnica.objects.all())
     quantidade = serializers.DecimalField(max_digits=10, decimal_places=3, min_value=Decimal('0.001'))
+
+
+class ConfiguracaoIASerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConfiguracaoIA
+        fields = ['extracao_ia_ativa', 'modelo', 'timeout_segundos', 'atualizado_em']
+        read_only_fields = ['atualizado_em']
+
+
+class ItemNotaImportadaSerializer(serializers.ModelSerializer):
+    materia_prima_nome = serializers.CharField(source='materia_prima.nome', read_only=True, default=None)
+    produto_nome = serializers.CharField(source='produto.nome', read_only=True, default=None)
+
+    class Meta:
+        model = ItemNotaImportada
+        fields = [
+            'id', 'descricao_extraida', 'quantidade', 'valor_unitario',
+            'materia_prima', 'materia_prima_nome', 'produto', 'produto_nome',
+            'status_match', 'descartado',
+        ]
+        read_only_fields = ['descricao_extraida', 'status_match']
+
+
+class ImportacaoNotaFiscalSerializer(serializers.ModelSerializer):
+    itens = ItemNotaImportadaSerializer(many=True, read_only=True)
+    criado_por_nome = serializers.CharField(source='criado_por.name', read_only=True, default=None)
+
+    class Meta:
+        model = ImportacaoNotaFiscal
+        fields = [
+            'id', 'arquivo', 'metodo_extracao', 'numero_nota', 'fornecedor_nome',
+            'status', 'criado_por', 'criado_por_nome', 'criado_em', 'itens',
+        ]
+        read_only_fields = ['metodo_extracao', 'status', 'criado_por']
