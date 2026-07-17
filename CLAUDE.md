@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 15/jul/2026.
+> Última atualização: 17/jul/2026.
 
 ---
 
@@ -25,8 +25,8 @@ Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, cat
 ```
 arretado/                        ← raiz Django
 ├── config/
-│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, relatorios, dashboard
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/relatorios/, /api/v1/dashboard/
+│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/
 │   └── wsgi.py
 ├── clientes/                    ← Fase 1: CRM de clientes
 │   ├── models.py                ← Cliente (inclui rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil —
@@ -116,6 +116,19 @@ arretado/                        ← raiz Django
 │   │                               SnapshotPrecosViewSet, AjusteLinearView, DesfazerAjusteView
 │   ├── urls.py                  ← router + ajuste-linear/ + desfazer-ajuste/<id>/
 │   └── management/commands/importar_planilha.py  ← popula BD a partir do .xlsx
+├── estoque/                     ← Controle de estoque de insumos e produtos + produção + alertas (Fases 1-5;
+│   │                               fases 6-8 de importação de nota fiscal ainda não implementadas — ver Pendências)
+│   ├── models.py                ← MovimentoEstoque (ledger, fonte única da verdade — ver Padrões Obrigatórios),
+│   │                               Producao (executar() debita insumo/credita produto), ConfiguracaoEstoque (singleton),
+│   │                               TelefoneAlertaEstoque, AlertaEstoqueEnviado
+│   ├── signals.py               ← débito automático de estoque na venda (PedidoPDV confirmado, PedidoIFood
+│   │                               CONFIRMED — match por nome via `_debitar_produto`, Evento entregue), registrados
+│   │                               em `EstoqueConfig.ready()` — ver "Débito Automático de Estoque" abaixo
+│   ├── views.py                 ← MovimentoEstoqueViewSet (só leitura + filtros), RegistrarCompraView,
+│   │                               AjusteInventarioView, ProducaoViewSet (list/create + preview/),
+│   │                               ConfiguracaoEstoqueViewSet, TelefoneAlertaEstoqueViewSet
+│   └── management/commands/alertar_estoque_baixo.py ← cron diário: alerta a equipe (WhatsApp) sobre insumo/produto
+│                                     com quantidade_estoque abaixo de estoque_minimo
 ├── relatorios/                  ← Relatórios consolidados por canal
 │   ├── views.py                 ← RelatorioIFoodView (resumo + agrupado por dia/mês, export Excel/PDF)
 │   └── urls.py                  ← ifood/ (mais canais a adicionar conforme necessário)
@@ -136,7 +149,9 @@ arretado-crm/                    ← raiz React
     │                               alertasEventoApi (config + telefones.list/create/remove — ver "Alertas de Evento"),
     │                               notificacoesApi, usuariosApi, authApi, fichasApi,
     │                               taxasEntregaApi, configEntregaApi, relatoriosApi, dashboardApi, auditoriaApi,
-    │                               presencaApi (heartbeat de presença — ver Padrões Obrigatórios)
+    │                               presencaApi (heartbeat de presença — ver Padrões Obrigatórios),
+    │                               estoqueApi (movimentos, registrarCompra, ajusteInventario, producoes,
+    │                               configuracao, telefonesAlerta)
     ├── utils/
     │   └── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — extraído de Auditoria.jsx,
     │                               reusado também pela aba/seção "Histórico" no modal de Orçamento/Evento
@@ -154,6 +169,8 @@ arretado-crm/                    ← raiz React
     │   ├── Catalogo.jsx         ← catálogo geral (grid de cards, foto, segmento, canais)
     │   ├── FichasTecnicas.jsx   ← composição de ingredientes por produto
     │   ├── CentralPrecos.jsx    ← precificação (matérias, ajuste linear, semáforo, parâmetros)
+    │   ├── Estoque.jsx          ← controle de estoque (4 abas: Insumos, Produtos, Produção, Movimentações) +
+    │   │                          modais Registrar Compra (manual), Ajuste de Inventário, Configurações
     │   ├── Relatorios.jsx       ← relatório consolidado iFood (resumo, gráfico por período, export Excel/PDF)
     │   ├── Eventos.jsx
     │   ├── Orcamentos.jsx       ← inclui botão "Emitir Contrato" (status='aprovado') + ModalEmitirContrato
@@ -195,6 +212,11 @@ arretado-crm/                    ← raiz React
 - **`pdv.ItemKit`** não pode conter kit-de-kit (`componente.tipo == 'kit'` é rejeitado tanto no `clean()` do model quanto no `ItemKitSerializer.validate_componente`) nem um kit se auto-referenciando
 - **`pdv.FaixaPreco`** guarda preço por quantidade mínima e canal opcional (`pdv`/`ifood`/`eventos`/vazio=todos). `Produto.preco_para(quantidade, canal)` resolve a prioridade: faixa específica do canal > faixa geral (`canal=null`) > `preco` base. Nunca hardcodar desconto por quantidade no frontend — sempre resolver via essa property/endpoint
 - **`pdv.DadosFiscaisProduto`** é opcional (`OneToOneField` de `Produto`, aninhado e gravável via `ProdutoSerializer.dados_fiscais` com `update_or_create`) e prepara o cadastro para NFC-e futura — ainda não é consumido por nenhuma integração fiscal real (ver pendência de NFC-e)
+- **Estoque** (app `estoque/`, fases 1-5 do spec — fases 6-8 de importação de nota fiscal ainda não implementadas, ver Pendências) — controla saldo físico de 3 naturezas: `fichas.MateriaPrima` (campos novos `quantidade_estoque`/`estoque_minimo`), `pdv.Produto` tipo `fabricado` (campo novo `modo_estoque`: `'estoque'` mantém saldo próprio via `Producao`; `'sob_encomenda'` nunca acumula saldo, debita insumo direto na venda) e `pdv.Produto` tipo `revenda` (sempre equivalente a `'estoque'`). `pdv.Produto` tipo `kit` nunca tem saldo próprio — é sempre virtual, decrementa cada `ItemKit.componente` recursivamente. **Política de saldo negativo: sempre permitido** — nenhuma venda/produção/ajuste é bloqueada por saldo insuficiente, o sistema só alerta a equipe (nunca reconsiderar essa regra item a item)
+- **`estoque.MovimentoEstoque` é o ledger — fonte única da verdade.** Todo movimento passa por `MovimentoEstoque.registrar()` (nunca `.objects.create()` direto em view/signal/command), que valida exatamente 1 de `materia_prima`/`produto` preenchido, calcula `saldo_posterior` dentro de `transaction.atomic()` com `select_for_update()` (evita race condition entre vendas concorrentes do mesmo item), e atualiza `quantidade_estoque` via `update_fields`. `tipo_movimento='ajuste_inventario'` é o único caso onde `quantidade` é o **saldo absoluto** (contagem física), não um delta. `registrar()` também quantiza `quantidade` (3 casas) e `custo_unitario_snapshot` (4 casas) antes de gravar — consumo calculado por proporção (`item.quantidade * (produzido/rendimento)`) ou `custo_unitario` (divisão não arredondada) frequentemente saem com mais casas decimais do que o `DecimalField` do model aceita; sem quantizar ali, `full_clean()` derruba o movimento com `ValidationError` (bug real encontrado e corrigido durante o desenvolvimento — ver commit desta feature)
+- **`estoque.Producao.executar()`** só é permitida quando a `FichaTecnica` tem `produto_pdv_id` vinculado a um `pdv.Produto` com `modo_estoque == 'estoque'` — debita cada insumo da ficha proporcionalmente (`item.quantidade * (quantidade_produzida/rendimento)`) e credita o saldo do produto, os dois via `MovimentoEstoque.registrar()`, dentro da mesma transação
+- **Débito Automático de Estoque** (`estoque/signals.py`, registrado em `EstoqueConfig.ready()`, mesmo padrão de `pdv/signals.py`) — 3 signals `post_save` (sender como string, evita import circular): `pdv.PedidoPDV` ao entrar em status `'confirmado'`; `ifood.PedidoIFood` ao entrar em `'CONFIRMED'` (`ItemPedidoIFood` não tem FK pra `Produto`, só nome em texto — resolve por fuzzy match `iexact`→`icontains`, mesmo padrão de `importar_planilha.py`; sem correspondência, só loga `logger.warning` e pula o item, nunca bloqueia o pedido); `eventos.Evento` ao entrar em `'entregue'` (não existe status por item, só do Evento pai). Todos checam `MovimentoEstoque.objects.filter(origem_tipo=..., origem_id=...).exists()` antes de debitar — **idempotência obrigatória**, já que `post_save` dispara em todo `.save()`, não só na transição de status. Helper comum `_debitar_produto()` aplica a regra polimórfica (revenda/fabricado-estoque → débito direto; fabricado-sob_encomenda → débito direto nos insumos da ficha, sem passar por `Producao`; kit → recursivo em `ItemKit`). Estorno automático em cancelamento pós-débito é **fora de escopo** (decisão consciente — ajuste manual de inventário cobre o caso)
+- **Alertas de Estoque Baixo** (`estoque.ConfiguracaoEstoque` singleton via `.get()`, `estoque.TelefoneAlertaEstoque`, `estoque.AlertaEstoqueEnviado`) — mesmo padrão de "Alertas de Evento": cron diário (`python manage.py alertar_estoque_baixo`) notifica só telefones internos da equipe sobre `MateriaPrima`/`Produto` com `quantidade_estoque < estoque_minimo` (e `estoque_minimo > 0`), via `notificacoes.servico.notificar()`. Card "Estoque" no Dashboard (`dashboard/views.py::_estoque()`) mostra a mesma contagem, independente de já ter alertado
 - **`eventos.ConfiguracaoContrato` é singleton** — sempre acessado via `ConfiguracaoContrato.get()`. Guarda razão social/CNPJ/endereço/Instagram/telefone/representante da CONTRATADA e todos os percentuais/prazos das cláusulas (sinal, multa, juros, prazos de personalização/rescisão/devolução, foro). `instagram_contratada`/`telefone_contratada` aparecem no rodapé do PDF (`pdf_contrato.py::_header_footer`), abaixo da linha razão social/CNPJ. Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`. `PATCH /eventos/configuracao-contrato/1/` exige login e audita `config_contrato_alterada` (GET continua `AllowAny`)
 - **`eventos.Contrato`** é um snapshot gravado no momento da emissão (mesma filosofia de `ItemOrcamento`/`SnapshotPrecos`) — `valor_total`/`percentual_sinal`/`valor_sinal`/`data_quitacao` nunca são recalculados ao reabrir/reimprimir um contrato já emitido
 - **Alertas de Evento** (`eventos.ConfiguracaoAlertaEvento`, singleton via `.get()`) — dois alertas de cron diário (`python manage.py alertar_eventos`), notificando só telefones internos da equipe cadastrados em `eventos.TelefoneAlertaEvento` (nunca o cliente): (1) **pagamento pendente**, dispara a partir de `dias_antes_pagamento` dias antes do `data_evento` enquanto `saldo_restante > 0` (`Evento.exclude(status__in=['cancelado','entregue']).annotate(saldo=F('valor_total')-F('sinal_pago')).filter(saldo__gt=0, ...)` — usa `F()` em vez da property Python `saldo_restante`, que não funciona em queryset); (2) **aviso de entrega**, a partir de `dias_antes_entrega` dias antes, só para `tipo_entrega='entrega_local'`. Ambos repetem a cada `repetir_pagamento_dias`/`repetir_entrega_dias` configurável, controlado por `eventos.AlertaEventoEnviado` (1 registro por envio de `(evento, tipo)`, não reaproveita `notificacoes.HistoricoMensagem` pra isso porque `HistoricoMensagem.cliente` é FK pra `Cliente`, não pra `Evento`, e aqui o destinatário é telefone da equipe). `PATCH /eventos/configuracao-alertas/1/` exige login e audita `config_alerta_evento_alterada` (GET continua `AllowAny`); `DELETE /eventos/telefones-alerta/{id}/` exige login e audita `registro_excluido` (mesmo padrão do `TaxaEntregaBairro` — só o DELETE exige login, list/create/update continuam `AllowAny`). O texto das mensagens é fixo no código (não é campo configurável como `mensagem_aniversario`/`mensagem_reengajamento` de `ConfiguracaoWhatsApp`) — só dias/intervalo/telefones são configuráveis, por escolha consciente de escopo. `dashboard.DashboardResumoView` expõe a mesma janela em `resumo['alertas']` (sem olhar `AlertaEventoEnviado` — mostra "o que está na janela agora", independente de já ter mandado WhatsApp)
@@ -262,6 +284,8 @@ arretado-crm/                    ← raiz React
 | Autenticação Real + Auditoria | Token real (`usuarios/authentication.py`) + app `auditoria/` cobrindo os 6 itens da lista priorizada: usuários (login/CRUD/permissões), pagamentos de evento, contrato, Central de Preços, configurações singleton (`ConfiguracaoContrato`/`ConfiguracaoEntrega`/`ConfiguracaoWhatsApp` — esta última também exige login no GET, já que expõe credencial Z-API) e exclusões em geral (`AuditoriaDestroyMixin` genérico, aplicado em `Cliente`/`Tag`/`Endereco`/`Produto`/`CategoriaProduto`/`TaxaEntregaBairro`/`PedidoPDV`/`Evento`/`Orcamento`/`LocalEvento`/`MateriaPrima`/`FichaTecnica` e os respectivos `remover-item`; `ConfiguracaoIFood` teve o DELETE bloqueado de vez, não só auditado) — tela restrita a `role=admin` | ✅ Concluída (lista completa) |
 | Auditoria de Criação/Edição/Status + Presença + Histórico no Modal | Extensão da auditoria de Orçamento/Evento: criação, edição (PATCH/PUT), mudança de status e adicionar/editar item agora também são auditados (`AuditoriaCreateMixin`/`AuditoriaUpdateMixin`/`AuditoriaStatusMixin`), exigindo login nessas ações (antes eram `AllowAny`). Presença via heartbeat REST (`auditoria.PresencaEdicao`, `PresencaAtiva.jsx`, polling a cada 15s — não WebSocket) mostrando quem mais está vendo o registro agora. Aba/seção "Histórico" dentro do próprio modal de detalhe (`historico/` em `OrcamentoViewSet`/`EventoViewSet`, `IsAuthenticated` — diferente da tela de Auditoria geral, que é restrita a admin) | ✅ Concluída |
 | Alertas de Evento (pagamento pendente / entrega próxima) | Cron diário (`alertar_eventos`) alerta telefones internos da equipe via WhatsApp sobre Evento com saldo pendente perto da data (configurável) e sobre entrega se aproximando (configurável, repete a cada X dias) — `ConfiguracaoAlertaEvento`/`TelefoneAlertaEvento`/`AlertaEventoEnviado`, seção "Alertas de Evento" em Configurações, card "Alertas" no Dashboard | ✅ Concluída |
+| Estoque — Fases 1-5 (modelos base, entrada manual/ajuste, produção, débito automático na venda, alertas) | App `estoque/` — `MovimentoEstoque` (ledger), `Producao`, campos novos em `MateriaPrima`/`Produto`, débito automático via signals (PDV/iFood/Eventos), alertas de estoque baixo (`ConfiguracaoEstoque`/`TelefoneAlertaEstoque`/`AlertaEstoqueEnviado`), tela `Estoque.jsx` (4 abas), card "Estoque" no Dashboard | ✅ Concluída (fases 1-5) |
+| Estoque — Fases 6-8 (importação de nota fiscal: XML/PDF/IA) | Cascata de extração (XML da NF-e → texto de PDF → IA multimodal), staging (`ImportacaoNotaFiscal`/`ItemNotaImportada`), tela de revisão, fuzzy match | 🔲 Pendente |
 
 ---
 
@@ -276,7 +300,9 @@ arretado-crm/                    ← raiz React
 4. **Relatórios cobrem só iFood** — `relatorios/` tem apenas `RelatorioIFoodView`; expandir para PDV e Eventos/Orçamentos seguindo o mesmo padrão (resumo + agrupado + export Excel/PDF)
 5. **Logging/observabilidade** — hoje é rudimentar: sem `LOGGING` dict em `config/settings.py` (usa o padrão implícito do Django), sem Sentry/monitoramento de erros. Só alguns apps chamam `logger.info/warning/error` (`notificacoes/`, `ifood/` — bem detalhado em `polling_worker.py`/`ifood_client.py`/`views.py` —, e uns warnings pontuais em `pdv/signals.py`, `eventos/signals.py`, `pedidos/apps.py`, `pedidos/views.py`); `clientes`, `fichas`, `relatorios`, `dashboard` não logam nada. `usuarios` agora grava eventos de segurança/negócio (login, CRUD, mudança de role/perms) em `auditoria.LogAuditoria` via `auditoria/utils.py::registrar()` — isso é **auditoria de negócio** ("quem fez o quê"), não logging operacional (`logger.info/warning/error`); a pendência de `LOGGING` dict/Sentry abaixo continua válida e é um conceito separado. Gunicorn (`arretado.service`) e o worker (`arretado-polling.service`) não redirecionam pra arquivo — tudo vai pro stdout/stderr, só acessível via `journalctl -u arretado`/`journalctl -u arretado-polling` na VPS; sem persistência em arquivo nem rotação. Considerar no futuro: `LOGGING` dict com `RotatingFileHandler`/`TimedRotatingFileHandler` e/ou integração com Sentry
 6. **Divergência de receita "hoje" entre o card iFood do Dashboard e o menu iFood** — investigado, causa raiz identificada, correção ainda não decidida com o usuário. Ver `IFOOD_RECEITA_DASHBOARD.md`
-7. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
+7. **Bug pré-existente descoberto durante o desenvolvimento do módulo de Estoque (não corrigido, fora de escopo daquela feature):** `eventos/models.py::sincronizar_evento()` grava `defaults['itens_json']`, mas `pedidos.PedidoUnificado` não tem esse campo — todo `post_save` de `Evento` falha ao sincronizar (`Invalid field name(s) for model PedidoUnificado: 'itens_json'`), sempre engolido silenciosamente pelo try/except do signal (`eventos/signals.py`). Na prática, **Evento nunca sincronizou de fato para `PedidoUnificado`**, o que pode afetar `fila_operacional` do Dashboard (documentado como cruzando os 3 canais via `PedidoUnificado`, incluindo Eventos). Precisa de decisão do usuário sobre a correção (provavelmente renomear/remover a chave `itens_json` do `defaults` para bater com o schema atual de `PedidoUnificado`)
+8. **Estoque — Fases 6-8 (importação de nota fiscal)** — cascata de extração XML/PDF/IA, staging (`ImportacaoNotaFiscal`/`ItemNotaImportada`), tela de revisão. Adiado conscientemente (fases 1-5 já cobrem o caso de uso operacional básico: entrada manual, produção, débito automático na venda, alertas)
+9. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
    ```
    ZAPI_INSTANCE_ID=3F44AD8FFA071145A7847A94F00847F6
    ZAPI_TOKEN=664FD7CD1788EFA5660A875F
@@ -405,6 +431,16 @@ POST             /api/v1/fichas/ajuste-linear/                         ← exige
 POST             /api/v1/fichas/desfazer-ajuste/{snapshot_id}/         ← exige login · audita ajuste_linear_desfeito
 GET              /api/v1/fichas/snapshots/
 
+# Estoque (fases 1-5 — ver Padrões Obrigatórios)
+GET              /api/v1/estoque/movimentos/                    ← só leitura · filtros: materia_prima, produto, tipo_movimento, origem_tipo, data_inicio, data_fim
+POST             /api/v1/estoque/compras/registrar/              ← exige login · body: tipo_item (materia_prima|produto — só revenda), item_id, quantidade, valor_total (opcional), numero_nota (opcional) · audita entrada_estoque_registrada
+POST             /api/v1/estoque/ajuste-inventario/              ← exige login · body: tipo_item, item_id, saldo_contado (absoluto, não delta), motivo, observacao (opcional) · audita ajuste_inventario_registrado
+GET/POST         /api/v1/estoque/producoes/                      ← POST exige login · body: ficha_tecnica, quantidade_produzida · rejeita se produto vinculado não estiver em modo_estoque="estoque" · audita producao_registrada
+GET              /api/v1/estoque/producoes/preview/              ← query params: ficha_tecnica, quantidade · devolve consumo previsto por insumo + suficiente:bool (não bloqueia, só avisa)
+GET/PATCH        /api/v1/estoque/configuracao/1/                 ← singleton · PATCH exige login · audita config_estoque_alterada
+GET/POST         /api/v1/estoque/telefones-alerta/                ← telefones internos da equipe (não é o cliente)
+GET/PATCH/DELETE /api/v1/estoque/telefones-alerta/{id}/           ← DELETE exige login · audita registro_excluido
+
 # Relatórios
 GET /api/v1/relatorios/ifood/                    ← query params: data_inicio, data_fim, agrupamento (dia|mes), formato (json|excel|pdf)
 
@@ -444,7 +480,12 @@ python manage.py alertar_eventos
 python manage.py importar_planilha --arquivo PLANILHA_DE_PRECIFICACAO_ARRETADO.xlsx
 # flags: --dry-run | --apenas-materias | --sobrescrever
 
-# Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos)
+# Alertas de Estoque Baixo (cron diário — ex: 08:30)
+python manage.py alertar_estoque_baixo
+# limite/repetição vêm de ConfiguracaoEstoque.get() (painel) · precisa de ao menos 1
+# estoque.TelefoneAlertaEstoque ativo, senão não notifica ninguém
+
+# Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos, estoque)
 python manage.py test --settings=config.settings_test
 # settings_test.py roda contra SQLite em memória — o usuário do Postgres em produção
 # não tem permissão CREATE DATABASE, então `manage.py test` direto (sem --settings) falha
@@ -525,3 +566,9 @@ Infra já configurada em produção (não precisa recriar):
 - Não trocar o heartbeat de presença por WebSocket/Django Channels sem antes confirmar com o usuário — decisão deliberada de manter só polling REST, já que o projeto roda Gunicorn/WSGI síncrono sem Channels/Redis/ASGI
 - Ao criar um novo `ModelViewSet` com DELETE que deva ser auditado, usar `auditoria.mixins.AuditoriaDestroyMixin` em vez de escrever `registrar()` manualmente no `destroy()` — ele já trata `ProtectedError` (FK `on_delete=PROTECT`) como 400 amigável em vez de deixar vazar um 500. Para exclusão de item filho via `@action` customizada (`remover-item`, `remover-imagem` etc.), não dá pra usar o mixin (não passa por `perform_destroy`) — chamar `registrar()` manualmente ali, sempre **antes** de `.delete()` (o objeto perde o `pk` depois)
 - Nunca remover o bloqueio de `DELETE` em `ifood.ConfiguracaoIFoodViewSet` — essa config não é um singleton de verdade (usa `.objects.first()`), então excluir a linha derruba client_id/secret/tokens de produção sem aviso
+- Não escrever `quantidade_estoque` direto em `MateriaPrima`/`Produto` fora de `estoque.MovimentoEstoque.registrar()` — nem em view, nem em signal, nem em management command (mesma regra já aplicada a `PedidoUnificado` e `Evento.sinal_pago`)
+- Não bloquear venda, produção ou ajuste de inventário por saldo insuficiente — a política de estoque é sempre permitir e alertar, em toda a aplicação, sem exceção por item
+- Não chamar `Producao.executar()` para produto com `modo_estoque == 'sob_encomenda'` — esse caso debita insumo direto no signal de venda (`estoque/signals.py::_debitar_produto`), sem passar por produção formal
+- Ao gravar `quantidade`/`custo_unitario_snapshot` em `MovimentoEstoque`, não montar o valor manualmente sem quantizar — sempre deixar `MovimentoEstoque.registrar()` fazer isso (já quantiza `quantidade` a 3 casas e `custo_unitario_snapshot` a 4 casas); consumo proporcional e `custo_unitario` são divisões que saem com dezenas de casas decimais e derrubam `full_clean()` se não quantizados (bug real já corrigido — ver Padrões Obrigatórios)
+- Não implementar estoque de kit físico pré-montado — kit é sempre virtual (decrementa os componentes recursivamente), decisão consciente de escopo
+- Não implementar reversão automática de estoque em cancelamento de pedido/evento pós-débito — fora de escopo por decisão consciente; ajuste manual de inventário cobre o caso
