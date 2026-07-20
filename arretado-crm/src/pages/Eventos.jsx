@@ -1263,7 +1263,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             <Btn variant="secondary" onClick={onEditar} title="Editar dados do evento">
               <i className="ti ti-edit" /> Editar
             </Btn>
-            <Btn variant="secondary" onClick={onResumoCozinha} title="Imprimir resumo de cozinha">
+            <Btn onClick={onResumoCozinha} style={{ background: 'var(--caramelo)' }} title="Imprimir resumo de cozinha">
               <i className="ti ti-printer" /> Resumo de Cozinha
             </Btn>
             {evento.tem_orcamento_origem && (
