@@ -180,6 +180,16 @@ export default function Eventos() {
     setEmitirEvento(ev)
   }
 
+  const handleResumoCozinha = async (eventoId) => {
+    try {
+      const res = await eventosApi.resumoCozinha(eventoId)
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+    } catch {
+      setToast({ message: 'Erro ao gerar resumo de cozinha.', type: 'error' })
+    }
+  }
+
   const handleContratoEmitido = () => {
     loadEventos()
     if (eventoAtivo) {
@@ -347,6 +357,13 @@ export default function Eventos() {
                         )}
                       </td>
                       <td onClick={e => e.stopPropagation()}>
+                        <button
+                          className={styles.linkContrato}
+                          onClick={() => handleResumoCozinha(ev.id)}
+                          title="Imprimir resumo de cozinha"
+                        >
+                          <i className="ti ti-printer" /> Cozinha
+                        </button>
                         {ev.tem_orcamento_origem && (
                           <button
                             className={styles.linkContrato}
@@ -413,6 +430,7 @@ export default function Eventos() {
           onEditar={() => setShowEditar(true)}
           onReenviarContrato={() => abrirReenviarContrato(eventoAtivo)}
           onEmitirContrato={() => abrirEmitirContrato(eventoAtivo)}
+          onResumoCozinha={() => handleResumoCozinha(eventoAtivo.id)}
         />
       )}
 
@@ -1008,7 +1026,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
-function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato, onEmitirContrato }) {
+function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato, onEmitirContrato, onResumoCozinha }) {
   const [abaAtiva,    setAbaAtiva]    = useState('itens')
   const [addingItem,  setAddingItem]  = useState(false)
   const [produtos,    setProdutos]    = useState([])
@@ -1244,6 +1262,9 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
           <div className={styles.acoesWrap}>
             <Btn variant="secondary" onClick={onEditar} title="Editar dados do evento">
               <i className="ti ti-edit" /> Editar
+            </Btn>
+            <Btn variant="secondary" onClick={onResumoCozinha} title="Imprimir resumo de cozinha">
+              <i className="ti ti-printer" /> Resumo de Cozinha
             </Btn>
             {evento.tem_orcamento_origem && (
               <Btn onClick={onEmitirContrato} style={{ background: 'var(--caramelo)' }} title="Emitir contrato com os dados atuais do evento">

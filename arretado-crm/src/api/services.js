@@ -212,6 +212,7 @@ export const eventosApi = {
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
   historico:       (id)    => api.get(`/eventos/${id}/historico/`),
   gerarContrato:   (id, data) => api.post(`/eventos/${id}/gerar-contrato/`, data),
+  resumoCozinha:   (id)     => api.get(`/eventos/${id}/resumo-cozinha/`, { responseType: 'blob' }),
 }
 
 // ─── ORÇAMENTOS ──────────────────────────────────────────────────────────────

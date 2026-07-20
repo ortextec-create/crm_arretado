@@ -508,6 +508,22 @@ class EventoViewSet(
         ).select_related('usuario').order_by('-criado_em')
         return Response(LogAuditoriaSerializer(logs, many=True).data)
 
+    # ── Resumo de cozinha (PDF operacional, uso interno) ────────────────────
+
+    @action(detail=True, methods=['get'], url_path='resumo-cozinha')
+    def resumo_cozinha(self, request, pk=None):
+        evento = (
+            Evento.objects
+            .prefetch_related('itens__produto__categoria')
+            .select_related('cliente', 'local')
+            .get(pk=pk)
+        )
+        from .pdf_resumo_cozinha import gerar_pdf_resumo_cozinha
+        pdf_bytes = gerar_pdf_resumo_cozinha(evento)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="resumo-cozinha-{evento.numero}.pdf"'
+        return response
+
     # ── View de agenda (calendário) ────────────────────────────────────────
 
     @action(detail=False, methods=['get'], url_path='agenda')
