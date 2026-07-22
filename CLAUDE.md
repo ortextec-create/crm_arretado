@@ -151,6 +151,19 @@ arretado/                        ← raiz Django
 │   │                               (inclui `alertas`: mesma janela de eventos.ConfiguracaoAlertaEvento, sem
 │   │                               depender de AlertaEventoEnviado — mostra "o que está na janela agora")
 │   └── urls.py                  ← resumo/
+├── financeiro/                  ← Contas a Pagar/Receber + ledger de caixa (spec completa em FINANCEIRO.md,
+│   │                               em andamento — fases 0-2 de 8 concluídas, ver Pendências)
+│   ├── models.py                ← CategoriaFinanceira (nasce vazia, sem seed — requisito de revenda),
+│   │                               ContaBancaria (saldo_atual só via MovimentoFinanceiro.registrar()),
+│   │                               Fornecedor, ConfiguracaoFinanceira (singleton, inclui conta_padrao_vendas
+│   │                               pra Fase 4), TelefoneAlertaFinanceiro, MovimentoFinanceiro (ledger,
+│   │                               fonte única da verdade), ContaPagar (obrigação projetada, valor_pago/status
+│   │                               sempre derivados via recalcular_valor_pago() — mesma filosofia de
+│   │                               Evento.sinal_pago; ainda sem campo `recorrente`, que chega junto com
+│   │                               DespesaRecorrente na Fase 3)
+│   └── views.py                 ← CategoriaFinanceiraViewSet/ContaBancariaViewSet/FornecedorViewSet,
+│                                    MovimentoFinanceiroViewSet (só leitura), ConfiguracaoFinanceiraViewSet,
+│                                    TelefoneAlertaFinanceiroViewSet, ContaPagarViewSet (baixa/cancelar/resumo)
 └── manage.py
 
 arretado-crm/                    ← raiz React
@@ -250,6 +263,11 @@ arretado-crm/                    ← raiz React
 - **Resumo de Cozinha** (`GET /eventos/{id}/resumo-cozinha/`, `eventos/pdf_resumo_cozinha.py::gerar_pdf_resumo_cozinha(evento)`) — PDF operacional interno (não client-facing) com a lista de itens do Evento agrupada por categoria, pra a cozinha montar a produção. Usa ReportLab **Platypus** (não canvas cru como `pdf_orcamento.py`), porque a lista de itens tem tamanho variável e pode quebrar página — e **sem** timbre/marca d'água (`_mesclar_timbre` nunca é chamado aqui). Itens são ordenados por `produto__categoria__ordem`/`produto__categoria__nome`/`nome` na própria query e agrupados em memória com `itertools.groupby` (nunca reordenar em Python depois) — item sem `produto` ou cujo `produto` não tem `categoria` cai no grupo `"Outros"`, sempre por último (a ordenação por `ordem` já garante isso via `NULLS LAST` do Postgres, então o agrupamento em Python não precisa reordenar nada). **Nunca expõe preço** (`preco_unit`/`preco_total`/`valor_total`) — é 100% operacional. Todo texto livre (nome do cliente, endereço do local, observação do item/evento) passa por `xml.sax.saxutils.escape()` antes de virar `Paragraph`, porque a mini-sintaxe XML do ReportLab quebra a geração do PDF se o texto tiver `&`/`<`/`>` sem escapar. Endpoint é `AllowAny` (mesmo padrão de `OrcamentoViewSet.pdf`/`ContratoViewSet.pdf` — é leitura pura, não audita). Botão "Imprimir resumo de cozinha" (`ti-printer`) em dois lugares no frontend — card de detalhe do Evento e linha da lista — ambos chamando `eventosApi.resumoCozinha(id)` (blob) e abrindo com `window.open(url, '_blank')`, mesmo padrão de `handlePdf`/`handleVerPdf` já usado pros outros PDFs do sistema
 - **Criação/edição/status/item de Orçamento e Evento exigem login** (`create`, `update`/`partial_update`, `enviar`/`aprovar`/`recusar`/`restaurar` no Orçamento, `confirmar`/`iniciar_producao`/`marcar_pronto`/`entregar`/`cancelar` no Evento, `adicionar_item`/`editar_item`) — mudança de comportamento em relação ao que existia antes desta auditoria (essas actions eram `AllowAny`). Único motivo de exigir login aqui é garantir que sempre exista um ator no log; `converter_em_evento` e `enviar_whatsapp` continuam `AllowAny` de propósito (oportunistas, capturam o ator só quando o token vier)
 - **`dashboard/` é um app só-leitura, sem models** — `DashboardResumoView` (`GET /api/v1/dashboard/resumo/`) apenas agrega dados que já existem em `pedidos.PedidoUnificado` e `eventos.Evento`/`PagamentoEvento`. Regra importante: a receita de **Eventos** no dia (`canais.eventos.recebido_hoje` e a fatia "eventos" do `grafico_7dias`) vem **exclusivamente** de `PagamentoEvento` com `status='pago'` e `data_pagamento` do dia — nunca de `Evento.valor_total` nem do status de entrega (é recebimento efetivo de caixa, não valor do pedido). Já `ticket_medio.eventos` é a exceção: usa `Evento.valor_total` (não `PagamentoEvento`) dos eventos `status='entregue'` nos últimos 30 dias, porque ali a métrica é tamanho médio de venda, não fluxo de caixa. `fila_operacional` cruza os 3 canais lendo só `PedidoUnificado` (o `Evento` já sincroniza pra lá via `EVENTO_STATUS_MAP`), nunca faz query separada em `eventos.Evento`
+- **Módulo Financeiro** (app `financeiro/`, spec completa em `FINANCEIRO.md` — em andamento, fases 0-2 de 8 concluídas) — duas camadas, mesma filosofia de `Evento`/`PagamentoEvento`: `ContaPagar` é a obrigação projetada (tem vencimento e status, pode nunca acontecer); `MovimentoFinanceiro` é o ledger (fonte única da verdade do que passou pelo caixa). Requisito de revenda: **nenhum valor da Arretado hardcoded** — `CategoriaFinanceira` nasce vazia, sem seed automático
+- **`financeiro.MovimentoFinanceiro` é o ledger — fonte única da verdade.** Todo movimento passa por `MovimentoFinanceiro.registrar()` (nunca `.objects.create()` direto em view/signal/command), mesmo contrato de `estoque.MovimentoEstoque.registrar()`: `transaction.atomic()` + `select_for_update()` na `ContaBancaria` (evita race condition entre baixas/vendas concorrentes), quantiza `valor` a 2 casas antes de `full_clean()`, calcula `saldo_posterior` e atualiza `ContaBancaria.saldo_atual` via `update_fields`. `UniqueConstraint(origem_tipo, origem_id)` é **condicional** — só se aplica quando `origem_tipo in ('pdv','ifood','evento_pagamento')` (idempotência dos signals da Fase 4); baixas de conta (`conta_pagar`/`conta_receber`, permitem múltiplos movimentos parciais) e `manual` (livre) ficam de fora da constraint. Violar essa constraint condicional é pego por `full_clean()` como `ValidationError` (Django valida `UniqueConstraint` com `condition` no nível do model, não só no banco) — `registrar()` não faz try/except em cima disso, quem chama (futuros signals da Fase 4) é quem decide como tratar. **Não implementar DELETE de `MovimentoFinanceiro`** — ledger imutável, erro se corrige com um movimento manual inverso (estorno), nunca apagando o original (fica pra quando `movimentos/manual/` for implementado, Fase 6)
+- **`financeiro.ContaPagar`** é a obrigação projetada (`CP-0001` via `proximo_numero()`, mesmo padrão de `Orcamento`/`Contrato`/`Evento`). `valor_pago`/`status` **nunca** são gravados direto — sempre via `recalcular_valor_pago()` (soma os `MovimentoFinanceiro` com `origem_tipo='conta_pagar'`/`origem_id=self.id`/`tipo='saida'`; deriva `paga` se `valor_pago >= valor`, `parcial` se `0 < valor_pago < valor`, senão mantém `pendente`) — mesma filosofia de `Evento.sinal_pago`. `cancelar/` só é permitido com `valor_pago == 0`. `PATCH` só é permitido com `status == 'pendente'` (mesma restrição de `Orcamento.update()` — depois de qualquer baixa, a conta fica imutável nesses campos). Ainda **sem** o campo `recorrente` (FK pra `DespesaRecorrente`, que só existe a partir da Fase 3) — adicionado numa migration futura junto com aquele model, pra não referenciar um model que ainda não existe
+- **`financeiro.ConfiguracaoFinanceira` é singleton** — sempre acessado via `ConfiguracaoFinanceira.get()`. Já inclui `conta_padrao_vendas` (FK `ContaBancaria`, usado só a partir da Fase 4 pelos signals de venda) mesmo antes desses signals existirem. `PATCH /financeiro/configuracao/1/` exige login e audita `config_financeira_alterada` (GET continua `AllowAny`)
+- **Baixa de `ContaPagar`** (`POST /financeiro/contas-pagar/{id}/baixa/`) exige login, cria um `MovimentoFinanceiro` (`tipo='saida'`, `origem_tipo='conta_pagar'`) e chama `recalcular_valor_pago()` — rejeita (400) valor de baixa maior que o saldo restante (`valor - valor_pago`) e conta já `paga`/`cancelada`. Audita `baixa_registrada`
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -303,6 +321,7 @@ arretado-crm/                    ← raiz React
 | Estoque — Fases 1-5 (modelos base, entrada manual/ajuste, produção, débito automático na venda, alertas) | App `estoque/` — `MovimentoEstoque` (ledger), `Producao`, campos novos em `MateriaPrima`/`Produto`, débito automático via signals (PDV/iFood/Eventos), alertas de estoque baixo (`ConfiguracaoEstoque`/`TelefoneAlertaEstoque`/`AlertaEstoqueEnviado`), tela `Estoque.jsx` (4 abas), card "Estoque" no Dashboard | ✅ Concluída (fases 1-5) |
 | Estoque — Fases 6-8 (importação de nota fiscal: XML/PDF/IA) | Cascata de extração (XML da NF-e → texto de PDF → IA multimodal), staging (`ImportacaoNotaFiscal`/`ItemNotaImportada`), tela de revisão, fuzzy match, filtros de período/tipo na aba Movimentações | ✅ Concluída |
 | Resumo de Cozinha (Evento) | PDF operacional (A4 página cheia, ReportLab Platypus, sem timbre) com itens do Evento agrupados por categoria, pra a equipe de cozinha montar a produção — sem preços. Botão em `Eventos.jsx` (card de detalhe + linha da lista) | ✅ Concluída (só A4 página cheia — meia-folha/térmica fora de escopo por ora) |
+| Módulo Financeiro — Fases 0-2 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`), `ContaPagar` (obrigação projetada, `valor_pago`/`status` derivados) | 🔄 Em andamento (fases 0-2 de 8 — faltam DespesaRecorrente/crons, ContaReceber, integração com nota fiscal, fluxo de caixa e frontend) |
 
 ---
 
@@ -474,6 +493,23 @@ GET /api/v1/relatorios/ifood/                    ← query params: data_inicio, 
 GET /api/v1/dashboard/resumo/                    ← sem parâmetros; agrega canais (iFood/PDV/Eventos/Anota AI),
                                                      total recebido hoje + comparativo vs ontem, gráfico 7 dias,
                                                      a receber, fila operacional, próximos eventos e ticket médio
+
+# Financeiro (fases 0-2 de 8 — ver FINANCEIRO.md e Padrões Obrigatórios)
+GET/POST         /api/v1/financeiro/categorias/                  ← POST exige login
+GET/PATCH/DELETE /api/v1/financeiro/categorias/{id}/              ← DELETE exige login · audita registro_excluido
+GET/POST         /api/v1/financeiro/contas-bancarias/             ← POST exige login · sem DELETE (PROTECT do ledger, desativar via ativo=False)
+GET/PATCH        /api/v1/financeiro/contas-bancarias/{id}/        ← PATCH exige login
+GET/POST         /api/v1/financeiro/fornecedores/                 ← busca por ?search= (nome/cnpj) · POST exige login
+GET/PATCH/DELETE /api/v1/financeiro/fornecedores/{id}/            ← DELETE exige login · audita registro_excluido
+GET/POST         /api/v1/financeiro/contas-pagar/                 ← filtros: status, categoria, fornecedor, mes (YYYY-MM), search · POST exige login · audita registro_criado
+GET/PATCH        /api/v1/financeiro/contas-pagar/{id}/            ← PATCH exige login · só com status='pendente' · audita registro_atualizado
+POST             /api/v1/financeiro/contas-pagar/{id}/baixa/      ← exige login · body: data, valor, conta, forma, comprovante (multipart opcional) · audita baixa_registrada
+POST             /api/v1/financeiro/contas-pagar/{id}/cancelar/   ← exige login · só se valor_pago == 0 · audita status_alterado
+GET              /api/v1/financeiro/contas-pagar/resumo/          ← cards: em_atraso, vence_hoje, proximos_7_dias, total_mes {pago, pendente}
+GET              /api/v1/financeiro/movimentos/                  ← só leitura (ledger, imutável) · filtros: conta, tipo, categoria, data_inicio, data_fim
+GET/PATCH        /api/v1/financeiro/configuracao/1/               ← singleton · PATCH exige login · audita config_financeira_alterada
+GET/POST         /api/v1/financeiro/telefones-alerta/
+GET/PATCH/DELETE /api/v1/financeiro/telefones-alerta/{id}/        ← DELETE exige login · audita registro_excluido
 ```
 
 ---
@@ -604,3 +640,10 @@ Infra já configurada em produção (não precisa recriar):
 - Não guardar `ANTHROPIC_API_KEY` em model/banco — sempre variável de ambiente (mesmo padrão de `ZAPI_*`)
 - Não usar SDK `anthropic` — `estoque/claude_client.py` chama a API Claude via `requests` puro, mesmo espírito leve de `notificacoes/zapi_client.py`
 - Endpoint de upload de nota fiscal é `POST /api/v1/estoque/notas/` (o `create()` padrão do ViewSet) — não `/notas/importar/` (bug real já cometido e corrigido durante o desenvolvimento: o frontend chamava uma URL que não existia)
+- Não gravar `financeiro.ContaBancaria.saldo_atual` direto — sempre via `MovimentoFinanceiro.registrar()` (mesma regra de `MovimentoEstoque`/`PedidoUnificado`/`Evento.sinal_pago`)
+- Não gravar `financeiro.ContaPagar.valor_pago`/`status` direto — sempre via `recalcular_valor_pago()`, chamado depois de cada baixa
+- Não implementar DELETE de `financeiro.MovimentoFinanceiro` — ledger imutável; erro se corrige com um lançamento manual inverso (estorno), nunca apagando o original
+- Não semear `financeiro.CategoriaFinanceira` com valores hardcoded — requisito de revenda, o cadastro nasce vazio e é o usuário quem cadastra
+- Não permitir `PATCH` em `financeiro.ContaPagar` quando `status` não for `pendente` — depois da primeira baixa, os campos de valor/vencimento ficam imutáveis (mesma filosofia de `Orcamento`)
+- Não instanciar `ConfiguracaoFinanceira()` diretamente — sempre usar `ConfiguracaoFinanceira.get()`
+- Não adicionar o campo `recorrente` em `financeiro.ContaPagar` antes de criar o model `DespesaRecorrente` (Fase 3) — FK pra um model que ainda não existe quebra a resolução de app/model do Django
