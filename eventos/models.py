@@ -504,9 +504,9 @@ def sincronizar_evento(evento):
         'numero':     evento.numero,
         'status':     EVENTO_STATUS_MAP.get(evento.status, 'pendente'),
         'tipo':       EVENTO_TIPO_MAP.get(evento.tipo_entrega, 'retirada'),
-        'total':      float(evento.valor_total),
-        'itens_json': itens_snapshot,
-        'pedido_em':  evento.criado_em,
+        'total':          float(evento.valor_total),
+        'itens_snapshot': itens_snapshot,
+        'pedido_em':      evento.criado_em,
     }
 
     PedidoUnificado.objects.update_or_create(

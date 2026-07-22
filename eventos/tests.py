@@ -18,6 +18,7 @@ from .models import (
 from .views import (
     OrcamentoViewSet, ContratoViewSet, EventoViewSet, LocalEventoViewSet, ConfiguracaoContratoViewSet,
 )
+from pedidos.models import PedidoUnificado
 
 GIF_1PX = SimpleUploadedFile(
     'inspiracao.gif', b'GIF87a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x01D\x00;',
@@ -1188,3 +1189,115 @@ class ValorTotalItemAuditoriaTests(AuditoriaEventosDestroyTestCase):
 
         evento.refresh_from_db()
         self.assertEqual(str(evento.valor_total), '0.00')
+
+
+class SincronizacaoPedidoUnificadoTests(TestCase):
+    """Fase 0 do módulo Financeiro (FINANCEIRO.md): corrige o bug histórico em que
+    sincronizar_evento() gravava 'itens_json' (campo inexistente em PedidoUnificado),
+    fazendo o post_save de Evento falhar silenciosamente sempre (ver CLAUDE.md,
+    Pendência 7). Evento nunca havia sincronizado de fato até esta correção."""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(nome='Maria Sync', telefone_principal='86999990000')
+
+    def test_criar_evento_gera_pedido_unificado(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        pedido = PedidoUnificado.objects.get(canal='eventos', origem_id=evento.pk)
+        self.assertEqual(pedido.numero, evento.numero)
+        self.assertEqual(pedido.status, 'pendente')
+        self.assertEqual(pedido.itens_snapshot, [])
+
+    def test_itens_do_evento_aparecem_no_snapshot(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        ItemEvento.objects.create(evento=evento, nome='Bolo', preco_unit=80, quantidade=2)
+        evento.recalcular_totais()
+
+        pedido = PedidoUnificado.objects.get(canal='eventos', origem_id=evento.pk)
+        self.assertEqual(len(pedido.itens_snapshot), 1)
+        self.assertEqual(pedido.itens_snapshot[0]['nome'], 'Bolo')
+        self.assertEqual(pedido.itens_snapshot[0]['quantidade'], 2)
+        self.assertEqual(pedido.total, float(evento.valor_total))
+
+    def test_mudanca_de_status_atualiza_pedido_unificado(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        evento.status = 'confirmado'
+        evento.save()
+
+        pedido = PedidoUnificado.objects.get(canal='eventos', origem_id=evento.pk)
+        self.assertEqual(pedido.status, 'confirmado')
+        # não deve duplicar a linha do espelho a cada save()
+        self.assertEqual(
+            PedidoUnificado.objects.filter(canal='eventos', origem_id=evento.pk).count(), 1,
+        )
+
+
+class DashboardReceitaEventosNaoDuplicaTests(TestCase):
+    """Fase 0 do módulo Financeiro: agora que Evento sincroniza de fato para
+    PedidoUnificado, a receita de Eventos no Dashboard precisa continuar vindo
+    exclusivamente de PagamentoEvento — nunca de PedidoUnificado.total (evita
+    dupla contagem, regra documentada em CLAUDE.md)."""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(nome='Maria Dash', telefone_principal='86999990001')
+
+    def test_eventos_recebido_dia_ignora_pedido_unificado(self):
+        from dashboard.views import DashboardResumoView
+
+        hoje = datetime.date.today()
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=hoje + datetime.timedelta(days=10), status='confirmado',
+        )
+        ItemEvento.objects.create(evento=evento, nome='Bolo', preco_unit=500, quantidade=1)
+        evento.recalcular_totais()
+
+        # Confirma que o Evento de fato espelhou em PedidoUnificado com o valor total do pedido —
+        # se a receita do dashboard olhasse essa linha, contaria os R$ 500 sem nenhum pagamento real.
+        pedido = PedidoUnificado.objects.get(canal='eventos', origem_id=evento.pk)
+        self.assertEqual(pedido.total, 500.0)
+
+        # Nenhum PagamentoEvento foi registrado — receita do dia deve ser zero.
+        self.assertEqual(DashboardResumoView._eventos_recebido_dia(hoje), 0.0)
+
+        resp = DashboardResumoView().get(APIRequestFactory().get('/api/v1/dashboard/resumo/'))
+        self.assertEqual(resp.data['canais']['eventos']['recebido_hoje'], 0.0)
+        self.assertEqual(resp.data['total_recebido_hoje'], 0.0)
+
+    def test_pagamento_evento_conta_uma_vez_so(self):
+        from dashboard.views import DashboardResumoView
+
+        hoje = datetime.date.today()
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=hoje + datetime.timedelta(days=10), status='confirmado',
+        )
+        ItemEvento.objects.create(evento=evento, nome='Bolo', preco_unit=500, quantidade=1)
+        evento.recalcular_totais()
+        PagamentoEvento.objects.create(
+            evento=evento, valor=200, forma_pagamento='pix', status='pago', data_pagamento=hoje,
+        )
+        evento.recalcular_sinal_pago()
+
+        resp = DashboardResumoView().get(APIRequestFactory().get('/api/v1/dashboard/resumo/'))
+        self.assertEqual(resp.data['canais']['eventos']['recebido_hoje'], 200.0)
+        self.assertEqual(resp.data['total_recebido_hoje'], 200.0)
+
+    def test_fila_operacional_agora_enxerga_eventos(self):
+        # Comportamento desejado após a correção (documentado na spec Fase 0):
+        # Evento passa a contar na fila operacional junto com iFood/PDV.
+        Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+        )
+        from dashboard.views import DashboardResumoView
+        fila = DashboardResumoView._fila_operacional()
+        self.assertGreaterEqual(fila['pendente'], 1)
