@@ -20,6 +20,7 @@ from .models import (
     ConfiguracaoFinanceira,
     ContaBancaria,
     ContaPagar,
+    DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
     TelefoneAlertaFinanceiro,
@@ -30,6 +31,7 @@ from .serializers import (
     ConfiguracaoFinanceiraSerializer,
     ContaBancariaSerializer,
     ContaPagarSerializer,
+    DespesaRecorrenteSerializer,
     FornecedorSerializer,
     MovimentoFinanceiroSerializer,
     TelefoneAlertaFinanceiroSerializer,
@@ -311,3 +313,21 @@ class ContaPagarViewSet(
             'proximos_7_dias': proximos_7_dias,
             'total_mes': {'pago': pago_mes, 'pendente': pendente_mes},
         })
+
+
+# ─── Despesas Recorrentes ──────────────────────────────────────────────────────
+
+class DespesaRecorrenteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+    """
+    Molde de despesa mensal — sem DELETE (pausar via PATCH ativo=False,
+    nunca deletar; PROTECT em ContaPagar.recorrente cobre isso de qualquer forma).
+    """
+    queryset = DespesaRecorrente.objects.select_related('fornecedor', 'categoria').all()
+    serializer_class = DespesaRecorrenteSerializer
+    authentication_classes = [TokenAuthentication]
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update'):
+            return [IsAuthenticated()]
+        return [AllowAny()]

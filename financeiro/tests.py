@@ -1,13 +1,27 @@
+from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
 from usuarios.models import Usuario
 from usuarios.views import UsuarioViewSet
 
-from .models import CategoriaFinanceira, ContaBancaria, ContaPagar, Fornecedor, MovimentoFinanceiro
+from .models import (
+    AlertaFinanceiroEnviado,
+    CategoriaFinanceira,
+    ConfiguracaoFinanceira,
+    ContaBancaria,
+    ContaPagar,
+    DespesaRecorrente,
+    Fornecedor,
+    MovimentoFinanceiro,
+    TelefoneAlertaFinanceiro,
+)
 from .views import ContaPagarViewSet
 
 
@@ -230,3 +244,138 @@ class ContaPagarViewSetTests(TestCase):
         }, format='json')
         resp = view(req)
         self.assertEqual(resp.status_code, 401)
+
+
+class DespesaRecorrenteDatasNoPeriodoTests(TestCase):
+    def setUp(self):
+        self.categoria = _categoria_saida()
+
+    def _despesa(self, dias):
+        return DespesaRecorrente.objects.create(
+            descricao='Aluguel', categoria=self.categoria, valor=Decimal('1500.00'),
+            dias_vencimento=dias,
+        )
+
+    def test_dia_normal_gera_uma_data_por_mes(self):
+        despesa = self._despesa([10])
+        datas = despesa.datas_no_periodo(date(2026, 7, 1), date(2026, 9, 30))
+        self.assertEqual(datas, [date(2026, 7, 10), date(2026, 8, 10), date(2026, 9, 10)])
+
+    def test_dia_31_em_mes_curto_cai_no_ultimo_dia(self):
+        despesa = self._despesa([31])
+        # fevereiro/2026 tem 28 dias (2026 não é bissexto)
+        datas = despesa.datas_no_periodo(date(2026, 1, 15), date(2026, 3, 31))
+        self.assertIn(date(2026, 1, 31), datas)
+        self.assertIn(date(2026, 2, 28), datas)
+        self.assertIn(date(2026, 3, 31), datas)
+
+    def test_multiplos_dias_no_mesmo_mes(self):
+        despesa = self._despesa([1, 30])
+        datas = despesa.datas_no_periodo(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(datas, [date(2026, 7, 1), date(2026, 7, 30)])
+
+    def test_fora_do_periodo_e_excluido(self):
+        despesa = self._despesa([1])
+        datas = despesa.datas_no_periodo(date(2026, 7, 15), date(2026, 8, 31))
+        self.assertNotIn(date(2026, 7, 1), datas)
+        self.assertIn(date(2026, 8, 1), datas)
+
+    def test_dias_vencimento_invalido_rejeitado_no_clean(self):
+        despesa = DespesaRecorrente(
+            descricao='X', categoria=self.categoria, valor=Decimal('10.00'), dias_vencimento=[0, 40],
+        )
+        with self.assertRaises(ValidationError):
+            despesa.full_clean()
+
+
+class GerarContasRecorrentesCommandTests(TestCase):
+    def setUp(self):
+        self.categoria = _categoria_saida()
+        ConfiguracaoFinanceira.objects.create(pk=1, horizonte_recorrencia_dias=40)
+
+    def test_gera_conta_pagar_dentro_do_horizonte(self):
+        DespesaRecorrente.objects.create(
+            descricao='Internet', categoria=self.categoria, valor=Decimal('120.00'), dias_vencimento=[5],
+        )
+        call_command('gerar_contas_recorrentes')
+        self.assertGreaterEqual(ContaPagar.objects.filter(origem='recorrente').count(), 1)
+        conta = ContaPagar.objects.filter(origem='recorrente').first()
+        self.assertEqual(conta.valor, Decimal('120.00'))
+        self.assertEqual(conta.status, 'pendente')
+
+    def test_rodar_duas_vezes_nao_duplica(self):
+        DespesaRecorrente.objects.create(
+            descricao='Energia', categoria=self.categoria, valor=Decimal('300.00'), dias_vencimento=[1, 15],
+        )
+        call_command('gerar_contas_recorrentes')
+        total_primeira = ContaPagar.objects.filter(origem='recorrente').count()
+        call_command('gerar_contas_recorrentes')
+        total_segunda = ContaPagar.objects.filter(origem='recorrente').count()
+        self.assertEqual(total_primeira, total_segunda)
+
+    def test_despesa_inativa_nao_gera_conta(self):
+        DespesaRecorrente.objects.create(
+            descricao='Pausada', categoria=self.categoria, valor=Decimal('50.00'),
+            dias_vencimento=[1], ativo=False,
+        )
+        call_command('gerar_contas_recorrentes')
+        self.assertEqual(ContaPagar.objects.filter(origem='recorrente').count(), 0)
+
+
+class AlertarVencimentosCommandTests(TestCase):
+    def setUp(self):
+        self.categoria = _categoria_saida()
+        ConfiguracaoFinanceira.objects.create(pk=1, alerta_antecedencia_dias=3, alerta_repeticao_dias=1)
+        TelefoneAlertaFinanceiro.objects.create(numero='5586999990000', nome='Equipe')
+
+    def _conta_pagar(self, dias_para_vencer):
+        vencimento = timezone.localdate() + timedelta(days=dias_para_vencer)
+        return ContaPagar.objects.create(
+            numero=ContaPagar.proximo_numero(), categoria=self.categoria,
+            valor=Decimal('200.00'), data_emissao=timezone.localdate(), data_vencimento=vencimento,
+        )
+
+    @patch('notificacoes.servico.zapi.enviar_texto')
+    def test_sem_telefone_nao_envia(self, mock_enviar):
+        TelefoneAlertaFinanceiro.objects.all().delete()
+        self._conta_pagar(dias_para_vencer=1)
+        call_command('alertar_vencimentos')
+        mock_enviar.assert_not_called()
+
+    @patch('notificacoes.servico.zapi.enviar_texto')
+    def test_conta_dentro_da_antecedencia_dispara_alerta(self, mock_enviar):
+        mock_enviar.return_value = {'messageId': 'abc'}
+        conta = self._conta_pagar(dias_para_vencer=1)
+        call_command('alertar_vencimentos')
+        mock_enviar.assert_called_once()
+        self.assertEqual(AlertaFinanceiroEnviado.objects.filter(conta_pagar=conta).count(), 1)
+
+    @patch('notificacoes.servico.zapi.enviar_texto')
+    def test_conta_em_atraso_tambem_dispara(self, mock_enviar):
+        mock_enviar.return_value = {'messageId': 'abc'}
+        self._conta_pagar(dias_para_vencer=-5)
+        call_command('alertar_vencimentos')
+        mock_enviar.assert_called_once()
+
+    @patch('notificacoes.servico.zapi.enviar_texto')
+    def test_conta_fora_da_antecedencia_nao_dispara(self, mock_enviar):
+        self._conta_pagar(dias_para_vencer=30)
+        call_command('alertar_vencimentos')
+        mock_enviar.assert_not_called()
+
+    @patch('notificacoes.servico.zapi.enviar_texto')
+    def test_nao_repete_no_mesmo_dia(self, mock_enviar):
+        mock_enviar.return_value = {'messageId': 'abc'}
+        self._conta_pagar(dias_para_vencer=1)
+        call_command('alertar_vencimentos')
+        call_command('alertar_vencimentos')
+        # alerta_repeticao_dias=1 e o segundo envio é no mesmo instante — não deve repetir
+        self.assertEqual(mock_enviar.call_count, 1)
+
+    @patch('notificacoes.servico.zapi.enviar_texto')
+    def test_conta_paga_nao_dispara(self, mock_enviar):
+        conta = self._conta_pagar(dias_para_vencer=1)
+        conta.status = 'paga'
+        conta.save(update_fields=['status'])
+        call_command('alertar_vencimentos')
+        mock_enviar.assert_not_called()

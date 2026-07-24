@@ -67,6 +67,7 @@ class HistoricoMensagem(models.Model):
         ('alerta_pagamento', 'Alerta de Pagamento Pendente'),
         ('alerta_entrega',   'Alerta de Entrega Próxima'),
         ('alerta_estoque_baixo', 'Alerta de Estoque Baixo'),
+        ('alerta_vencimento', 'Alerta de Vencimento Financeiro'),
     ]
 
     STATUS_CHOICES = [

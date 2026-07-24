@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 22/jul/2026.
+> Última atualização: 24/jul/2026.
 
 ---
 
@@ -152,18 +152,33 @@ arretado/                        ← raiz Django
 │   │                               depender de AlertaEventoEnviado — mostra "o que está na janela agora")
 │   └── urls.py                  ← resumo/
 ├── financeiro/                  ← Contas a Pagar/Receber + ledger de caixa (spec completa em FINANCEIRO.md,
-│   │                               em andamento — fases 0-2 de 8 concluídas, ver Pendências)
+│   │                               em andamento — fases 0-3 de 8 concluídas, ver Pendências)
 │   ├── models.py                ← CategoriaFinanceira (nasce vazia, sem seed — requisito de revenda),
 │   │                               ContaBancaria (saldo_atual só via MovimentoFinanceiro.registrar()),
 │   │                               Fornecedor, ConfiguracaoFinanceira (singleton, inclui conta_padrao_vendas
 │   │                               pra Fase 4), TelefoneAlertaFinanceiro, MovimentoFinanceiro (ledger,
 │   │                               fonte única da verdade), ContaPagar (obrigação projetada, valor_pago/status
 │   │                               sempre derivados via recalcular_valor_pago() — mesma filosofia de
-│   │                               Evento.sinal_pago; ainda sem campo `recorrente`, que chega junto com
-│   │                               DespesaRecorrente na Fase 3)
+│   │                               Evento.sinal_pago; campo `recorrente` FK opcional pra DespesaRecorrente,
+│   │                               UniqueConstraint(recorrente, data_vencimento) condicional garante
+│   │                               idempotência do cron), DespesaRecorrente (molde de despesa mensal,
+│   │                               dias_vencimento JSONField com lista de dias do mês — dia inexistente
+│   │                               no mês cai no último dia via datas_no_periodo()), AlertaFinanceiroEnviado
+│   │                               (rastreia último alerta de vencimento por ContaPagar, controla repetição)
+│   ├── management/commands/gerar_contas_recorrentes.py ← cron diário: materializa ContaPagar
+│   │                               (origem='recorrente') a partir de cada DespesaRecorrente ativa, um
+│   │                               vencimento por dia em dias_vencimento dentro do horizonte configurado
+│   │                               (ConfiguracaoFinanceira.horizonte_recorrencia_dias) — idempotente pela
+│   │                               UniqueConstraint(recorrente, data_vencimento)
+│   ├── management/commands/alertar_vencimentos.py ← cron diário: alerta a equipe (WhatsApp, via
+│   │                               TelefoneAlertaFinanceiro) sobre ContaPagar pendente/parcial vencendo em
+│   │                               até alerta_antecedencia_dias ou já em atraso — repete a cada
+│   │                               alerta_repeticao_dias, controlado por AlertaFinanceiroEnviado (mesmo
+│   │                               padrão de alertar_eventos/alertar_estoque_baixo)
 │   └── views.py                 ← CategoriaFinanceiraViewSet/ContaBancariaViewSet/FornecedorViewSet,
 │                                    MovimentoFinanceiroViewSet (só leitura), ConfiguracaoFinanceiraViewSet,
-│                                    TelefoneAlertaFinanceiroViewSet, ContaPagarViewSet (baixa/cancelar/resumo)
+│                                    TelefoneAlertaFinanceiroViewSet, ContaPagarViewSet (baixa/cancelar/resumo),
+│                                    DespesaRecorrenteViewSet (sem DELETE — pausar via ativo=False)
 └── manage.py
 
 arretado-crm/                    ← raiz React
@@ -263,11 +278,13 @@ arretado-crm/                    ← raiz React
 - **Resumo de Cozinha** (`GET /eventos/{id}/resumo-cozinha/`, `eventos/pdf_resumo_cozinha.py::gerar_pdf_resumo_cozinha(evento)`) — PDF operacional interno (não client-facing) com a lista de itens do Evento agrupada por categoria, pra a cozinha montar a produção. Usa ReportLab **Platypus** (não canvas cru como `pdf_orcamento.py`), porque a lista de itens tem tamanho variável e pode quebrar página — e **sem** timbre/marca d'água (`_mesclar_timbre` nunca é chamado aqui). Itens são ordenados por `produto__categoria__ordem`/`produto__categoria__nome`/`nome` na própria query e agrupados em memória com `itertools.groupby` (nunca reordenar em Python depois) — item sem `produto` ou cujo `produto` não tem `categoria` cai no grupo `"Outros"`, sempre por último (a ordenação por `ordem` já garante isso via `NULLS LAST` do Postgres, então o agrupamento em Python não precisa reordenar nada). **Nunca expõe preço** (`preco_unit`/`preco_total`/`valor_total`) — é 100% operacional. Todo texto livre (nome do cliente, endereço do local, observação do item/evento) passa por `xml.sax.saxutils.escape()` antes de virar `Paragraph`, porque a mini-sintaxe XML do ReportLab quebra a geração do PDF se o texto tiver `&`/`<`/`>` sem escapar. Endpoint é `AllowAny` (mesmo padrão de `OrcamentoViewSet.pdf`/`ContratoViewSet.pdf` — é leitura pura, não audita). Botão "Imprimir resumo de cozinha" (`ti-printer`) em dois lugares no frontend — card de detalhe do Evento e linha da lista — ambos chamando `eventosApi.resumoCozinha(id)` (blob) e abrindo com `window.open(url, '_blank')`, mesmo padrão de `handlePdf`/`handleVerPdf` já usado pros outros PDFs do sistema
 - **Criação/edição/status/item de Orçamento e Evento exigem login** (`create`, `update`/`partial_update`, `enviar`/`aprovar`/`recusar`/`restaurar` no Orçamento, `confirmar`/`iniciar_producao`/`marcar_pronto`/`entregar`/`cancelar` no Evento, `adicionar_item`/`editar_item`) — mudança de comportamento em relação ao que existia antes desta auditoria (essas actions eram `AllowAny`). Único motivo de exigir login aqui é garantir que sempre exista um ator no log; `converter_em_evento` e `enviar_whatsapp` continuam `AllowAny` de propósito (oportunistas, capturam o ator só quando o token vier)
 - **`dashboard/` é um app só-leitura, sem models** — `DashboardResumoView` (`GET /api/v1/dashboard/resumo/`) apenas agrega dados que já existem em `pedidos.PedidoUnificado` e `eventos.Evento`/`PagamentoEvento`. Regra importante: a receita de **Eventos** no dia (`canais.eventos.recebido_hoje` e a fatia "eventos" do `grafico_7dias`) vem **exclusivamente** de `PagamentoEvento` com `status='pago'` e `data_pagamento` do dia — nunca de `Evento.valor_total` nem do status de entrega (é recebimento efetivo de caixa, não valor do pedido). Já `ticket_medio.eventos` é a exceção: usa `Evento.valor_total` (não `PagamentoEvento`) dos eventos `status='entregue'` nos últimos 30 dias, porque ali a métrica é tamanho médio de venda, não fluxo de caixa. `fila_operacional` cruza os 3 canais lendo só `PedidoUnificado` (o `Evento` já sincroniza pra lá via `EVENTO_STATUS_MAP`), nunca faz query separada em `eventos.Evento`
-- **Módulo Financeiro** (app `financeiro/`, spec completa em `FINANCEIRO.md` — em andamento, fases 0-2 de 8 concluídas) — duas camadas, mesma filosofia de `Evento`/`PagamentoEvento`: `ContaPagar` é a obrigação projetada (tem vencimento e status, pode nunca acontecer); `MovimentoFinanceiro` é o ledger (fonte única da verdade do que passou pelo caixa). Requisito de revenda: **nenhum valor da Arretado hardcoded** — `CategoriaFinanceira` nasce vazia, sem seed automático
+- **Módulo Financeiro** (app `financeiro/`, spec completa em `FINANCEIRO.md` — em andamento, fases 0-3 de 8 concluídas) — duas camadas, mesma filosofia de `Evento`/`PagamentoEvento`: `ContaPagar` é a obrigação projetada (tem vencimento e status, pode nunca acontecer); `MovimentoFinanceiro` é o ledger (fonte única da verdade do que passou pelo caixa). Requisito de revenda: **nenhum valor da Arretado hardcoded** — `CategoriaFinanceira` nasce vazia, sem seed automático
 - **`financeiro.MovimentoFinanceiro` é o ledger — fonte única da verdade.** Todo movimento passa por `MovimentoFinanceiro.registrar()` (nunca `.objects.create()` direto em view/signal/command), mesmo contrato de `estoque.MovimentoEstoque.registrar()`: `transaction.atomic()` + `select_for_update()` na `ContaBancaria` (evita race condition entre baixas/vendas concorrentes), quantiza `valor` a 2 casas antes de `full_clean()`, calcula `saldo_posterior` e atualiza `ContaBancaria.saldo_atual` via `update_fields`. `UniqueConstraint(origem_tipo, origem_id)` é **condicional** — só se aplica quando `origem_tipo in ('pdv','ifood','evento_pagamento')` (idempotência dos signals da Fase 4); baixas de conta (`conta_pagar`/`conta_receber`, permitem múltiplos movimentos parciais) e `manual` (livre) ficam de fora da constraint. Violar essa constraint condicional é pego por `full_clean()` como `ValidationError` (Django valida `UniqueConstraint` com `condition` no nível do model, não só no banco) — `registrar()` não faz try/except em cima disso, quem chama (futuros signals da Fase 4) é quem decide como tratar. **Não implementar DELETE de `MovimentoFinanceiro`** — ledger imutável, erro se corrige com um movimento manual inverso (estorno), nunca apagando o original (fica pra quando `movimentos/manual/` for implementado, Fase 6)
-- **`financeiro.ContaPagar`** é a obrigação projetada (`CP-0001` via `proximo_numero()`, mesmo padrão de `Orcamento`/`Contrato`/`Evento`). `valor_pago`/`status` **nunca** são gravados direto — sempre via `recalcular_valor_pago()` (soma os `MovimentoFinanceiro` com `origem_tipo='conta_pagar'`/`origem_id=self.id`/`tipo='saida'`; deriva `paga` se `valor_pago >= valor`, `parcial` se `0 < valor_pago < valor`, senão mantém `pendente`) — mesma filosofia de `Evento.sinal_pago`. `cancelar/` só é permitido com `valor_pago == 0`. `PATCH` só é permitido com `status == 'pendente'` (mesma restrição de `Orcamento.update()` — depois de qualquer baixa, a conta fica imutável nesses campos). Ainda **sem** o campo `recorrente` (FK pra `DespesaRecorrente`, que só existe a partir da Fase 3) — adicionado numa migration futura junto com aquele model, pra não referenciar um model que ainda não existe
+- **`financeiro.ContaPagar`** é a obrigação projetada (`CP-0001` via `proximo_numero()`, mesmo padrão de `Orcamento`/`Contrato`/`Evento`). `valor_pago`/`status` **nunca** são gravados direto — sempre via `recalcular_valor_pago()` (soma os `MovimentoFinanceiro` com `origem_tipo='conta_pagar'`/`origem_id=self.id`/`tipo='saida'`; deriva `paga` se `valor_pago >= valor`, `parcial` se `0 < valor_pago < valor`, senão mantém `pendente`) — mesma filosofia de `Evento.sinal_pago`. `cancelar/` só é permitido com `valor_pago == 0`. `PATCH` só é permitido com `status == 'pendente'` (mesma restrição de `Orcamento.update()` — depois de qualquer baixa, a conta fica imutável nesses campos). Campo `recorrente` (FK pra `DespesaRecorrente`, opcional, `PROTECT`) é preenchido só pelo cron `gerar_contas_recorrentes` — nunca pela API (`read_only_fields` no serializer); `UniqueConstraint(recorrente, data_vencimento)` condicional (`recorrente__isnull=False`) garante que o cron nunca duplica a mesma competência. **Cuidado com ordem de operações na migration**: quando o autodetector do Django gera `AddConstraint` referenciando um campo que só existe depois de um `AddField` posterior na mesma migration, ele pode ordenar o `AddConstraint` **antes** do `AddField` (bug real encontrado nesta feature — `FieldDoesNotExist: ContaPagar has no field named 'recorrente'` ao rodar `migrate`) — sempre conferir a ordem das `operations` geradas quando `makemigrations` cria constraint condicional sobre campo novo, e mover o `AddConstraint` pra depois do `AddField` correspondente se necessário
+- **`financeiro.DespesaRecorrente`** é o molde de uma despesa que se repete todo mês (aluguel, energia, assinatura). `dias_vencimento` é um `JSONField` com lista de dias do mês (ex.: `[1, 30]`); `datas_no_periodo(data_inicio, data_fim)` resolve os vencimentos reais dentro de uma janela, varrendo mês a mês — **dia inexistente no mês (31 em fevereiro) cai no último dia daquele mês, nunca rola pro mês seguinte**. Sem endpoint de `DELETE` (só `GET/POST/PATCH`) — pausar é `ativo=False`; `categoria`/`fornecedor` são `PROTECT`, então excluir com contas já geradas quebraria de qualquer forma
 - **`financeiro.ConfiguracaoFinanceira` é singleton** — sempre acessado via `ConfiguracaoFinanceira.get()`. Já inclui `conta_padrao_vendas` (FK `ContaBancaria`, usado só a partir da Fase 4 pelos signals de venda) mesmo antes desses signals existirem. `PATCH /financeiro/configuracao/1/` exige login e audita `config_financeira_alterada` (GET continua `AllowAny`)
 - **Baixa de `ContaPagar`** (`POST /financeiro/contas-pagar/{id}/baixa/`) exige login, cria um `MovimentoFinanceiro` (`tipo='saida'`, `origem_tipo='conta_pagar'`) e chama `recalcular_valor_pago()` — rejeita (400) valor de baixa maior que o saldo restante (`valor - valor_pago`) e conta já `paga`/`cancelada`. Audita `baixa_registrada`
+- **Contas a Pagar Recorrentes** (`financeiro.DespesaRecorrente`/`AlertaFinanceiroEnviado`) — dois crons diários, mesma filosofia dos módulos Eventos/Estoque: (1) `gerar_contas_recorrentes` materializa uma `ContaPagar` (`origem='recorrente'`) por vencimento de cada `DespesaRecorrente` ativa dentro do horizonte configurado (`ConfiguracaoFinanceira.get().horizonte_recorrencia_dias`), idempotente via `get_or_create`-like check na `UniqueConstraint(recorrente, data_vencimento)`; (2) `alertar_vencimentos` notifica só telefones internos da equipe cadastrados em `financeiro.TelefoneAlertaFinanceiro` (nunca o fornecedor) sobre `ContaPagar` `pendente`/`parcial` vencendo em até `alerta_antecedencia_dias` dias **ou** já em atraso (mesmo filtro cobre os dois casos — `data_vencimento <= hoje + antecedencia` inclui datas passadas), repetindo a cada `alerta_repeticao_dias`, controlado por `AlertaFinanceiroEnviado` (1 registro por envio, FK direta pra `ContaPagar` — mais simples que `AlertaEventoEnviado`/`AlertaEstoqueEnviado` porque aqui só existe um tipo de alerta, não dois/dois). Texto da mensagem é fixo no código (mesma escolha consciente de escopo de "Alertas de Evento"). `notificacoes.HistoricoMensagem.tipo` ganhou o choice `alerta_vencimento`
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -321,7 +338,7 @@ arretado-crm/                    ← raiz React
 | Estoque — Fases 1-5 (modelos base, entrada manual/ajuste, produção, débito automático na venda, alertas) | App `estoque/` — `MovimentoEstoque` (ledger), `Producao`, campos novos em `MateriaPrima`/`Produto`, débito automático via signals (PDV/iFood/Eventos), alertas de estoque baixo (`ConfiguracaoEstoque`/`TelefoneAlertaEstoque`/`AlertaEstoqueEnviado`), tela `Estoque.jsx` (4 abas), card "Estoque" no Dashboard | ✅ Concluída (fases 1-5) |
 | Estoque — Fases 6-8 (importação de nota fiscal: XML/PDF/IA) | Cascata de extração (XML da NF-e → texto de PDF → IA multimodal), staging (`ImportacaoNotaFiscal`/`ItemNotaImportada`), tela de revisão, fuzzy match, filtros de período/tipo na aba Movimentações | ✅ Concluída |
 | Resumo de Cozinha (Evento) | PDF operacional (A4 página cheia, ReportLab Platypus, sem timbre) com itens do Evento agrupados por categoria, pra a equipe de cozinha montar a produção — sem preços. Botão em `Eventos.jsx` (card de detalhe + linha da lista) | ✅ Concluída (só A4 página cheia — meia-folha/térmica fora de escopo por ora) |
-| Módulo Financeiro — Fases 0-2 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`), `ContaPagar` (obrigação projetada, `valor_pago`/`status` derivados) | 🔄 Em andamento (fases 0-2 de 8 — faltam DespesaRecorrente/crons, ContaReceber, integração com nota fiscal, fluxo de caixa e frontend) |
+| Módulo Financeiro — Fases 0-3 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo, `DespesaRecorrente` + crons) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`), `ContaPagar` (obrigação projetada, `valor_pago`/`status` derivados), `DespesaRecorrente` + `AlertaFinanceiroEnviado` + crons `gerar_contas_recorrentes`/`alertar_vencimentos` | 🔄 Em andamento (fases 0-3 de 8 — faltam ContaReceber, integração com nota fiscal, fluxo de caixa e frontend) |
 
 ---
 
@@ -510,6 +527,8 @@ GET              /api/v1/financeiro/movimentos/                  ← só leitura
 GET/PATCH        /api/v1/financeiro/configuracao/1/               ← singleton · PATCH exige login · audita config_financeira_alterada
 GET/POST         /api/v1/financeiro/telefones-alerta/
 GET/PATCH/DELETE /api/v1/financeiro/telefones-alerta/{id}/        ← DELETE exige login · audita registro_excluido
+GET/POST         /api/v1/financeiro/recorrentes/                  ← POST exige login
+GET/PATCH        /api/v1/financeiro/recorrentes/{id}/             ← PATCH exige login (inclui ativo=False para pausar) · sem DELETE
 ```
 
 ---
@@ -547,7 +566,17 @@ python manage.py alertar_estoque_baixo
 # limite/repetição vêm de ConfiguracaoEstoque.get() (painel) · precisa de ao menos 1
 # estoque.TelefoneAlertaEstoque ativo, senão não notifica ninguém
 
-# Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos, estoque)
+# Gerar Contas a Pagar Recorrentes (cron diário — ex: 07:00)
+python manage.py gerar_contas_recorrentes
+# horizonte vem de ConfiguracaoFinanceira.get().horizonte_recorrencia_dias · idempotente
+# (não duplica se rodar mais de uma vez no mesmo dia)
+
+# Alertas de Vencimento Financeiro (cron diário — ex: 08:30)
+python manage.py alertar_vencimentos
+# antecedência/repetição vêm de ConfiguracaoFinanceira.get() (painel) · precisa de ao menos 1
+# financeiro.TelefoneAlertaFinanceiro ativo, senão não notifica ninguém
+
+# Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos, estoque, financeiro)
 python manage.py test --settings=config.settings_test
 # settings_test.py roda contra SQLite em memória — o usuário do Postgres em produção
 # não tem permissão CREATE DATABASE, então `manage.py test` direto (sem --settings) falha
@@ -646,4 +675,6 @@ Infra já configurada em produção (não precisa recriar):
 - Não semear `financeiro.CategoriaFinanceira` com valores hardcoded — requisito de revenda, o cadastro nasce vazio e é o usuário quem cadastra
 - Não permitir `PATCH` em `financeiro.ContaPagar` quando `status` não for `pendente` — depois da primeira baixa, os campos de valor/vencimento ficam imutáveis (mesma filosofia de `Orcamento`)
 - Não instanciar `ConfiguracaoFinanceira()` diretamente — sempre usar `ConfiguracaoFinanceira.get()`
-- Não adicionar o campo `recorrente` em `financeiro.ContaPagar` antes de criar o model `DespesaRecorrente` (Fase 3) — FK pra um model que ainda não existe quebra a resolução de app/model do Django
+- Não gravar `financeiro.ContaPagar.recorrente` fora do cron `gerar_contas_recorrentes` — é `read_only` no serializer, a API nunca deixa o usuário setar esse campo na criação manual
+- Não criar `ContaPagar` de uma `DespesaRecorrente` sem checar a `UniqueConstraint(recorrente, data_vencimento)` primeiro — o cron sempre confere `ContaPagar.objects.filter(recorrente=..., data_vencimento=...).exists()` antes de criar, nunca confia só na constraint pra evitar duplicata silenciosa
+- Não implementar `DELETE` em `financeiro.DespesaRecorrente` — pausar é `ativo=False`; `categoria`/`fornecedor` são `PROTECT` e travariam a exclusão de qualquer forma se já tiver `ContaPagar` gerada

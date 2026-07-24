@@ -7,6 +7,7 @@ from .models import (
     ConfiguracaoFinanceira,
     ContaBancaria,
     ContaPagar,
+    DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
     TelefoneAlertaFinanceiro,
@@ -80,10 +81,10 @@ class ContaPagarSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'numero', 'fornecedor', 'fornecedor_nome', 'descricao', 'categoria',
             'categoria_nome', 'valor', 'data_emissao', 'data_vencimento', 'status',
-            'origem', 'nota_fiscal', 'anexo', 'observacao', 'valor_pago', 'saldo_restante',
-            'criado_em', 'atualizado_em',
+            'origem', 'nota_fiscal', 'recorrente', 'anexo', 'observacao', 'valor_pago',
+            'saldo_restante', 'criado_em', 'atualizado_em',
         ]
-        read_only_fields = ['numero', 'status', 'origem', 'nota_fiscal', 'valor_pago']
+        read_only_fields = ['numero', 'status', 'origem', 'nota_fiscal', 'recorrente', 'valor_pago']
 
     def get_saldo_restante(self, obj):
         return obj.valor - obj.valor_pago
@@ -97,6 +98,36 @@ class ContaPagarSerializer(serializers.ModelSerializer):
         if valor <= 0:
             raise serializers.ValidationError('Deve ser maior que zero.')
         return valor
+
+
+class DespesaRecorrenteSerializer(serializers.ModelSerializer):
+    fornecedor_nome = serializers.CharField(source='fornecedor.nome', read_only=True, default=None)
+    categoria_nome = serializers.CharField(source='categoria.nome', read_only=True, default=None)
+
+    class Meta:
+        model = DespesaRecorrente
+        fields = [
+            'id', 'descricao', 'fornecedor', 'fornecedor_nome', 'categoria', 'categoria_nome',
+            'valor', 'valor_tipo', 'dias_vencimento', 'ativo', 'criado_em', 'atualizado_em',
+        ]
+
+    def validate_categoria(self, categoria):
+        if categoria.tipo != 'saida':
+            raise serializers.ValidationError('Categoria deve ser do tipo "saida".')
+        return categoria
+
+    def validate_valor(self, valor):
+        if valor <= 0:
+            raise serializers.ValidationError('Deve ser maior que zero.')
+        return valor
+
+    def validate_dias_vencimento(self, dias):
+        if not isinstance(dias, list) or not dias:
+            raise serializers.ValidationError('Informe ao menos um dia do mês (1-31).')
+        for dia in dias:
+            if not isinstance(dia, int) or not (1 <= dia <= 31):
+                raise serializers.ValidationError('Cada dia deve ser um inteiro entre 1 e 31.')
+        return dias
 
 
 class BaixaContaSerializer(serializers.Serializer):

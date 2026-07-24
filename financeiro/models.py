@@ -11,6 +11,8 @@ gravar esse campo direto (mesmo contrato de estoque.MovimentoEstoque).
 Requisito de revenda: nenhum valor da Arretado fica hardcoded aqui —
 CategoriaFinanceira nasce vazia, o usuário cadastra a lista dele.
 """
+import calendar
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.core.exceptions import ValidationError
@@ -301,6 +303,10 @@ class ContaPagar(models.Model):
         'estoque.ImportacaoNotaFiscal', null=True, blank=True, on_delete=models.PROTECT, related_name='conta_pagar',
         help_text="Preenchido na Fase 5 (integração com Estoque) — OneToOne garante idempotência do confirmar()",
     )
+    recorrente = models.ForeignKey(
+        'DespesaRecorrente', null=True, blank=True, on_delete=models.PROTECT, related_name='contas_pagar',
+        help_text="Preenchida só pelo cron gerar_contas_recorrentes",
+    )
     anexo = models.FileField(upload_to='financeiro/contas_pagar/%Y/%m/', blank=True)
     observacao = models.TextField(blank=True, default='')
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
@@ -311,6 +317,13 @@ class ContaPagar(models.Model):
         verbose_name = 'Conta a Pagar'
         verbose_name_plural = 'Contas a Pagar'
         ordering = ['data_vencimento', 'numero']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['recorrente', 'data_vencimento'],
+                condition=models.Q(recorrente__isnull=False),
+                name='uniq_contapagar_recorrente_vencimento',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.numero} — {self.descricao or (self.fornecedor.nome if self.fornecedor else "—")}'
@@ -340,3 +353,79 @@ class ContaPagar(models.Model):
             else:
                 self.status = 'pendente'
         self.save(update_fields=['valor_pago', 'status', 'atualizado_em'])
+
+
+class DespesaRecorrente(models.Model):
+    """
+    Molde de despesa que se repete todo mês (aluguel, energia, assinatura...).
+    O cron gerar_contas_recorrentes materializa uma ContaPagar (origem='recorrente')
+    por vencimento dentro do horizonte configurado — nunca gerar o pagamento em si
+    aqui, só a obrigação projetada.
+    """
+    VALOR_TIPO_CHOICES = [
+        ('fixo', 'Fixo'),
+        ('estimado', 'Estimado'),
+    ]
+
+    descricao = models.CharField(max_length=120)
+    fornecedor = models.ForeignKey(
+        Fornecedor, null=True, blank=True, on_delete=models.PROTECT, related_name='despesas_recorrentes',
+    )
+    categoria = models.ForeignKey(CategoriaFinanceira, on_delete=models.PROTECT, related_name='despesas_recorrentes')
+    valor = models.DecimalField(max_digits=12, decimal_places=2)
+    valor_tipo = models.CharField(max_length=10, choices=VALOR_TIPO_CHOICES, default='fixo')
+    dias_vencimento = models.JSONField(
+        default=list, help_text='Lista de dias do mês (1-31), ex.: [1, 30]. Dia inexistente no mês '
+                                 '(31 em fevereiro) cai no último dia.',
+    )
+    ativo = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Despesa Recorrente'
+        verbose_name_plural = 'Despesas Recorrentes'
+        ordering = ['descricao']
+
+    def __str__(self):
+        return self.descricao
+
+    def clean(self):
+        if not isinstance(self.dias_vencimento, list) or not self.dias_vencimento:
+            raise ValidationError({'dias_vencimento': 'Informe ao menos um dia do mês (1-31).'})
+        for dia in self.dias_vencimento:
+            if not isinstance(dia, int) or not (1 <= dia <= 31):
+                raise ValidationError({'dias_vencimento': 'Cada dia deve ser um inteiro entre 1 e 31.'})
+
+    def datas_no_periodo(self, data_inicio, data_fim):
+        """
+        Vencimentos dentro de [data_inicio, data_fim], varrendo mês a mês.
+        Dia inexistente no mês (ex.: 31 em fevereiro) cai no último dia do mês —
+        nunca rola pro mês seguinte.
+        """
+        datas = []
+        ano, mes = data_inicio.year, data_inicio.month
+        while (ano, mes) <= (data_fim.year, data_fim.month):
+            ultimo_dia_mes = calendar.monthrange(ano, mes)[1]
+            for dia in self.dias_vencimento:
+                data = date(ano, mes, min(dia, ultimo_dia_mes))
+                if data_inicio <= data <= data_fim:
+                    datas.append(data)
+            mes += 1
+            if mes > 12:
+                mes = 1
+                ano += 1
+        return sorted(set(datas))
+
+
+class AlertaFinanceiroEnviado(models.Model):
+    """Rastreia o último envio de alerta de vencimento por ContaPagar — controla a repetição."""
+
+    conta_pagar = models.ForeignKey(ContaPagar, on_delete=models.CASCADE, related_name='alertas_enviados')
+    enviado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Alerta Financeiro Enviado'
+        verbose_name_plural = 'Alertas Financeiros Enviados'
+        ordering = ['-enviado_em']
+        indexes = [models.Index(fields=['conta_pagar', '-enviado_em'])]
