@@ -6,6 +6,5 @@ class FinanceiroConfig(AppConfig):
     name = 'financeiro'
     verbose_name = 'Financeiro'
 
-    # Sem signals ainda — chegam na Fase 4 (PDV/iFood/PagamentoEvento).
-    # Quando existir financeiro/signals.py, registrar aqui via ready(),
-    # mesmo padrão de estoque/apps.py.
+    def ready(self):
+        from . import signals  # noqa: F401

@@ -20,6 +20,7 @@ from .models import (
     ConfiguracaoFinanceira,
     ContaBancaria,
     ContaPagar,
+    ContaReceber,
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
@@ -31,6 +32,7 @@ from .serializers import (
     ConfiguracaoFinanceiraSerializer,
     ContaBancariaSerializer,
     ContaPagarSerializer,
+    ContaReceberSerializer,
     DespesaRecorrenteSerializer,
     FornecedorSerializer,
     MovimentoFinanceiroSerializer,
@@ -312,6 +314,125 @@ class ContaPagarViewSet(
             'vence_hoje': vence_hoje,
             'proximos_7_dias': proximos_7_dias,
             'total_mes': {'pago': pago_mes, 'pendente': pendente_mes},
+        })
+
+
+# ─── Contas a Receber ──────────────────────────────────────────────────────────
+
+class ContaReceberViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+    """
+    POST cria só lançamento manual (canal/origem_canal forçados em
+    perform_create) — os automáticos (iFood repasse) vêm do signal em
+    financeiro/signals.py. Eventos nunca aparecem aqui: o saldo deles é
+    consultado dinamicamente em resumo/, nunca materializado como linha.
+    """
+    queryset = ContaReceber.objects.select_related('cliente', 'categoria').all()
+    serializer_class = ContaReceberSerializer
+    authentication_classes = [TokenAuthentication]
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action in ('create', 'baixa'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if params.get('canal'):
+            qs = qs.filter(canal=params['canal'])
+        if params.get('status'):
+            qs = qs.filter(status=params['status'])
+        mes = params.get('mes')
+        if mes:
+            try:
+                ano_s, mes_s = mes.split('-')
+                qs = qs.filter(data_vencimento__year=int(ano_s), data_vencimento__month=int(mes_s))
+            except (ValueError, AttributeError):
+                pass
+        search = params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(numero__icontains=search) | Q(cliente_nome__icontains=search) | Q(referencia__icontains=search)
+            )
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(numero=ContaReceber.proximo_numero(), canal='manual', origem_canal='manual')
+
+    @action(detail=True, methods=['post'], url_path='baixa')
+    def baixa(self, request, pk=None):
+        conta_receber = self.get_object()
+        if conta_receber.status in ('recebida', 'cancelada'):
+            return Response(
+                {'detail': f'Conta já está {conta_receber.get_status_display().lower()}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = BaixaContaSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+
+        saldo_restante = conta_receber.valor - conta_receber.valor_recebido
+        if dados['valor'] > saldo_restante:
+            raise ValidationError({'valor': f'Maior que o saldo restante (R$ {saldo_restante}).'})
+
+        try:
+            mov = MovimentoFinanceiro.registrar(
+                conta=dados['conta'], tipo='entrada', valor=dados['valor'],
+                data_movimento=dados['data'], categoria=conta_receber.categoria,
+                cliente=conta_receber.cliente,
+                descricao=f'Recebimento {conta_receber.numero}',
+                forma_pagamento=dados['forma'], origem_tipo='conta_receber', origem_id=conta_receber.id,
+                comprovante=dados.get('comprovante'), criado_por=request.user,
+            )
+        except DjangoValidationError as e:
+            raise ValidationError(e.message_dict if hasattr(e, 'message_dict') else e.messages)
+
+        conta_receber.refresh_from_db()
+        conta_receber.recalcular_valor_recebido()
+
+        registrar(
+            request.user, LogAuditoria.ACAO_BAIXA_REGISTRADA,
+            detalhes={
+                'model': 'ContaReceber', 'id': conta_receber.id, 'numero': conta_receber.numero,
+                'valor_recebido': str(dados['valor']), 'movimento_id': mov.id,
+            },
+            request=request,
+        )
+        return Response(ContaReceberSerializer(conta_receber).data)
+
+    @action(detail=False, methods=['get'], url_path='resumo')
+    def resumo(self, request):
+        from eventos.models import Evento
+
+        hoje = timezone.localdate()
+        limite30 = hoje + timedelta(days=30)
+
+        recebido_hoje = MovimentoFinanceiro.objects.filter(
+            tipo='entrada', data_movimento=hoje,
+        ).aggregate(t=Sum('valor'))['t'] or Decimal('0')
+
+        abertas = ContaReceber.objects.filter(status__in=['pendente', 'parcial'])
+        a_receber_contas = abertas.aggregate(t=Sum(F('valor') - F('valor_recebido')))['t'] or Decimal('0')
+        proximos_contas = abertas.filter(
+            data_vencimento__gte=hoje, data_vencimento__lte=limite30,
+        ).aggregate(t=Sum(F('valor') - F('valor_recebido')))['t'] or Decimal('0')
+
+        eventos_abertos = (
+            Evento.objects.exclude(status__in=['cancelado', 'entregue'])
+            .annotate(saldo=F('valor_total') - F('sinal_pago'))
+            .filter(saldo__gt=0)
+        )
+        a_receber_eventos = eventos_abertos.aggregate(t=Sum('saldo'))['t'] or Decimal('0')
+        proximos_eventos = eventos_abertos.filter(
+            data_evento__gte=hoje, data_evento__lte=limite30,
+        ).aggregate(t=Sum('saldo'))['t'] or Decimal('0')
+
+        return Response({
+            'recebido_hoje': recebido_hoje,
+            'a_receber': a_receber_contas + a_receber_eventos,
+            'proximos_30_dias': proximos_contas + proximos_eventos,
         })
 
 

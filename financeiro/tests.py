@@ -8,6 +8,10 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
+from clientes.models import Cliente
+from eventos.models import Evento, PagamentoEvento
+from ifood.models import PedidoIFood
+from pdv.models import PedidoPDV
 from usuarios.models import Usuario
 from usuarios.views import UsuarioViewSet
 
@@ -17,12 +21,13 @@ from .models import (
     ConfiguracaoFinanceira,
     ContaBancaria,
     ContaPagar,
+    ContaReceber,
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
     TelefoneAlertaFinanceiro,
 )
-from .views import ContaPagarViewSet
+from .views import ContaPagarViewSet, ContaReceberViewSet
 
 
 def _conta(nome='Caixa da loja', saldo=Decimal('0')):
@@ -379,3 +384,239 @@ class AlertarVencimentosCommandTests(TestCase):
         conta.save(update_fields=['status'])
         call_command('alertar_vencimentos')
         mock_enviar.assert_not_called()
+
+
+# ─── Fase 4: signals PDV/iFood/PagamentoEvento → ledger ────────────────────────
+
+class PdvSignalTests(TestCase):
+    def setUp(self):
+        self.conta = _conta(saldo=Decimal('0'))
+        ConfiguracaoFinanceira.objects.create(pk=1, conta_padrao_vendas=self.conta)
+
+    def test_confirmar_pedido_gera_movimento_entrada(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('80.00'))
+        pedido.status = 'confirmado'
+        pedido.save()
+        mov = MovimentoFinanceiro.objects.get(origem_tipo='pdv', origem_id=str(pedido.id))
+        self.assertEqual(mov.valor, Decimal('80.00'))
+        self.assertEqual(mov.tipo, 'entrada')
+        self.conta.refresh_from_db()
+        self.assertEqual(self.conta.saldo_atual, Decimal('80.00'))
+
+    def test_confirmar_sem_conta_padrao_nao_gera_movimento(self):
+        ConfiguracaoFinanceira.objects.filter(pk=1).update(conta_padrao_vendas=None)
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('50.00'))
+        pedido.status = 'confirmado'
+        pedido.save()
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='pdv').exists())
+
+    def test_salvar_confirmado_duas_vezes_nao_duplica(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('30.00'))
+        pedido.status = 'confirmado'
+        pedido.save()
+        pedido.observacoes = 'atualizado depois'
+        pedido.save()  # segundo save() com status ainda 'confirmado' — não deve duplicar
+        self.assertEqual(MovimentoFinanceiro.objects.filter(origem_tipo='pdv', origem_id=str(pedido.id)).count(), 1)
+
+    def test_cancelar_apos_confirmado_gera_estorno(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('80.00'))
+        pedido.status = 'confirmado'
+        pedido.save()
+        pedido.status = 'cancelado'
+        pedido.save()
+        estorno = MovimentoFinanceiro.objects.get(origem_tipo='manual', origem_id=f'estorno-pdv-{pedido.id}')
+        self.assertEqual(estorno.tipo, 'saida')
+        self.assertEqual(estorno.valor, Decimal('80.00'))
+        self.conta.refresh_from_db()
+        self.assertEqual(self.conta.saldo_atual, Decimal('0.00'))
+
+    def test_cancelar_sem_nunca_confirmar_nao_gera_estorno(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('80.00'))
+        pedido.status = 'cancelado'
+        pedido.save()
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='manual').exists())
+
+
+class IfoodSignalTests(TestCase):
+    def setUp(self):
+        self.conta = _conta(saldo=Decimal('0'))
+        self.cfg = ConfiguracaoFinanceira.objects.create(pk=1, conta_padrao_vendas=self.conta)
+
+    def _pedido(self, order_id='order-1'):
+        return PedidoIFood.objects.create(
+            ifood_order_id=order_id, ifood_merchant_id='merch-1', total_valor=Decimal('45.00'),
+        )
+
+    def test_concluded_no_ato_gera_movimento_direto(self):
+        pedido = self._pedido()
+        pedido.status = 'CONCLUDED'
+        pedido.save()
+        mov = MovimentoFinanceiro.objects.get(origem_tipo='ifood', origem_id=str(pedido.id))
+        self.assertEqual(mov.valor, Decimal('45.00'))
+        self.assertFalse(ContaReceber.objects.filter(origem_canal='ifood').exists())
+
+    def test_status_intermediario_nao_gera_nada(self):
+        pedido = self._pedido()
+        pedido.status = 'CONFIRMED'
+        pedido.save()
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='ifood').exists())
+
+    def test_concluded_repasse_gera_conta_receber_com_vencimento_correto(self):
+        self.cfg.recebimento_ifood = 'repasse'
+        self.cfg.dias_repasse_ifood = 15
+        self.cfg.save()
+        pedido = self._pedido()
+        pedido.status = 'CONCLUDED'
+        pedido.save()
+
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='ifood').exists())
+        conta_receber = ContaReceber.objects.get(origem_canal='ifood', origem_id=str(pedido.id))
+        self.assertEqual(conta_receber.valor, Decimal('45.00'))
+        self.assertEqual(conta_receber.canal, 'ifood')
+        self.assertEqual(conta_receber.data_vencimento, pedido.criado_em.date() + timedelta(days=15))
+
+    def test_concluded_duas_vezes_nao_duplica(self):
+        pedido = self._pedido()
+        pedido.status = 'CONCLUDED'
+        pedido.save()
+        pedido.save()
+        self.assertEqual(MovimentoFinanceiro.objects.filter(origem_tipo='ifood', origem_id=str(pedido.id)).count(), 1)
+
+    def test_cancelled_apos_no_ato_estorna(self):
+        pedido = self._pedido()
+        pedido.status = 'CONCLUDED'
+        pedido.save()
+        pedido.status = 'CANCELLED'
+        pedido.save()
+        self.assertTrue(
+            MovimentoFinanceiro.objects.filter(origem_tipo='manual', origem_id=f'estorno-ifood-{pedido.id}').exists()
+        )
+
+    def test_cancelled_apos_repasse_cancela_conta_receber(self):
+        self.cfg.recebimento_ifood = 'repasse'
+        self.cfg.save()
+        pedido = self._pedido()
+        pedido.status = 'CONCLUDED'
+        pedido.save()
+        pedido.status = 'CANCELLED'
+        pedido.save()
+
+        conta_receber = ContaReceber.objects.get(origem_canal='ifood', origem_id=str(pedido.id))
+        self.assertEqual(conta_receber.status, 'cancelada')
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='manual').exists())
+
+
+class PagamentoEventoSignalTests(TestCase):
+    def setUp(self):
+        self.conta = _conta(saldo=Decimal('0'))
+        ConfiguracaoFinanceira.objects.create(pk=1, conta_padrao_vendas=self.conta)
+        self.cliente = Cliente.objects.create(nome='Cliente Teste', telefone_principal='86999998888')
+        self.evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=date.today() + timedelta(days=10), status='orcamento',
+        )
+
+    def test_pagamento_pago_gera_movimento(self):
+        pagamento = PagamentoEvento.objects.create(evento=self.evento, valor=Decimal('200.00'), status='pago')
+        mov = MovimentoFinanceiro.objects.get(origem_tipo='evento_pagamento', origem_id=str(pagamento.id))
+        self.assertEqual(mov.valor, Decimal('200.00'))
+        self.assertIn(self.evento.numero, mov.descricao)
+
+    def test_pagamento_pendente_nao_gera_movimento(self):
+        PagamentoEvento.objects.create(evento=self.evento, valor=Decimal('200.00'), status='pendente')
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='evento_pagamento').exists())
+
+    def test_remover_pagamento_pago_gera_estorno(self):
+        pagamento = PagamentoEvento.objects.create(evento=self.evento, valor=Decimal('200.00'), status='pago')
+        pagamento_id = pagamento.id
+        pagamento.delete()
+        estorno = MovimentoFinanceiro.objects.get(
+            origem_tipo='manual', origem_id=f'estorno-evento-pagamento-{pagamento_id}',
+        )
+        self.assertEqual(estorno.tipo, 'saida')
+        self.assertEqual(estorno.valor, Decimal('200.00'))
+
+    def test_remover_pagamento_pendente_nao_gera_estorno(self):
+        pagamento = PagamentoEvento.objects.create(evento=self.evento, valor=Decimal('200.00'), status='pendente')
+        pagamento.delete()
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='manual').exists())
+
+
+class ContaReceberViewSetTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Financeiro', email='admin-cr@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+        self.categoria = CategoriaFinanceira.objects.create(nome='Vendas', tipo='entrada')
+        self.conta_bancaria = _conta(saldo=Decimal('0'))
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin-cr@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _auth_header(self):
+        return {'HTTP_AUTHORIZATION': f'Token {self._token()}'}
+
+    def test_create_manual_forca_canal_e_origem(self):
+        view = ContaReceberViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/financeiro/contas-receber/', {
+            'categoria': self.categoria.id, 'valor': '100.00', 'data_vencimento': '2026-08-10',
+        }, format='json', **self._auth_header())
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['numero'], 'CR-0001')
+        self.assertEqual(resp.data['canal'], 'manual')
+        self.assertEqual(resp.data['origem_canal'], 'manual')
+
+    def test_create_exige_login(self):
+        view = ContaReceberViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/financeiro/contas-receber/', {
+            'categoria': self.categoria.id, 'valor': '100.00', 'data_vencimento': '2026-08-10',
+        }, format='json')
+        resp = view(req)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_baixa_recebe_e_deriva_status_recebida(self):
+        conta_receber = ContaReceber.objects.create(
+            numero=ContaReceber.proximo_numero(), categoria=self.categoria,
+            valor=Decimal('150.00'), data_vencimento='2026-08-10',
+        )
+        view = ContaReceberViewSet.as_view({'post': 'baixa'})
+        req = self.factory.post(f'/api/v1/financeiro/contas-receber/{conta_receber.id}/baixa/', {
+            'data': '2026-07-24', 'valor': '150.00', 'conta': self.conta_bancaria.id, 'forma': 'pix',
+        }, format='json', **self._auth_header())
+        resp = view(req, pk=conta_receber.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        conta_receber.refresh_from_db()
+        self.assertEqual(conta_receber.status, 'recebida')
+        self.conta_bancaria.refresh_from_db()
+        self.assertEqual(self.conta_bancaria.saldo_atual, Decimal('150.00'))
+
+    def test_baixa_maior_que_saldo_rejeitada(self):
+        conta_receber = ContaReceber.objects.create(
+            numero=ContaReceber.proximo_numero(), categoria=self.categoria,
+            valor=Decimal('100.00'), data_vencimento='2026-08-10',
+        )
+        view = ContaReceberViewSet.as_view({'post': 'baixa'})
+        req = self.factory.post(f'/api/v1/financeiro/contas-receber/{conta_receber.id}/baixa/', {
+            'data': '2026-07-24', 'valor': '999.00', 'conta': self.conta_bancaria.id, 'forma': 'pix',
+        }, format='json', **self._auth_header())
+        resp = view(req, pk=conta_receber.id)
+        self.assertEqual(resp.status_code, 400)
+
+    def test_resumo_inclui_saldo_de_evento_dinamicamente(self):
+        cliente = Cliente.objects.create(nome='Cliente Resumo', telefone_principal='86999997777')
+        Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=cliente, tipo_evento='aniversario',
+            data_evento=date.today() + timedelta(days=5), status='confirmado', valor_total=Decimal('500.00'),
+        )
+        view = ContaReceberViewSet.as_view({'get': 'resumo'})
+        req = self.factory.get('/api/v1/financeiro/contas-receber/resumo/')
+        resp = view(req)
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreaterEqual(resp.data['a_receber'], Decimal('500.00'))
+        self.assertIn('proximos_30_dias', resp.data)
+        self.assertIn('recebido_hoje', resp.data)

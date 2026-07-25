@@ -6,6 +6,7 @@ from .models import (
     ConfiguracaoFinanceira,
     ContaBancaria,
     ContaPagar,
+    ContaReceber,
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
@@ -21,3 +22,4 @@ admin.site.register(MovimentoFinanceiro)
 admin.site.register(ContaPagar)
 admin.site.register(DespesaRecorrente)
 admin.site.register(AlertaFinanceiroEnviado)
+admin.site.register(ContaReceber)

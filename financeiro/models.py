@@ -355,6 +355,88 @@ class ContaPagar(models.Model):
         self.save(update_fields=['valor_pago', 'status', 'atualizado_em'])
 
 
+class ContaReceber(models.Model):
+    """
+    Espelho de ContaPagar pro lado de entradas — mas só existe pra canais
+    que realmente atrasam o recebimento (iFood no modo 'repasse') ou
+    lançamento manual avulso. Eventos e PDV NUNCA materializam ContaReceber
+    (ver O Que NÃO Fazer no CLAUDE.md — evita dupla contagem): PDV e iFood
+    'no_ato' batem direto no ledger via signal (dinheiro já entrou no
+    caixa); o saldo de Eventos é sempre consultado dinamicamente
+    (Evento.valor_total - sinal_pago), nunca materializado aqui.
+    """
+    STATUS_CHOICES = [
+        ('pendente', 'Pendente'),
+        ('parcial', 'Parcial'),
+        ('recebida', 'Recebida'),
+        ('cancelada', 'Cancelada'),
+    ]
+    CANAL_CHOICES = [
+        ('ifood', 'iFood'),
+        ('manual', 'Manual'),
+    ]
+
+    numero = models.CharField(max_length=12, unique=True)
+    cliente = models.ForeignKey(
+        'clientes.Cliente', null=True, blank=True, on_delete=models.SET_NULL, related_name='contas_receber',
+    )
+    cliente_nome = models.CharField(max_length=120, blank=True, default='')
+    canal = models.CharField(max_length=10, choices=CANAL_CHOICES, default='manual')
+    referencia = models.CharField(max_length=60, blank=True, default='')
+    categoria = models.ForeignKey(
+        CategoriaFinanceira, null=True, blank=True, on_delete=models.PROTECT, related_name='contas_receber',
+    )
+    valor = models.DecimalField(max_digits=12, decimal_places=2)
+    data_vencimento = models.DateField(db_index=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='pendente')
+    origem_canal = models.CharField(max_length=20, blank=True, default='manual')
+    origem_id = models.CharField(max_length=64, blank=True, default='')
+    valor_recebido = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Conta a Receber'
+        verbose_name_plural = 'Contas a Receber'
+        ordering = ['data_vencimento', 'numero']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['origem_canal', 'origem_id'],
+                condition=~models.Q(origem_canal='manual'),
+                name='uniq_contareceber_origem_idempotente',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.numero} — {self.cliente_nome or (self.cliente.nome if self.cliente else "—")}'
+
+    @classmethod
+    def proximo_numero(cls):
+        ultimo = cls.objects.order_by('-id').first()
+        if not ultimo:
+            return 'CR-0001'
+        try:
+            seq = int(ultimo.numero.split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            seq = cls.objects.count() + 1
+        return f'CR-{seq:04d}'
+
+    def recalcular_valor_recebido(self):
+        from django.db.models import Sum
+        total = MovimentoFinanceiro.objects.filter(
+            origem_tipo='conta_receber', origem_id=str(self.id), tipo='entrada',
+        ).aggregate(t=Sum('valor'))['t'] or Decimal('0')
+        self.valor_recebido = total
+        if self.status != 'cancelada':
+            if self.valor_recebido >= self.valor:
+                self.status = 'recebida'
+            elif self.valor_recebido > 0:
+                self.status = 'parcial'
+            else:
+                self.status = 'pendente'
+        self.save(update_fields=['valor_recebido', 'status', 'atualizado_em'])
+
+
 class DespesaRecorrente(models.Model):
     """
     Molde de despesa que se repete todo mês (aluguel, energia, assinatura...).

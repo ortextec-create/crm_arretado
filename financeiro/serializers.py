@@ -7,6 +7,7 @@ from .models import (
     ConfiguracaoFinanceira,
     ContaBancaria,
     ContaPagar,
+    ContaReceber,
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
@@ -128,6 +129,34 @@ class DespesaRecorrenteSerializer(serializers.ModelSerializer):
             if not isinstance(dia, int) or not (1 <= dia <= 31):
                 raise serializers.ValidationError('Cada dia deve ser um inteiro entre 1 e 31.')
         return dias
+
+
+class ContaReceberSerializer(serializers.ModelSerializer):
+    cliente_nome_crm = serializers.CharField(source='cliente.nome', read_only=True, default=None)
+    categoria_nome = serializers.CharField(source='categoria.nome', read_only=True, default=None)
+    saldo_restante = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ContaReceber
+        fields = [
+            'id', 'numero', 'cliente', 'cliente_nome_crm', 'cliente_nome', 'canal', 'referencia',
+            'categoria', 'categoria_nome', 'valor', 'data_vencimento', 'status', 'origem_canal',
+            'origem_id', 'valor_recebido', 'saldo_restante', 'criado_em', 'atualizado_em',
+        ]
+        read_only_fields = ['numero', 'status', 'canal', 'origem_canal', 'origem_id', 'valor_recebido']
+
+    def get_saldo_restante(self, obj):
+        return obj.valor - obj.valor_recebido
+
+    def validate_categoria(self, categoria):
+        if categoria and categoria.tipo != 'entrada':
+            raise serializers.ValidationError('Categoria deve ser do tipo "entrada".')
+        return categoria
+
+    def validate_valor(self, valor):
+        if valor <= 0:
+            raise serializers.ValidationError('Deve ser maior que zero.')
+        return valor
 
 
 class BaixaContaSerializer(serializers.Serializer):

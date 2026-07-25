@@ -6,6 +6,7 @@ from .views import (
     ConfiguracaoFinanceiraViewSet,
     ContaBancariaViewSet,
     ContaPagarViewSet,
+    ContaReceberViewSet,
     DespesaRecorrenteViewSet,
     FornecedorViewSet,
     MovimentoFinanceiroViewSet,
@@ -17,6 +18,7 @@ router.register('categorias', CategoriaFinanceiraViewSet, basename='categorias-f
 router.register('contas-bancarias', ContaBancariaViewSet, basename='contas-bancarias')
 router.register('fornecedores', FornecedorViewSet, basename='fornecedores')
 router.register('contas-pagar', ContaPagarViewSet, basename='contas-pagar')
+router.register('contas-receber', ContaReceberViewSet, basename='contas-receber')
 router.register('recorrentes', DespesaRecorrenteViewSet, basename='despesas-recorrentes')
 router.register('movimentos', MovimentoFinanceiroViewSet, basename='movimentos-financeiro')
 router.register('configuracao', ConfiguracaoFinanceiraViewSet, basename='configuracao-financeira')
