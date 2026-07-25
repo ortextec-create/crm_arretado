@@ -350,3 +350,63 @@ export const relatoriosApi = {
 export const dashboardApi = {
   resumo: () => api.get('/dashboard/resumo/'),
 }
+
+// ─── FINANCEIRO ───────────────────────────────────────────────────────────────
+
+export const financeiroApi = {
+  categorias: {
+    list:   (params = {}) => api.get('/financeiro/categorias/', { params }),
+    create: (data)        => api.post('/financeiro/categorias/', data),
+    update: (id, data)    => api.patch(`/financeiro/categorias/${id}/`, data),
+    remove: (id)          => api.delete(`/financeiro/categorias/${id}/`),
+  },
+  contasBancarias: {
+    list:   (params = {}) => api.get('/financeiro/contas-bancarias/', { params }),
+    create: (data)        => api.post('/financeiro/contas-bancarias/', data),
+    update: (id, data)    => api.patch(`/financeiro/contas-bancarias/${id}/`, data),
+  },
+  fornecedores: {
+    list:   (params = {}) => api.get('/financeiro/fornecedores/', { params }),
+    create: (data)        => api.post('/financeiro/fornecedores/', data),
+    update: (id, data)    => api.patch(`/financeiro/fornecedores/${id}/`, data),
+    remove: (id)          => api.delete(`/financeiro/fornecedores/${id}/`),
+  },
+  contasPagar: {
+    list:     (params = {}) => api.get('/financeiro/contas-pagar/', { params }),
+    create:   (data)        => api.post('/financeiro/contas-pagar/', data),
+    update:   (id, data)    => api.patch(`/financeiro/contas-pagar/${id}/`, data),
+    baixa:    (id, data, config = {}) => api.post(`/financeiro/contas-pagar/${id}/baixa/`, data, config),
+    cancelar: (id)          => api.post(`/financeiro/contas-pagar/${id}/cancelar/`),
+    resumo:   ()            => api.get('/financeiro/contas-pagar/resumo/'),
+  },
+  contasReceber: {
+    list:   (params = {}) => api.get('/financeiro/contas-receber/', { params }),
+    create: (data)        => api.post('/financeiro/contas-receber/', data),
+    update: (id, data)    => api.patch(`/financeiro/contas-receber/${id}/`, data),
+    baixa:  (id, data, config = {}) => api.post(`/financeiro/contas-receber/${id}/baixa/`, data, config),
+    resumo: ()            => api.get('/financeiro/contas-receber/resumo/'),
+  },
+  recorrentes: {
+    list:   (params = {}) => api.get('/financeiro/recorrentes/', { params }),
+    create: (data)        => api.post('/financeiro/recorrentes/', data),
+    update: (id, data)    => api.patch(`/financeiro/recorrentes/${id}/`, data),
+  },
+  movimentos: {
+    list:   (params = {}) => api.get('/financeiro/movimentos/', { params }),
+    manual: (data, config = {}) => api.post('/financeiro/movimentos/manual/', data, config),
+  },
+  conferencias: {
+    list:   (params = {}) => api.get('/financeiro/conferencias/', { params }),
+    create: (data)        => api.post('/financeiro/conferencias/', data),
+  },
+  fluxoCaixa: (dias = 14) => api.get('/financeiro/fluxo-caixa/', { params: { dias } }),
+  configuracao: {
+    get:    ()     => api.get('/financeiro/configuracao/1/'),
+    update: (data) => api.patch('/financeiro/configuracao/1/', data),
+  },
+  telefonesAlerta: {
+    list:   ()     => api.get('/financeiro/telefones-alerta/'),
+    create: (data) => api.post('/financeiro/telefones-alerta/', data),
+    remove: (id)   => api.delete(`/financeiro/telefones-alerta/${id}/`),
+  },
+}

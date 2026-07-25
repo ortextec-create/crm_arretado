@@ -25,6 +25,7 @@ import CentralPrecos from './pages/CentralPrecos'
 import Relatorios from './pages/Relatorios'
 import Auditoria from './pages/Auditoria'
 import Estoque from './pages/Estoque'
+import Financeiro from './pages/Financeiro'
 
 
 
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="fichas-tecnicas" element={<FichasTecnicas />} />
             <Route path="central-precos" element={<CentralPrecos />} />
             <Route path="estoque" element={<Estoque />} />
+            <Route path="financeiro" element={<Financeiro />} />
             <Route path="relatorios/ifood" element={<Relatorios />} />
             <Route path="auditoria" element={<AdminRoute><Auditoria /></AdminRoute>} />
           </Route>

@@ -36,6 +36,12 @@ const NAV = [
     ],
   },
   {
+    section: 'Financeiro',
+    items: [
+      { to: '/financeiro', icon: 'cash', label: 'Financeiro' },
+    ],
+  },
+  {
     section: 'Relatórios',
     items: [
       { to: '/relatorios/ifood', icon: 'chart-bar', label: 'iFood' },
