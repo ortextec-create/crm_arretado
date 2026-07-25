@@ -504,6 +504,39 @@ class DespesaRecorrente(models.Model):
         return sorted(set(datas))
 
 
+class SaldoConferido(models.Model):
+    """
+    Conferência de saldo (o usuário digita o saldo informado pelo app do
+    banco e compara com o saldo calculado pelo ledger). Sem edição — uma
+    nova conferência só acrescenta um registro novo, nunca corrige o
+    anterior; o histórico completo fica preservado no banco, a UI mostra
+    a mais recente por conta.
+    """
+    conta = models.ForeignKey(ContaBancaria, on_delete=models.PROTECT, related_name='conferencias')
+    data = models.DateField()
+    saldo_informado = models.DecimalField(max_digits=12, decimal_places=2)
+    saldo_calculado = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        help_text="Snapshot de ContaBancaria.saldo_atual no momento da conferência — nunca recalculado depois",
+    )
+    criado_por = models.ForeignKey(
+        'usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL, related_name='conferencias_saldo',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Conferência de Saldo'
+        verbose_name_plural = 'Conferências de Saldo'
+        ordering = ['-data', '-criado_em']
+
+    def __str__(self):
+        return f'{self.conta.nome} — {self.data} (informado R$ {self.saldo_informado})'
+
+    @property
+    def diferenca(self):
+        return self.saldo_informado - self.saldo_calculado
+
+
 class AlertaFinanceiroEnviado(models.Model):
     """Rastreia o último envio de alerta de vencimento por ContaPagar — controla a repetição."""
 

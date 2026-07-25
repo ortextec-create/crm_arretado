@@ -25,9 +25,16 @@ from .models import (
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
+    SaldoConferido,
     TelefoneAlertaFinanceiro,
 )
-from .views import ContaPagarViewSet, ContaReceberViewSet
+from .views import (
+    ContaPagarViewSet,
+    ContaReceberViewSet,
+    FluxoCaixaView,
+    MovimentoFinanceiroViewSet,
+    SaldoConferidoViewSet,
+)
 
 
 def _conta(nome='Caixa da loja', saldo=Decimal('0')):
@@ -620,3 +627,233 @@ class ContaReceberViewSetTests(TestCase):
         self.assertGreaterEqual(resp.data['a_receber'], Decimal('500.00'))
         self.assertIn('proximos_30_dias', resp.data)
         self.assertIn('recebido_hoje', resp.data)
+
+
+class MovimentoManualTests(TestCase):
+    """Fase 6 — POST /financeiro/movimentos/manual/ (lançamento avulso/estorno)."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Financeiro', email='admin-manual@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+        self.conta = _conta(saldo=Decimal('200.00'))
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin-manual@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _auth_header(self):
+        return {'HTTP_AUTHORIZATION': f'Token {self._token()}'}
+
+    def test_lancamento_manual_entrada_grava_no_ledger(self):
+        view = MovimentoFinanceiroViewSet.as_view({'post': 'manual'})
+        req = self.factory.post('/api/v1/financeiro/movimentos/manual/', {
+            'conta': self.conta.id, 'tipo': 'entrada', 'valor': '50.00', 'descricao': 'Saldo inicial',
+        }, format='json', **self._auth_header())
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['origem_tipo'], 'manual')
+        self.conta.refresh_from_db()
+        self.assertEqual(self.conta.saldo_atual, Decimal('250.00'))
+
+    def test_lancamento_manual_saida_estorno(self):
+        view = MovimentoFinanceiroViewSet.as_view({'post': 'manual'})
+        req = self.factory.post('/api/v1/financeiro/movimentos/manual/', {
+            'conta': self.conta.id, 'tipo': 'saida', 'valor': '30.00', 'descricao': 'Estorno pagamento EV-0001',
+        }, format='json', **self._auth_header())
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.conta.refresh_from_db()
+        self.assertEqual(self.conta.saldo_atual, Decimal('170.00'))
+
+    def test_permite_multiplos_lancamentos_manuais(self):
+        view = MovimentoFinanceiroViewSet.as_view({'post': 'manual'})
+        for _ in range(2):
+            req = self.factory.post('/api/v1/financeiro/movimentos/manual/', {
+                'conta': self.conta.id, 'tipo': 'entrada', 'valor': '10.00',
+            }, format='json', **self._auth_header())
+            resp = view(req)
+            self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(MovimentoFinanceiro.objects.filter(origem_tipo='manual').count(), 2)
+
+    def test_categoria_de_tipo_diferente_e_rejeitada(self):
+        categoria_entrada = CategoriaFinanceira.objects.create(nome='Vendas', tipo='entrada')
+        view = MovimentoFinanceiroViewSet.as_view({'post': 'manual'})
+        req = self.factory.post('/api/v1/financeiro/movimentos/manual/', {
+            'conta': self.conta.id, 'tipo': 'saida', 'valor': '10.00', 'categoria': categoria_entrada.id,
+        }, format='json', **self._auth_header())
+        resp = view(req)
+        self.assertEqual(resp.status_code, 400)
+
+    def test_exige_login(self):
+        view = MovimentoFinanceiroViewSet.as_view({'post': 'manual'})
+        req = self.factory.post('/api/v1/financeiro/movimentos/manual/', {
+            'conta': self.conta.id, 'tipo': 'entrada', 'valor': '10.00',
+        }, format='json')
+        resp = view(req)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_audita_movimento_manual(self):
+        from auditoria.models import LogAuditoria
+
+        view = MovimentoFinanceiroViewSet.as_view({'post': 'manual'})
+        req = self.factory.post('/api/v1/financeiro/movimentos/manual/', {
+            'conta': self.conta.id, 'tipo': 'entrada', 'valor': '10.00',
+        }, format='json', **self._auth_header())
+        view(req)
+        self.assertTrue(LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_MOVIMENTO_MANUAL).exists())
+
+
+class SaldoConferidoTests(TestCase):
+    """Fase 6 — GET/POST /financeiro/conferencias/."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Financeiro', email='admin-conf@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+        self.conta = _conta(saldo=Decimal('300.00'))
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin-conf@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _auth_header(self):
+        return {'HTTP_AUTHORIZATION': f'Token {self._token()}'}
+
+    def test_saldo_calculado_e_snapshot_do_saldo_atual(self):
+        view = SaldoConferidoViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/financeiro/conferencias/', {
+            'conta': self.conta.id, 'data': '2026-07-25', 'saldo_informado': '295.00',
+        }, format='json', **self._auth_header())
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(Decimal(resp.data['saldo_calculado']), Decimal('300.00'))
+        self.assertEqual(Decimal(resp.data['diferenca']), Decimal('-5.00'))
+
+    def test_criado_por_preenchido_automaticamente(self):
+        view = SaldoConferidoViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/financeiro/conferencias/', {
+            'conta': self.conta.id, 'data': '2026-07-25', 'saldo_informado': '300.00',
+        }, format='json', **self._auth_header())
+        view(req)
+        conferencia = SaldoConferido.objects.latest('id')
+        self.assertEqual(conferencia.criado_por, self.admin)
+
+    def test_nova_conferencia_nao_edita_anterior(self):
+        SaldoConferido.objects.create(
+            conta=self.conta, data='2026-07-20', saldo_informado=Decimal('280.00'), saldo_calculado=Decimal('280.00'),
+        )
+        view = SaldoConferidoViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/financeiro/conferencias/', {
+            'conta': self.conta.id, 'data': '2026-07-25', 'saldo_informado': '300.00',
+        }, format='json', **self._auth_header())
+        view(req)
+        self.assertEqual(SaldoConferido.objects.filter(conta=self.conta).count(), 2)
+
+    def test_exige_login(self):
+        view = SaldoConferidoViewSet.as_view({'post': 'create'})
+        req = self.factory.post('/api/v1/financeiro/conferencias/', {
+            'conta': self.conta.id, 'data': '2026-07-25', 'saldo_informado': '300.00',
+        }, format='json')
+        resp = view(req)
+        self.assertEqual(resp.status_code, 401)
+
+
+class FluxoCaixaViewTests(TestCase):
+    """Fase 6 — GET /financeiro/fluxo-caixa/?dias=N."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.conta = _conta(saldo=Decimal('500.00'))
+        self.categoria_saida = _categoria_saida()
+        self.categoria_entrada = CategoriaFinanceira.objects.create(nome='Vendas', tipo='entrada')
+        self.hoje = timezone.localdate()
+
+    def test_realizado_bate_com_ledger(self):
+        MovimentoFinanceiro.registrar(
+            conta=self.conta, tipo='entrada', valor=Decimal('80.00'), origem_tipo='manual',
+            data_movimento=self.hoje,
+        )
+        MovimentoFinanceiro.registrar(
+            conta=self.conta, tipo='saida', valor=Decimal('20.00'), origem_tipo='manual',
+            data_movimento=self.hoje,
+        )
+        view = FluxoCaixaView.as_view()
+        req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=7')
+        resp = view(req)
+        self.assertEqual(resp.status_code, 200)
+        dia_hoje = next(d for d in resp.data['dias'] if d['data'] == self.hoje)
+        self.assertEqual(dia_hoje['entrada_realizada'], Decimal('80.00'))
+        self.assertEqual(dia_hoje['saida_realizada'], Decimal('20.00'))
+
+    def test_projetado_inclui_conta_a_pagar_pendente(self):
+        vencimento = self.hoje + timedelta(days=3)
+        ContaPagar.objects.create(
+            numero=ContaPagar.proximo_numero(), categoria=self.categoria_saida,
+            valor=Decimal('120.00'), data_emissao=self.hoje, data_vencimento=vencimento,
+        )
+        view = FluxoCaixaView.as_view()
+        req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=7')
+        resp = view(req)
+        dia = next(d for d in resp.data['dias'] if d['data'] == vencimento)
+        self.assertEqual(dia['saida_projetada'], Decimal('120.00'))
+
+    def test_projetado_inclui_conta_a_receber_pendente(self):
+        vencimento = self.hoje + timedelta(days=2)
+        ContaReceber.objects.create(
+            numero=ContaReceber.proximo_numero(), categoria=self.categoria_entrada,
+            valor=Decimal('90.00'), data_vencimento=vencimento,
+        )
+        view = FluxoCaixaView.as_view()
+        req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=7')
+        resp = view(req)
+        dia = next(d for d in resp.data['dias'] if d['data'] == vencimento)
+        self.assertEqual(dia['entrada_projetada'], Decimal('90.00'))
+
+    def test_conta_paga_nao_entra_mais_no_projetado(self):
+        vencimento = self.hoje + timedelta(days=1)
+        conta_pagar = ContaPagar.objects.create(
+            numero=ContaPagar.proximo_numero(), categoria=self.categoria_saida,
+            valor=Decimal('50.00'), data_emissao=self.hoje, data_vencimento=vencimento,
+        )
+        MovimentoFinanceiro.registrar(
+            conta=self.conta, tipo='saida', valor=Decimal('50.00'),
+            origem_tipo='conta_pagar', origem_id=conta_pagar.id, data_movimento=self.hoje,
+        )
+        conta_pagar.recalcular_valor_pago()
+
+        view = FluxoCaixaView.as_view()
+        req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=7')
+        resp = view(req)
+        dia = next(d for d in resp.data['dias'] if d['data'] == vencimento)
+        self.assertEqual(dia['saida_projetada'], Decimal('0'))
+
+    def test_saldos_por_conta_e_ultima_conferencia(self):
+        SaldoConferido.objects.create(
+            conta=self.conta, data=self.hoje, saldo_informado=Decimal('505.00'), saldo_calculado=Decimal('500.00'),
+        )
+        view = FluxoCaixaView.as_view()
+        req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=7')
+        resp = view(req)
+        conta_resp = next(c for c in resp.data['contas'] if c['id'] == self.conta.id)
+        self.assertEqual(conta_resp['saldo_atual'], Decimal('500.00'))
+        self.assertEqual(conta_resp['ultima_conferencia']['diferenca'], Decimal('5.00'))
+
+    def test_conta_sem_conferencia_retorna_none(self):
+        view = FluxoCaixaView.as_view()
+        req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=7')
+        resp = view(req)
+        conta_resp = next(c for c in resp.data['contas'] if c['id'] == self.conta.id)
+        self.assertIsNone(conta_resp['ultima_conferencia'])
+
+    def test_dias_limitado_a_faixa_valida(self):
+        view = FluxoCaixaView.as_view()
+        req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=500')
+        resp = view(req)
+        self.assertEqual(len(resp.data['dias']), 90)

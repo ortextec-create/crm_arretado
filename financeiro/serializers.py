@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from clientes.models import Cliente
+
 from .models import (
     CategoriaFinanceira,
     ConfiguracaoFinanceira,
@@ -11,6 +13,7 @@ from .models import (
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
+    SaldoConferido,
     TelefoneAlertaFinanceiro,
 )
 
@@ -165,3 +168,39 @@ class BaixaContaSerializer(serializers.Serializer):
     conta = serializers.PrimaryKeyRelatedField(queryset=ContaBancaria.objects.all())
     forma = serializers.ChoiceField(choices=MovimentoFinanceiro.FORMA_PAGAMENTO_CHOICES)
     comprovante = serializers.FileField(required=False, allow_null=True)
+
+
+class MovimentoManualSerializer(serializers.Serializer):
+    """Lançamento avulso/estorno manual — sempre grava com origem_tipo='manual'."""
+
+    conta = serializers.PrimaryKeyRelatedField(queryset=ContaBancaria.objects.all())
+    tipo = serializers.ChoiceField(choices=MovimentoFinanceiro.TIPO_CHOICES)
+    valor = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
+    data_movimento = serializers.DateField(required=False)
+    categoria = serializers.PrimaryKeyRelatedField(queryset=CategoriaFinanceira.objects.all(), required=False, allow_null=True)
+    fornecedor = serializers.PrimaryKeyRelatedField(queryset=Fornecedor.objects.all(), required=False, allow_null=True)
+    cliente = serializers.PrimaryKeyRelatedField(queryset=Cliente.objects.all(), required=False, allow_null=True)
+    descricao = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    forma_pagamento = serializers.ChoiceField(
+        choices=MovimentoFinanceiro.FORMA_PAGAMENTO_CHOICES, required=False, allow_blank=True,
+    )
+    comprovante = serializers.FileField(required=False, allow_null=True)
+
+    def validate_categoria(self, categoria):
+        if categoria and categoria.tipo != self.initial_data.get('tipo'):
+            raise serializers.ValidationError('Categoria deve ser do mesmo tipo do movimento (entrada/saída).')
+        return categoria
+
+
+class SaldoConferidoSerializer(serializers.ModelSerializer):
+    conta_nome = serializers.CharField(source='conta.nome', read_only=True, default=None)
+    criado_por_nome = serializers.CharField(source='criado_por.name', read_only=True, default=None)
+    diferenca = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = SaldoConferido
+        fields = [
+            'id', 'conta', 'conta_nome', 'data', 'saldo_informado', 'saldo_calculado',
+            'diferenca', 'criado_por', 'criado_por_nome', 'criado_em',
+        ]
+        read_only_fields = ['saldo_calculado', 'criado_por']

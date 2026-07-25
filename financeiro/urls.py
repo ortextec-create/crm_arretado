@@ -8,8 +8,10 @@ from .views import (
     ContaPagarViewSet,
     ContaReceberViewSet,
     DespesaRecorrenteViewSet,
+    FluxoCaixaView,
     FornecedorViewSet,
     MovimentoFinanceiroViewSet,
+    SaldoConferidoViewSet,
     TelefoneAlertaFinanceiroViewSet,
 )
 
@@ -21,9 +23,11 @@ router.register('contas-pagar', ContaPagarViewSet, basename='contas-pagar')
 router.register('contas-receber', ContaReceberViewSet, basename='contas-receber')
 router.register('recorrentes', DespesaRecorrenteViewSet, basename='despesas-recorrentes')
 router.register('movimentos', MovimentoFinanceiroViewSet, basename='movimentos-financeiro')
+router.register('conferencias', SaldoConferidoViewSet, basename='conferencias-saldo')
 router.register('configuracao', ConfiguracaoFinanceiraViewSet, basename='configuracao-financeira')
 router.register('telefones-alerta', TelefoneAlertaFinanceiroViewSet, basename='telefones-alerta-financeiro')
 
 urlpatterns = [
+    path('fluxo-caixa/', FluxoCaixaView.as_view(), name='financeiro-fluxo-caixa'),
     path('', include(router.urls)),
 ]

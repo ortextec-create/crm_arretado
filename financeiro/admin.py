@@ -10,6 +10,7 @@ from .models import (
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
+    SaldoConferido,
     TelefoneAlertaFinanceiro,
 )
 
@@ -23,3 +24,4 @@ admin.site.register(ContaPagar)
 admin.site.register(DespesaRecorrente)
 admin.site.register(AlertaFinanceiroEnviado)
 admin.site.register(ContaReceber)
+admin.site.register(SaldoConferido)

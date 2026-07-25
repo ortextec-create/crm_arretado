@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import F, Q, Sum
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import status, views, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -24,6 +24,7 @@ from .models import (
     DespesaRecorrente,
     Fornecedor,
     MovimentoFinanceiro,
+    SaldoConferido,
     TelefoneAlertaFinanceiro,
 )
 from .serializers import (
@@ -36,6 +37,8 @@ from .serializers import (
     DespesaRecorrenteSerializer,
     FornecedorSerializer,
     MovimentoFinanceiroSerializer,
+    MovimentoManualSerializer,
+    SaldoConferidoSerializer,
     TelefoneAlertaFinanceiroSerializer,
 )
 
@@ -143,12 +146,23 @@ class TelefoneAlertaFinanceiroViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, vi
 # ─── Ledger (só leitura) ───────────────────────────────────────────────────────
 
 class MovimentoFinanceiroViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    Ledger — só leitura, exceto a action `manual/` (lançamento avulso ou
+    estorno). Nunca implementar DELETE nem criar movimento fora de
+    MovimentoFinanceiro.registrar() — ver "O Que NÃO Fazer" no CLAUDE.md.
+    """
     queryset = (
         MovimentoFinanceiro.objects
         .select_related('conta', 'categoria', 'fornecedor', 'cliente', 'criado_por')
         .all()
     )
     serializer_class = MovimentoFinanceiroSerializer
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'manual':
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -164,6 +178,34 @@ class MovimentoFinanceiroViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet)
         if params.get('data_fim'):
             qs = qs.filter(data_movimento__lte=params['data_fim'])
         return qs
+
+    @action(detail=False, methods=['post'], url_path='manual')
+    def manual(self, request):
+        serializer = MovimentoManualSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+
+        try:
+            mov = MovimentoFinanceiro.registrar(
+                conta=dados['conta'], tipo=dados['tipo'], valor=dados['valor'],
+                data_movimento=dados.get('data_movimento'),
+                categoria=dados.get('categoria'), fornecedor=dados.get('fornecedor'),
+                cliente=dados.get('cliente'), descricao=dados.get('descricao', ''),
+                forma_pagamento=dados.get('forma_pagamento', ''), origem_tipo='manual',
+                comprovante=dados.get('comprovante'), criado_por=request.user,
+            )
+        except DjangoValidationError as e:
+            raise ValidationError(e.message_dict if hasattr(e, 'message_dict') else e.messages)
+
+        registrar(
+            request.user, LogAuditoria.ACAO_MOVIMENTO_MANUAL,
+            detalhes={
+                'movimento_id': mov.id, 'tipo': mov.tipo, 'valor': str(mov.valor),
+                'conta': mov.conta.nome, 'descricao': mov.descricao,
+            },
+            request=request,
+        )
+        return Response(MovimentoFinanceiroSerializer(mov).data, status=status.HTTP_201_CREATED)
 
 
 # ─── Contas a Pagar ────────────────────────────────────────────────────────────
@@ -452,3 +494,115 @@ class DespesaRecorrenteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         if self.action in ('create', 'update', 'partial_update'):
             return [IsAuthenticated()]
         return [AllowAny()]
+
+
+# ─── Conferência de Saldo ──────────────────────────────────────────────────────
+
+class SaldoConferidoViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
+    """
+    Só GET/POST — sem edição (nova conferência substitui a leitura anterior
+    na UI, histórico preservado no banco). saldo_calculado nunca vem do
+    payload: é sempre o snapshot de ContaBancaria.saldo_atual no momento
+    do POST.
+    """
+    queryset = SaldoConferido.objects.select_related('conta', 'criado_por').all()
+    serializer_class = SaldoConferidoSerializer
+    authentication_classes = [TokenAuthentication]
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get('conta'):
+            qs = qs.filter(conta_id=self.request.query_params['conta'])
+        return qs
+
+    def perform_create(self, serializer):
+        conta = serializer.validated_data['conta']
+        serializer.save(saldo_calculado=conta.saldo_atual, criado_por=self.request.user)
+
+
+# ─── Fluxo de Caixa (agregador, sem model próprio) ─────────────────────────────
+
+class FluxoCaixaView(CsrfExemptMixin, views.APIView):
+    """
+    GET /financeiro/fluxo-caixa/?dias=14 — janela de `dias` a partir de hoje
+    (hoje incluso). Por dia: entrada/saida realizada (soma do ledger nessa
+    data_movimento) e projetada (soma do saldo restante de ContaPagar/
+    ContaReceber pendente/parcial com esse data_vencimento — já inclui
+    contas geradas por DespesaRecorrente, é a mesma query genérica).
+    Não inclui o saldo dinâmico de Evento (diferente de
+    contas-receber/resumo) — fora do escopo literal da Fase 6.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            dias = int(request.query_params.get('dias', 14))
+        except (TypeError, ValueError):
+            dias = 14
+        dias = max(1, min(dias, 90))
+
+        hoje = timezone.localdate()
+        fim = hoje + timedelta(days=dias - 1)
+
+        realizado = (
+            MovimentoFinanceiro.objects
+            .filter(data_movimento__gte=hoje, data_movimento__lte=fim)
+            .values('data_movimento', 'tipo')
+            .annotate(total=Sum('valor'))
+        )
+        realizado_por_dia = {}
+        for row in realizado:
+            chave = row['data_movimento']
+            realizado_por_dia.setdefault(chave, {'entrada': Decimal('0'), 'saida': Decimal('0')})
+            realizado_por_dia[chave][row['tipo']] = row['total']
+
+        pagar_projetado = (
+            ContaPagar.objects
+            .filter(status__in=['pendente', 'parcial'], data_vencimento__gte=hoje, data_vencimento__lte=fim)
+            .values('data_vencimento')
+            .annotate(total=Sum(F('valor') - F('valor_pago')))
+        )
+        pagar_por_dia = {row['data_vencimento']: row['total'] for row in pagar_projetado}
+
+        receber_projetado = (
+            ContaReceber.objects
+            .filter(status__in=['pendente', 'parcial'], data_vencimento__gte=hoje, data_vencimento__lte=fim)
+            .values('data_vencimento')
+            .annotate(total=Sum(F('valor') - F('valor_recebido')))
+        )
+        receber_por_dia = {row['data_vencimento']: row['total'] for row in receber_projetado}
+
+        dias_resposta = []
+        for i in range(dias):
+            data = hoje + timedelta(days=i)
+            r = realizado_por_dia.get(data, {})
+            dias_resposta.append({
+                'data': data,
+                'entrada_realizada': r.get('entrada', Decimal('0')),
+                'saida_realizada': r.get('saida', Decimal('0')),
+                'entrada_projetada': receber_por_dia.get(data, Decimal('0')),
+                'saida_projetada': pagar_por_dia.get(data, Decimal('0')),
+            })
+
+        contas = []
+        for conta in ContaBancaria.objects.filter(ativo=True):
+            ultima = conta.conferencias.first()
+            contas.append({
+                'id': conta.id,
+                'nome': conta.nome,
+                'saldo_atual': conta.saldo_atual,
+                'ultima_conferencia': {
+                    'data': ultima.data,
+                    'saldo_informado': ultima.saldo_informado,
+                    'saldo_calculado': ultima.saldo_calculado,
+                    'diferenca': ultima.diferenca,
+                } if ultima else None,
+            })
+
+        return Response({'dias': dias_resposta, 'contas': contas})
