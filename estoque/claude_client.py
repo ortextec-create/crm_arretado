@@ -25,7 +25,9 @@ PROMPT_EXTRACAO = (
     'Extraia os dados da nota fiscal na imagem/documento anexado e responda APENAS com um '
     'JSON puro, sem markdown, sem crases, sem texto antes ou depois, no seguinte formato exato:\n'
     '{"numero_nota": "8821", "fornecedor_nome": "Distribuidora Center Doces", '
+    '"fornecedor_cnpj": "12.345.678/0001-90", '
     '"itens": [{"descricao": "Choc. Fracionado 70% 1kg", "quantidade": 3, "valor_unitario": 42.50}]}\n'
+    'fornecedor_cnpj é o CNPJ do EMITENTE da nota (quem vendeu), no formato 00.000.000/0000-00. '
     'Use ponto como separador decimal. Se não conseguir identificar algum campo, use string vazia '
     'ou lista vazia — nunca invente dados.'
 )

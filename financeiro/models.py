@@ -293,7 +293,11 @@ class ContaPagar(models.Model):
         Fornecedor, null=True, blank=True, on_delete=models.PROTECT, related_name='contas_pagar',
     )
     descricao = models.CharField(max_length=160, blank=True, default='')
-    categoria = models.ForeignKey(CategoriaFinanceira, on_delete=models.PROTECT, related_name='contas_pagar')
+    categoria = models.ForeignKey(
+        CategoriaFinanceira, null=True, blank=True, on_delete=models.PROTECT, related_name='contas_pagar',
+        help_text="Opcional — ContaPagar gerada automaticamente por nota fiscal nasce sem categoria "
+                  "(a extração não tem como determinar uma), o usuário categoriza depois via PATCH.",
+    )
     valor = models.DecimalField(max_digits=12, decimal_places=2)
     data_emissao = models.DateField()
     data_vencimento = models.DateField(db_index=True)

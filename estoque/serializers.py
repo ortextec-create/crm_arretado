@@ -143,7 +143,7 @@ class ImportacaoNotaFiscalSerializer(serializers.ModelSerializer):
     class Meta:
         model = ImportacaoNotaFiscal
         fields = [
-            'id', 'arquivo', 'metodo_extracao', 'numero_nota', 'fornecedor_nome',
+            'id', 'arquivo', 'metodo_extracao', 'numero_nota', 'fornecedor_nome', 'fornecedor_cnpj',
             'status', 'criado_por', 'criado_por_nome', 'criado_em', 'itens',
         ]
         read_only_fields = ['metodo_extracao', 'status', 'criado_por']

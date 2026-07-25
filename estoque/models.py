@@ -286,6 +286,11 @@ class ImportacaoNotaFiscal(models.Model):
     metodo_extracao = models.CharField(max_length=15, choices=METODO_CHOICES)
     numero_nota = models.CharField(max_length=50, blank=True, default='')
     fornecedor_nome = models.CharField(max_length=200, blank=True, default='')
+    fornecedor_cnpj = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text="Capturado pela cascata de extração (emit/CNPJ no XML; best-effort em PDF/IA) — "
+                  "usado pra resolver/criar financeiro.Fornecedor na confirmação (Fase 5 do Financeiro).",
+    )
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='em_revisao')
     criado_por = models.ForeignKey('usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL)
     criado_em = models.DateTimeField(auto_now_add=True)

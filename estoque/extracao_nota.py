@@ -3,9 +3,11 @@ Cascata de extração de nota fiscal (fases 6-7 do módulo de Estoque):
 XML da NF-e -> texto de PDF (heurística best-effort) -> IA multimodal.
 
 Cada camada expõe uma função `extrair_*(...)` que devolve um dict
-{'numero_nota', 'fornecedor_nome', 'itens': [{'descricao','quantidade','valor_unitario'}]}
+{'numero_nota', 'fornecedor_nome', 'fornecedor_cnpj', 'itens': [{'descricao','quantidade','valor_unitario'}]}
 ou `None` se não conseguir extrair nada utilizável — nunca lança exceção pro
-chamador (a orquestração decide se cai pra próxima camada).
+chamador (a orquestração decide se cai pra próxima camada). fornecedor_cnpj
+é usado na Fase 5 do Financeiro pra resolver/criar o Fornecedor da ContaPagar
+gerada automaticamente na confirmação (ver estoque/views.py::confirmar()).
 
 A camada de texto de PDF é heurística por natureza (regex sobre o texto cru
 extraído via pypdf) — sem notas fiscais reais de fornecedores da Arretado
@@ -83,11 +85,18 @@ def extrair_xml(nome_arquivo, conteudo_bytes):
 
     numero_nota = (root.findtext('.//ide/nNF') or '').strip()
     fornecedor_nome = (root.findtext('.//emit/xNome') or '').strip()
+    fornecedor_cnpj = (root.findtext('.//emit/CNPJ') or '').strip()
 
-    return {'numero_nota': numero_nota, 'fornecedor_nome': fornecedor_nome, 'itens': itens}
+    return {
+        'numero_nota': numero_nota, 'fornecedor_nome': fornecedor_nome, 'fornecedor_cnpj': fornecedor_cnpj,
+        'itens': itens,
+    }
 
 
 _PADRAO_NUMERO_NOTA = re.compile(r'N[ºo°]?\s*(?:DA\s+)?NF-?E?[:\s]*n?[ºo°]?\s*(\d{1,15})', re.IGNORECASE)
+# CNPJ formatado (00.000.000/0000-00) — best-effort, primeiro achado no texto
+# costuma ser o do emitente na maioria dos layouts de DANFE simples.
+_PADRAO_CNPJ = re.compile(r'\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}')
 # Linha de item: descrição seguida de pelo menos 3 números decimais (BR ou
 # com ponto) no final — os 3 últimos são interpretados como
 # quantidade / valor_unitario / valor_total.
@@ -142,7 +151,12 @@ def extrair_texto_pdf(nome_arquivo, conteudo_bytes):
     match_numero = _PADRAO_NUMERO_NOTA.search(texto)
     numero_nota = match_numero.group(1) if match_numero else ''
 
-    return {'numero_nota': numero_nota, 'fornecedor_nome': '', 'itens': itens}
+    match_cnpj = _PADRAO_CNPJ.search(texto)
+    fornecedor_cnpj = match_cnpj.group(0) if match_cnpj else ''
+
+    return {
+        'numero_nota': numero_nota, 'fornecedor_nome': '', 'fornecedor_cnpj': fornecedor_cnpj, 'itens': itens,
+    }
 
 
 def extrair_ia(nome_arquivo, conteudo_bytes, media_type):
@@ -177,6 +191,7 @@ def extrair_ia(nome_arquivo, conteudo_bytes, media_type):
     return {
         'numero_nota': str(dados.get('numero_nota', '') or '').strip(),
         'fornecedor_nome': str(dados.get('fornecedor_nome', '') or '').strip(),
+        'fornecedor_cnpj': str(dados.get('fornecedor_cnpj', '') or '').strip(),
         'itens': itens,
     }
 

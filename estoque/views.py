@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -330,12 +331,13 @@ class ImportacaoNotaFiscalViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             metodo = 'ia'
         if dados is None:
             metodo = 'falhou'
-            dados = {'numero_nota': '', 'fornecedor_nome': '', 'itens': []}
+            dados = {'numero_nota': '', 'fornecedor_nome': '', 'fornecedor_cnpj': '', 'itens': []}
 
         arquivo.seek(0)
         importacao = ImportacaoNotaFiscal.objects.create(
             arquivo=arquivo, metodo_extracao=metodo,
             numero_nota=dados['numero_nota'], fornecedor_nome=dados['fornecedor_nome'],
+            fornecedor_cnpj=dados.get('fornecedor_cnpj', ''),
             criado_por=ator_ou_none(request),
         )
         for item in dados['itens']:
@@ -428,7 +430,78 @@ class ImportacaoNotaFiscalViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
             detalhes={'importacao_id': importacao.id, 'numero_nota': importacao.numero_nota},
             request=request,
         )
+
+        self._gerar_conta_pagar_da_nota(importacao, request)
+
         return Response(ImportacaoNotaFiscalSerializer(importacao).data)
+
+    def _gerar_conta_pagar_da_nota(self, importacao, request):
+        """
+        Fase 5 do Financeiro (FINANCEIRO.md) — depois do MovimentoEstoque já
+        gravado acima (não mexer nessa parte), gera a ContaPagar
+        correspondente se ConfiguracaoFinanceira.nota_gera_conta_pagar.
+        OneToOne em ContaPagar.nota_fiscal garante que confirmar não duplica
+        (defesa em profundidade — na prática o guard de status já impede
+        confirmar duas vezes pela API).
+        """
+        from financeiro.models import ConfiguracaoFinanceira, ContaPagar, Fornecedor
+
+        cfg_financeira = ConfiguracaoFinanceira.get()
+        if not cfg_financeira.nota_gera_conta_pagar:
+            return
+        if ContaPagar.objects.filter(nota_fiscal=importacao).exists():
+            return
+
+        valor_total = sum(
+            (item.valor_unitario * item.quantidade for item in importacao.itens.filter(descartado=False)),
+            Decimal('0'),
+        )
+        if valor_total <= 0:
+            return
+
+        fornecedor = self._resolver_fornecedor(importacao)
+        hoje = timezone.localdate()
+        conta_pagar = ContaPagar.objects.create(
+            numero=ContaPagar.proximo_numero(), fornecedor=fornecedor, categoria=None,
+            descricao=f'NF {importacao.numero_nota}' if importacao.numero_nota else 'Nota fiscal (sem número)',
+            valor=valor_total, data_emissao=hoje, data_vencimento=hoje,
+            origem='nota_fiscal', nota_fiscal=importacao,
+        )
+        registrar(
+            ator_ou_none(request), LogAuditoria.ACAO_CONTA_PAGAR_GERADA_NOTA,
+            detalhes={
+                'importacao_id': importacao.id, 'numero_nota': importacao.numero_nota,
+                'conta_pagar_id': conta_pagar.id, 'conta_pagar_numero': conta_pagar.numero,
+                'valor': str(valor_total), 'fornecedor_id': fornecedor.id if fornecedor else None,
+            },
+            request=request,
+        )
+
+    def _resolver_fornecedor(self, importacao):
+        """CNPJ exato -> nome iexact -> nome icontains (só se único) -> cria novo. Mesmo espírito
+        de resolver_materia_prima() — nunca cria automaticamente sem nenhum dado extraído."""
+        from financeiro.models import Fornecedor
+
+        if importacao.fornecedor_cnpj:
+            fornecedor = Fornecedor.objects.filter(cnpj=importacao.fornecedor_cnpj).first()
+            if fornecedor:
+                return fornecedor
+
+        if importacao.fornecedor_nome:
+            fornecedor = Fornecedor.objects.filter(nome__iexact=importacao.fornecedor_nome).first()
+            if fornecedor:
+                return fornecedor
+            candidatos = Fornecedor.objects.filter(nome__icontains=importacao.fornecedor_nome)
+            if candidatos.count() == 1:
+                return candidatos.first()
+
+        if not importacao.fornecedor_nome and not importacao.fornecedor_cnpj:
+            return None
+
+        return Fornecedor.objects.create(
+            nome=importacao.fornecedor_nome or f'Fornecedor NF {importacao.numero_nota}',
+            cnpj=importacao.fornecedor_cnpj,
+        )
 
     @action(detail=True, methods=['post'], url_path='descartar')
     def descartar(self, request, pk=None):

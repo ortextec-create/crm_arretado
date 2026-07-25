@@ -7,6 +7,7 @@ from rest_framework.test import APIRequestFactory
 
 from eventos.models import Evento, ItemEvento
 from fichas.models import FichaTecnica, ItemFichaTecnica, MateriaPrima
+from financeiro.models import ConfiguracaoFinanceira, ContaPagar, Fornecedor
 from ifood.models import ItemPedidoIFood, PedidoIFood
 from pdv.models import ItemKit, ItemPedidoPDV, PedidoPDV, Produto
 from usuarios.models import Usuario
@@ -238,7 +239,7 @@ NFE_XML_EXEMPLO = """<?xml version="1.0" encoding="UTF-8"?>
   <NFe>
     <infNFe>
       <ide><nNF>8821</nNF></ide>
-      <emit><xNome>Distribuidora Center Doces</xNome></emit>
+      <emit><xNome>Distribuidora Center Doces</xNome><CNPJ>12345678000190</CNPJ></emit>
       <det nItem="1">
         <prod>
           <xProd>Choc. Fracionado 70% 1kg</xProd>
@@ -264,6 +265,7 @@ class ExtrairXMLTests(TestCase):
         self.assertIsNotNone(dados)
         self.assertEqual(dados['numero_nota'], '8821')
         self.assertEqual(dados['fornecedor_nome'], 'Distribuidora Center Doces')
+        self.assertEqual(dados['fornecedor_cnpj'], '12345678000190')
         self.assertEqual(len(dados['itens']), 2)
         self.assertEqual(dados['itens'][0]['descricao'], 'Choc. Fracionado 70% 1kg')
         self.assertEqual(dados['itens'][0]['quantidade'], Decimal('3.0000'))
@@ -432,3 +434,113 @@ class ImportacaoNotaFiscalViewSetTests(TestCase):
         req = self.factory.post(f'/api/v1/estoque/notas/{importacao.id}/confirmar/')
         resp = view(req, pk=importacao.id)
         self.assertEqual(resp.status_code, 401)
+
+
+# ─── Fase 5 do Financeiro: nota fiscal → ContaPagar ────────────────────────────
+
+class ConfirmarNotaGeraContaPagarTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin NF Financeiro', email='admin-nf-fin@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+        self.materia = _materia(nome='Chocolate 70%', quantidade_estoque=Decimal('0'))
+        ConfiguracaoFinanceira.objects.create(pk=1, nota_gera_conta_pagar=True)
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin-nf-fin@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _auth_header(self):
+        return {'HTTP_AUTHORIZATION': f'Token {self._token()}'}
+
+    def _confirmar(self, importacao):
+        view = ImportacaoNotaFiscalViewSet.as_view({'post': 'confirmar'})
+        req = self.factory.post(f'/api/v1/estoque/notas/{importacao.id}/confirmar/', **self._auth_header())
+        return view(req, pk=importacao.id)
+
+    def _importacao_com_item(self, **campos_importacao):
+        importacao = ImportacaoNotaFiscal.objects.create(
+            metodo_extracao='xml', numero_nota='8821', status='em_revisao', **campos_importacao,
+        )
+        ItemNotaImportada.objects.create(
+            importacao=importacao, descricao_extraida='Chocolate 70%', quantidade=Decimal('3'),
+            valor_unitario=Decimal('42.50'), materia_prima=self.materia, status_match='encontrado',
+        )
+        return importacao
+
+    def test_confirmar_gera_conta_pagar_com_categoria_none(self):
+        importacao = self._importacao_com_item()
+        resp = self._confirmar(importacao)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        conta_pagar = ContaPagar.objects.get(nota_fiscal=importacao)
+        self.assertEqual(conta_pagar.origem, 'nota_fiscal')
+        self.assertEqual(conta_pagar.valor, Decimal('127.50'))
+        self.assertIsNone(conta_pagar.categoria)
+        self.assertIn('8821', conta_pagar.descricao)
+
+    def test_nota_gera_conta_pagar_desativado_nao_gera_nada(self):
+        ConfiguracaoFinanceira.objects.filter(pk=1).update(nota_gera_conta_pagar=False)
+        importacao = self._importacao_com_item()
+        self._confirmar(importacao)
+        self.assertFalse(ContaPagar.objects.filter(nota_fiscal=importacao).exists())
+
+    def test_sem_fornecedor_extraido_cria_com_fornecedor_none(self):
+        importacao = self._importacao_com_item()  # sem fornecedor_nome/cnpj
+        self._confirmar(importacao)
+        conta_pagar = ContaPagar.objects.get(nota_fiscal=importacao)
+        self.assertIsNone(conta_pagar.fornecedor)
+
+    def test_resolve_fornecedor_por_cnpj_exato(self):
+        existente = Fornecedor.objects.create(nome='Nome Antigo Ltda', cnpj='12.345.678/0001-90')
+        importacao = self._importacao_com_item(
+            fornecedor_nome='Nome Diferente Na Nota', fornecedor_cnpj='12.345.678/0001-90',
+        )
+        self._confirmar(importacao)
+        conta_pagar = ContaPagar.objects.get(nota_fiscal=importacao)
+        self.assertEqual(conta_pagar.fornecedor_id, existente.id)
+        self.assertEqual(Fornecedor.objects.count(), 1)  # não criou um novo
+
+    def test_resolve_fornecedor_por_nome_iexact(self):
+        existente = Fornecedor.objects.create(nome='Distribuidora Center Doces')
+        importacao = self._importacao_com_item(fornecedor_nome='distribuidora center doces')
+        self._confirmar(importacao)
+        conta_pagar = ContaPagar.objects.get(nota_fiscal=importacao)
+        self.assertEqual(conta_pagar.fornecedor_id, existente.id)
+
+    def test_resolve_fornecedor_por_nome_icontains_unico(self):
+        existente = Fornecedor.objects.create(nome='Distribuidora Center Doces LTDA')
+        importacao = self._importacao_com_item(fornecedor_nome='Center Doces')
+        self._confirmar(importacao)
+        conta_pagar = ContaPagar.objects.get(nota_fiscal=importacao)
+        self.assertEqual(conta_pagar.fornecedor_id, existente.id)
+
+    def test_nome_icontains_ambiguo_nao_resolve_cria_novo(self):
+        Fornecedor.objects.create(nome='Distribuidora Center Doces')
+        Fornecedor.objects.create(nome='Center Doces Atacado')
+        importacao = self._importacao_com_item(fornecedor_nome='Center Doces')
+        self._confirmar(importacao)
+        conta_pagar = ContaPagar.objects.get(nota_fiscal=importacao)
+        self.assertEqual(conta_pagar.fornecedor.nome, 'Center Doces')
+        self.assertEqual(Fornecedor.objects.count(), 3)
+
+    def test_sem_correspondencia_cria_fornecedor_novo(self):
+        importacao = self._importacao_com_item(
+            fornecedor_nome='Fornecedor Novo Ltda', fornecedor_cnpj='99.999.999/0001-99',
+        )
+        self._confirmar(importacao)
+        conta_pagar = ContaPagar.objects.get(nota_fiscal=importacao)
+        self.assertEqual(conta_pagar.fornecedor.nome, 'Fornecedor Novo Ltda')
+        self.assertEqual(conta_pagar.fornecedor.cnpj, '99.999.999/0001-99')
+
+    def test_confirmar_duas_vezes_nao_duplica_conta_pagar(self):
+        importacao = self._importacao_com_item()
+        self._confirmar(importacao)
+        # segunda chamada é bloqueada pelo guard de status (em_revisao já virou confirmada),
+        # mas o OneToOne + o .exists() defensivo garantem que não duplicaria de qualquer forma
+        resp2 = self._confirmar(importacao)
+        self.assertEqual(resp2.status_code, 400)
+        self.assertEqual(ContaPagar.objects.filter(nota_fiscal=importacao).count(), 1)

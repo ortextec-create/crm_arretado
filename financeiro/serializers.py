@@ -91,7 +91,7 @@ class ContaPagarSerializer(serializers.ModelSerializer):
         return obj.valor - obj.valor_pago
 
     def validate_categoria(self, categoria):
-        if categoria.tipo != 'saida':
+        if categoria and categoria.tipo != 'saida':
             raise serializers.ValidationError('Categoria deve ser do tipo "saida".')
         return categoria
 
