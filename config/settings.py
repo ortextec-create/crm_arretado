@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'relatorios',
     'dashboard',
     'financeiro',
+    'manutencao',
 ]
 
 MIDDLEWARE = [
