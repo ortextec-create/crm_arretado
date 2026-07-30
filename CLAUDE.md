@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 25/jul/2026.
+> Última atualização: 30/jul/2026.
 
 ---
 
@@ -210,6 +210,21 @@ arretado/                        ← raiz Django
 │                                    + saldos por conta e última conferência de cada uma; não inclui saldo
 │                                    dinâmico de Evento, diferente de contas-receber/resumo — fora do escopo
 │                                    literal da Fase 6)
+├── manutencao/                  ← Backup do banco (pg_dump) + mídia (tarfile) com envio externo pro
+│   │                               Backblaze B2 via rclone + alerta de falha via WhatsApp (spec completa
+│   │                               em `backup.md`)
+│   ├── models.py                ← ConfiguracaoBackup (singleton, pastas/retenção/remote/limites de alerta),
+│   │                               TelefoneAlertaBackup (telefones internos da equipe, mesmo padrão de
+│   │                               TelefoneAlertaEvento/Estoque/Financeiro)
+│   ├── views.py                 ← ConfiguracaoBackupViewSet (GET/PATCH) + TelefoneAlertaBackupViewSet (CRUD)
+│   └── management/commands/
+│       ├── fazer_backup.py      ← dump do Postgres (`pg_dump -Fc`) + tar.gz de media/ (`tarfile`, nunca
+│       │                           subprocess/tar do sistema) + rotação local + envio via `rclone` pro
+│       │                           Backblaze B2 + rotação remota — nunca chama `notificar()` (nem sucesso
+│       │                           nem falha), quem alerta é o verificar_backup
+│       └── verificar_backup.py  ← checa idade/tamanho do backup mais recente, alerta WhatsApp se
+│                                   desatualizado/ausente/suspeito de corrompido (sem dedup — repete
+│                                   todo dia enquanto quebrado, decisão consciente)
 └── manage.py
 
 arretado-crm/                    ← raiz React
@@ -329,6 +344,7 @@ arretado-crm/                    ← raiz React
 - **`financeiro.SaldoConferido`** (Fase 6) — conferência de saldo (usuário digita o saldo informado pelo app do banco, o sistema calcula a diferença contra o ledger). `saldo_calculado` é sempre o snapshot de `ContaBancaria.saldo_atual` **no momento do POST** (`SaldoConferidoViewSet.perform_create()` — nunca vem do payload, é `read_only` no serializer) — nunca recalculado depois, mesmo que o saldo real da conta mude com o tempo. `diferenca` (`saldo_informado - saldo_calculado`) é property, não campo. Sem `PATCH`/`DELETE` (`http_method_names = ['get', 'post', ...]`) — uma nova conferência é sempre um registro novo, o histórico completo fica no banco, a UI mostra só a mais recente por conta (`ordering = ['-data', '-criado_em']`). `POST /financeiro/conferencias/` exige login
 - **`POST /financeiro/movimentos/manual/`** (Fase 6, action em `MovimentoFinanceiroViewSet`, exige login) — único jeito de criar um `MovimentoFinanceiro` fora dos signals automáticos e das baixas de conta: lançamento avulso (ex.: saldo inicial de uma conta nova) ou estorno manual de qualquer situação não coberta pelos estornos automáticos dos signals. Sempre `origem_tipo='manual'` (fora da `UniqueConstraint` condicional, permite múltiplos lançamentos livremente) — chama `MovimentoFinanceiro.registrar()` como qualquer outro caminho de escrita, nunca `.objects.create()`. Audita `movimento_manual`
 - **`GET /financeiro/fluxo-caixa/?dias=N`** (Fase 6, `FluxoCaixaView`, `AllowAny`, `N` limitado a 1-90, default 14) — agregador sem model próprio: por dia, entre hoje e hoje+N-1, `entrada_realizada`/`saida_realizada` somam `MovimentoFinanceiro` com aquele `data_movimento` (bate exatamente com o ledger); `entrada_projetada`/`saida_projetada` somam o saldo restante (`valor - valor_recebido`/`valor - valor_pago`) de `ContaReceber`/`ContaPagar` `pendente`/`parcial` com aquele `data_vencimento` — já inclui `ContaPagar` de origem `recorrente` e `nota_fiscal` automaticamente, é a mesma query genérica por status, sem tratamento especial por origem. Resposta também traz `saldos_por_conta` (na chave `contas`) com a última `SaldoConferido` de cada `ContaBancaria` ativa (`None` se nunca conferida). **Não inclui o saldo dinâmico de Evento** (diferente de `contas-receber/resumo/`) — decisão de escopo desta sessão, para não estender o agregador além do que o texto da Fase 6 do `FINANCEIRO.md` pedia; revisitar se o usuário quiser ver eventos no fluxo de caixa também
+- **Módulo de Backup** (app `manutencao/`, spec completa em `backup.md`, fases 1-5 concluídas e envio externo configurado em 30/jul/2026) — cron diário `fazer_backup` (03:00) faz `pg_dump -Fc` do Postgres inteiro + `tarfile` de `MEDIA_ROOT`, salva local em `ConfiguracaoBackup.pasta_backup_db`/`pasta_backup_media` (padrão `/var/backups/arretado/{db,media}`), rotaciona local (`retencao_local_dias`, padrão 14) e envia pro Backblaze B2 via `rclone` (remote `backup-remoto`, bucket `arretado-backups`), rotacionando remoto (`retencao_remota_dias`, padrão 90). Cron `verificar_backup` (08:00) checa idade/tamanho do backup mais recente e alerta `TelefoneAlertaBackup` via WhatsApp se algo estiver errado — **sem dedup de alerta** (repete todo dia enquanto quebrado, diferente de `AlertaEventoEnviado`/`AlertaEstoqueEnviado`/`AlertaFinanceiroEnviado`, decisão consciente porque backup quebrado é o único problema que fica invisível até o dia em que se precisa dele). `fazer_backup` nunca chama `notificar()` — só `verificar_backup` alerta, fonte única de verdade sobre "o backup está ok". O `rclone.conf` (`/root/.config/rclone/rclone.conf`, fora do repo) está **sem senha de criptografia** de propósito — o arquivo já é `600 root:root`, mesmo nível de proteção do crontab que precisaria da senha de qualquer forma; ver `backup.md` se um dia precisar reconfigurar. **Restauração é sempre manual, nunca um management command** (decisão consciente, ver "O Que NÃO Fazer") — `pg_restore -h localhost -p 5432 -U arretado_user -d arretado_db --clean --if-exists --no-owner /var/backups/arretado/db/crm_db_TIMESTAMP.dump` (com `arretado.service` parado antes e religado depois) para o banco, `tar xzf /var/backups/arretado/media/media_TIMESTAMP.tar.gz -C /var/www/crm_arretado/ --overwrite` pra mídia; se o backup local também tiver sumido, baixar primeiro do B2 com `rclone copy backup-remoto:arretado-backups/{db,media}/ /var/backups/arretado/{db,media}/`
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -385,6 +401,7 @@ arretado-crm/                    ← raiz React
 | Estoque — Fases 6-8 (importação de nota fiscal: XML/PDF/IA) | Cascata de extração (XML da NF-e → texto de PDF → IA multimodal), staging (`ImportacaoNotaFiscal`/`ItemNotaImportada`), tela de revisão, fuzzy match, filtros de período/tipo na aba Movimentações | ✅ Concluída |
 | Resumo de Cozinha (Evento) | PDF operacional (A4 página cheia, ReportLab Platypus, sem timbre) com itens do Evento agrupados por categoria, pra a equipe de cozinha montar a produção — sem preços. Botão em `Eventos.jsx` (card de detalhe + linha da lista) | ✅ Concluída (só A4 página cheia — meia-folha/térmica fora de escopo por ora) |
 | Módulo Financeiro — Fases 0-7 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo, `DespesaRecorrente` + crons, `ContaReceber` + signals PDV/iFood/PagamentoEvento, integração Estoque → nota fiscal vira `ContaPagar`, fluxo de caixa + conferência de saldo + lançamento manual, frontend `Financeiro.jsx`) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`) + action `movimentos/manual/`, `ContaPagar`/`ContaReceber` (obrigação projetada, `valor_pago`/`valor_recebido`/`status` derivados), `DespesaRecorrente` + `AlertaFinanceiroEnviado` + crons `gerar_contas_recorrentes`/`alertar_vencimentos`, signals de venda (PDV/iFood/PagamentoEvento) batendo automaticamente no ledger com estorno em cancelamento, `estoque.ImportacaoNotaFiscal.fornecedor_cnpj` + geração automática de `ContaPagar` na confirmação da nota, `SaldoConferido` (conferências/) + `fluxo-caixa/` (agregador realizado x projetado + saldos por conta) + `Financeiro.jsx` (5 abas, `financeiroApi` em `services.js`, rota `/financeiro` + item de menu) | 🔄 Em andamento (fases 0-7 de 8 — falta só a Fase 8, testes finais + revisão do CLAUDE.md canônico) |
+| Sistema de Backup (Banco + Mídia) | App `manutencao/` (spec completa em `backup.md`) — `ConfiguracaoBackup`/`TelefoneAlertaBackup`, cron `fazer_backup` (pg_dump + tarfile de media/ + rotação local + envio pro Backblaze B2 via rclone + rotação remota) e `verificar_backup` (alerta WhatsApp sem dedup se backup ausente/velho/corrompido) | ✅ Concluída (fases 1-5 — envio externo configurado com Backblaze B2 em 30/jul/2026; restauração é sempre manual, ver Padrões Obrigatórios) |
 
 ---
 
@@ -582,6 +599,11 @@ POST             /api/v1/financeiro/contas-receber/{id}/baixa/     ← exige log
 GET              /api/v1/financeiro/contas-receber/resumo/         ← recebido_hoje, a_receber, proximos_30_dias — inclui saldo de Evento via query dinâmica (nunca materializado como linha)
 GET/POST         /api/v1/financeiro/conferencias/                  ← POST exige login · saldo_calculado é sempre snapshot de ContaBancaria.saldo_atual no momento (nunca vem do payload) · sem PATCH/DELETE
 GET              /api/v1/financeiro/fluxo-caixa/?dias=N            ← N entre 1-90 (default 14) · por dia: entrada/saida realizada (ledger) e projetada (ContaPagar/ContaReceber pendente/parcial) · + saldos por conta e última conferência de cada uma
+
+# Backup (ver backup.md e Padrões Obrigatórios)
+GET/PATCH             /api/v1/manutencao/configuracao-backup/1/      ← singleton · exige login
+GET/POST              /api/v1/manutencao/telefones-alerta/           ← exige login
+GET/PATCH/DELETE      /api/v1/manutencao/telefones-alerta/{id}/      ← exige login · DELETE audita registro_excluido
 ```
 
 ---
@@ -628,6 +650,26 @@ python manage.py gerar_contas_recorrentes
 python manage.py alertar_vencimentos
 # antecedência/repetição vêm de ConfiguracaoFinanceira.get() (painel) · precisa de ao menos 1
 # financeiro.TelefoneAlertaFinanceiro ativo, senão não notifica ninguém
+
+# Backup do banco + mídia (cron diário — 03:00)
+python manage.py fazer_backup
+# config vem de ConfiguracaoBackup.get() (pastas/retenção/remote) · pg_dump -Fc + tarfile de media/
+# + rclone copy pro Backblaze B2 (remote "backup-remoto") · nunca notifica
+
+# Verificação do backup + alerta (cron diário — 08:00, 5h de folga sobre o fazer_backup)
+python manage.py verificar_backup
+# checa idade/tamanho do backup mais recente · alerta manutencao.TelefoneAlertaBackup via
+# WhatsApp se ausente/desatualizado/corrompido · sem dedup, repete todo dia enquanto quebrado
+
+# Restauração (SEMPRE manual — não existe management command pra isso, de propósito)
+# Banco:
+PGPASSWORD='<senha>' pg_restore -h localhost -p 5432 -U arretado_user -d arretado_db --clean --if-exists --no-owner /var/backups/arretado/db/crm_db_TIMESTAMP.dump
+# Mídia:
+tar xzf /var/backups/arretado/media/media_TIMESTAMP.tar.gz -C /var/www/crm_arretado/ --overwrite
+# Se o backup local também tiver sumido, baixar do B2 primeiro:
+rclone copy backup-remoto:arretado-backups/db/ /var/backups/arretado/db/
+rclone copy backup-remoto:arretado-backups/media/ /var/backups/arretado/media/
+# Parar `arretado.service` antes de restaurar o banco e religar depois
 
 # Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos, estoque, financeiro)
 python manage.py test --settings=config.settings_test
@@ -742,3 +784,10 @@ Infra já configurada em produção (não precisa recriar):
 - Não permitir `PATCH`/`DELETE` em `financeiro.SaldoConferido` — uma conferência nova é sempre um registro novo, nunca uma correção da anterior; o histórico completo fica no banco, a UI só mostra a mais recente por conta
 - Não aceitar `saldo_calculado` vindo do payload em `POST /financeiro/conferencias/` — é sempre o snapshot de `ContaBancaria.saldo_atual` no momento do POST (`read_only` no serializer, preenchido em `perform_create()`), nunca calculado pelo cliente
 - Não somar o saldo dinâmico de Evento em `GET /financeiro/fluxo-caixa/` — diferente de `contas-receber/resumo/`, o agregador de fluxo de caixa só olha `ContaPagar`/`ContaReceber` (decisão de escopo da Fase 6, ver Padrões Obrigatórios)
+- Não instanciar `ConfiguracaoBackup()` diretamente — sempre usar `ConfiguracaoBackup.get()`
+- Não colocar a senha do banco na linha de comando do `pg_dump`/`pg_restore` — usar `PGPASSWORD` via variável de ambiente (mesma regra já aplicada ao `pg_dump` de `fazer_backup.py`)
+- Não usar `subprocess`/`tar` do sistema para compactar a mídia no backup — usar `tarfile` (stdlib), mesmo padrão já usado em `fazer_backup.py`
+- Não fazer `fazer_backup` chamar `notificar()` — responsabilidade exclusiva do `verificar_backup`, pra não mandar WhatsApp de "backup ok" todo dia
+- Não criar um management command `restaurar_backup` — restauração é sempre manual (`pg_restore`/`tar` direto, documentado em Padrões Obrigatórios e `backup.md`), decisão consciente pra evitar que algo tão raro e arriscado seja disparado sem querer
+- Não incluir o `.env` no backup — contém chaves (Z-API, `ANTHROPIC_API_KEY` futura); guardar `.env` é procedimento manual separado, fora deste sistema
+- Não adicionar dedup de alerta (`AlertaBackupEnviado`) ao `verificar_backup` — repetição diária enquanto o backup estiver quebrado é decisão consciente (é o único problema do sistema que fica invisível até o dia em que se precisa dele)
