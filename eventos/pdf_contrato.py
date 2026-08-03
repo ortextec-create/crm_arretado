@@ -329,7 +329,7 @@ def _gerar_conteudo(contrato) -> bytes:
     story.append(Paragraph(
         f'Parágrafo único: Para a confirmação do pedido e entrega na data marcada, a CONTRATANTE deverá '
         f'efetuar o pagamento de um sinal correspondente a {_pct(contrato.percentual_sinal)}% do valor total do '
-        f'contrato, no valor de {_brl(contrato.valor_sinal)}, no ato da sua assinatura.',
+        f'contrato.',
         st['clausula'],
     ))
     story.append(Paragraph(
