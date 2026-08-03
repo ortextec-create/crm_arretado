@@ -406,6 +406,8 @@ class ContratoSerializer(serializers.ModelSerializer):
             'contratante_estado_civil', 'contratante_endereco',
             'data_evento', 'hora_evento', 'local_evento',
             'valor_total', 'percentual_sinal', 'valor_sinal', 'data_quitacao',
+            'valor_entrada_pago', 'forma_pagamento_entrada', 'data_pagamento_entrada',
+            'observacao_entrada',
             'criado_em', 'atualizado_em',
         ]
         read_only_fields = fields

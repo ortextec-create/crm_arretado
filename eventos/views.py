@@ -1,5 +1,5 @@
 import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db.models import Q, Sum, Count
@@ -27,6 +27,33 @@ from auditoria.serializers import LogAuditoriaSerializer
 
 def _notificar_evento(evento, mensagem):
     notificar(_fone_pedido(evento), mensagem, cliente=evento.cliente, tipo='pedido')
+
+
+def _campos_entrada_contrato(request):
+    """Snapshot opcional da entrada paga no ato da assinatura do Contrato —
+    ver PAGAMENTOS_CONTRATO.md. Só usado pelo PDF quando Contrato.evento é
+    None (contrato emitido antes da conversão em Evento); com Evento já
+    vinculado, esses campos ficam gravados só como histórico informativo."""
+    valor_str = request.data.get('valor_entrada_pago')
+    try:
+        valor_entrada_pago = Decimal(str(valor_str)) if valor_str not in (None, '') else Decimal('0')
+    except (InvalidOperation, ValueError):
+        valor_entrada_pago = Decimal('0')
+
+    data_pagamento_entrada = None
+    data_str = (request.data.get('data_pagamento_entrada') or '').strip()
+    if data_str:
+        try:
+            data_pagamento_entrada = datetime.date.fromisoformat(data_str)
+        except ValueError:
+            data_pagamento_entrada = None
+
+    return dict(
+        valor_entrada_pago=valor_entrada_pago,
+        forma_pagamento_entrada=request.data.get('forma_pagamento_entrada') or '',
+        data_pagamento_entrada=data_pagamento_entrada,
+        observacao_entrada=(request.data.get('observacao_entrada') or '').strip(),
+    )
 from .serializers import (
     LocalEventoSerializer,
     EventoListSerializer,
@@ -424,6 +451,7 @@ class EventoViewSet(
             percentual_sinal=percentual_sinal,
             valor_sinal=valor_sinal,
             data_quitacao=data_quitacao,
+            **_campos_entrada_contrato(request),
         )
 
         registrar(
@@ -1182,6 +1210,7 @@ class OrcamentoViewSet(
             percentual_sinal=percentual_sinal,
             valor_sinal=valor_sinal,
             data_quitacao=data_quitacao,
+            **_campos_entrada_contrato(request),
         )
 
         registrar(

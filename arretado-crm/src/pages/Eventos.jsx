@@ -2060,6 +2060,13 @@ function ModalEmitirContratoEvento({ evento, onClose, onGerado }) {
           </div>
         )}
       </div>
+
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 12 }}>
+        <i className="ti ti-info-circle" /> Pagamentos deste evento já são gerenciados na aba
+        Pagamentos — use-a para lançar novas parcelas. O contrato exibe automaticamente todos os
+        pagamentos já registrados no evento.
+      </p>
+
       {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
       <div className={styles.stepNav}>
         <Btn variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Btn>

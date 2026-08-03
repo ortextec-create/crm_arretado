@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -142,6 +143,61 @@ class GerarContratoTests(TestCase):
         pdf_bytes = gerar_pdf_contrato(contrato)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))
         self.assertGreater(len(pdf_bytes), 1000)
+
+    def _texto_pdf(self, contrato):
+        from pypdf import PdfReader
+        from io import BytesIO
+        from .pdf_contrato import gerar_pdf_contrato
+        pdf_bytes = gerar_pdf_contrato(contrato)
+        reader = PdfReader(BytesIO(pdf_bytes))
+        return '\n'.join(page.extract_text() or '' for page in reader.pages)
+
+    def test_sem_entrada_informada_pdf_mostra_estado_vazio(self):
+        # Contrato sem Evento (orçamento ainda não convertido), sem entrada
+        # informada no payload — ver PAGAMENTOS_CONTRATO.md, seção 6.
+        payload = {
+            'cpf': '123.456.789-00', 'rg': '1234567', 'nacionalidade': 'brasileira',
+            'profissao': 'Professora', 'estado_civil': 'solteiro',
+            'endereco_avulso': 'Rua das Flores, 100 - Centro, Teresina/PI',
+        }
+        resp = self._post(payload)
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+        contrato = Contrato.objects.get(orcamento=self.orc)
+        self.assertIsNone(contrato.evento_id)
+        self.assertEqual(contrato.valor_entrada_pago, 0)
+
+        texto = self._texto_pdf(contrato)
+        self.assertIn('Registro de Pagamentos Recebidos', texto)
+        self.assertIn('Nenhum pagamento registrado', texto)
+        self.assertIn('SALDO RESTANTE: R$ 200,00', texto)
+
+    def test_entrada_informada_snapshot_gravado_e_pdf_mostra_linha(self):
+        # Contrato sem Evento, com entrada paga no ato da assinatura.
+        payload = {
+            'cpf': '123.456.789-00', 'rg': '1234567', 'nacionalidade': 'brasileira',
+            'profissao': 'Professora', 'estado_civil': 'solteiro',
+            'endereco_avulso': 'Rua das Flores, 100 - Centro, Teresina/PI',
+            'valor_entrada_pago': '80.00', 'forma_pagamento_entrada': 'pix',
+            'data_pagamento_entrada': '2026-08-01', 'observacao_entrada': 'Entrada via Pix',
+        }
+        resp = self._post(payload)
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+        contrato = Contrato.objects.get(orcamento=self.orc)
+        self.assertIsNone(contrato.evento_id)
+        self.assertEqual(contrato.valor_entrada_pago, Decimal('80.00'))
+        self.assertEqual(contrato.forma_pagamento_entrada, 'pix')
+        self.assertEqual(contrato.data_pagamento_entrada, datetime.date(2026, 8, 1))
+
+        texto = self._texto_pdf(contrato)
+        self.assertIn('Registro de Pagamentos Recebidos', texto)
+        self.assertNotIn('Nenhum pagamento registrado', texto)
+        self.assertIn('Entrada via Pix', texto)
+        self.assertIn('TOTAL PAGO', texto)
+        self.assertIn('R$ 80,00', texto)
+        self.assertIn('SALDO RESTANTE', texto)
+        self.assertIn('R$ 120,00', texto)  # saldo = 200 - 80
 
     @patch('notificacoes.servico.zapi.enviar_documento')
     def test_enviar_whatsapp_marca_status_e_grava_historico(self, mock_enviar):
@@ -296,6 +352,86 @@ class GerarContratoEventoTests(TestCase):
         from .pdf_contrato import gerar_pdf_contrato
         pdf_bytes = gerar_pdf_contrato(contrato)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+
+    def _texto_pdf(self, contrato):
+        from pypdf import PdfReader
+        from io import BytesIO
+        from .pdf_contrato import gerar_pdf_contrato
+        pdf_bytes = gerar_pdf_contrato(contrato)
+        reader = PdfReader(BytesIO(pdf_bytes))
+        return '\n'.join(page.extract_text() or '' for page in reader.pages)
+
+    def test_com_evento_sem_pagamento_pdf_mostra_estado_vazio(self):
+        # _converter() sem sinal_pago não cria nenhum PagamentoEvento —
+        # ver PAGAMENTOS_CONTRATO.md, seção 6 ("mesmo texto vazio, não deveria
+        # ocorrer na prática mas o código cobre o caso").
+        evento = self._converter()
+        resp = self._post(evento, self._payload_completo())
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+        contrato = Contrato.objects.get(id=resp.data['id'])
+        self.assertEqual(contrato.evento_id, evento.id)
+
+        texto = self._texto_pdf(contrato)
+        self.assertIn('Nenhum pagamento registrado', texto)
+
+    def test_com_evento_com_pagamentos_pdf_lista_todos(self):
+        # Sinal inicial na conversão + uma parcela adicional lançada depois —
+        # a tabela do PDF lê TODOS os pagamentos do Evento, cobrindo o
+        # cenário de reimpressão após lançar uma parcela nova.
+        evento = self._converter_com_sinal(Decimal('90'))
+        PagamentoEvento.objects.create(
+            evento=evento, valor=Decimal('50'), forma_pagamento='pix',
+            status='pago', data_pagamento=datetime.date(2026, 8, 2),
+            observacao='Segunda parcela',
+        )
+        evento.refresh_from_db()
+        evento.recalcular_sinal_pago()
+
+        resp = self._post(evento, self._payload_completo())
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+        contrato = Contrato.objects.get(id=resp.data['id'])
+
+        texto = self._texto_pdf(contrato)
+        self.assertNotIn('Nenhum pagamento registrado', texto)
+        self.assertIn('Segunda parcela', texto)
+        self.assertIn('TOTAL PAGO', texto)
+        self.assertIn('R$ 140,00', texto)   # 90 + 50
+        self.assertIn('R$ 60,00', texto)    # saldo = 200 - 140
+
+    def test_entrada_no_body_e_ignorada_pelo_pdf_quando_evento_ja_existe(self):
+        # Campos de entrada no body de EventoViewSet.gerar_contrato ficam
+        # gravados no Contrato como histórico, mas a tabela do PDF sempre
+        # prefere evento.pagamentos quando Contrato.evento existe — nunca
+        # mistura as duas fontes (ver PAGAMENTOS_CONTRATO.md, seção 2).
+        evento = self._converter_com_sinal(Decimal('90'))
+        payload = dict(
+            self._payload_completo(),
+            valor_entrada_pago='999.00', forma_pagamento_entrada='dinheiro',
+            observacao_entrada='NÃO deveria aparecer no PDF',
+        )
+        resp = self._post(evento, payload)
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+        contrato = Contrato.objects.get(id=resp.data['id'])
+        self.assertEqual(contrato.valor_entrada_pago, Decimal('999.00'))  # gravado, histórico
+
+        texto = self._texto_pdf(contrato)
+        self.assertNotIn('NÃO deveria aparecer no PDF', texto)
+        self.assertIn('R$ 90,00', texto)  # só o sinal real do Evento
+
+    def _converter_com_sinal(self, sinal_pago):
+        token = self._token()
+        view = OrcamentoViewSet.as_view({'post': 'converter_em_evento'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/converter-em-evento/',
+            {'sinal_pago': str(sinal_pago)}, format='json',
+            HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        resp = view(req, pk=self.orc.id)
+        resp.render()
+        return Evento.objects.get(id=resp.data['evento']['id'])
 
 
 class PagamentoEventoAuditoriaTests(TestCase):

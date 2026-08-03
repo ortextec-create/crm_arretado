@@ -4,6 +4,7 @@ Geração do PDF do Contrato de Aquisição de Produtos, com papel timbrado
 hardcoded aqui — tudo vem de ConfiguracaoContrato.get() ou do snapshot
 gravado no próprio Contrato (ver Contrato.md).
 """
+from decimal import Decimal
 from io import BytesIO
 from functools import partial
 
@@ -101,6 +102,13 @@ def _estilos():
             'assinatura_label', fontName='Helvetica', fontSize=8, textColor=CINZA_MED,
             alignment=TA_CENTER,
         ),
+        'pagamentos_vazio': ParagraphStyle(
+            'pagamentos_vazio', fontName='Helvetica-Oblique', fontSize=8.5, textColor=CINZA_MED,
+            spaceAfter=4,
+        ),
+        'pagamentos_saldo': ParagraphStyle(
+            'pagamentos_saldo', fontName='Helvetica-Bold', fontSize=9, textColor=CARAMELO,
+        ),
     }
 
 
@@ -141,6 +149,73 @@ def _header_footer(c, doc, cfg):
         c.drawString(ML, 24, contato)
 
     c.restoreState()
+
+
+# ── Registro de Pagamentos Recebidos (ver PAGAMENTOS_CONTRATO.md) ──────────────
+# Nunca mistura as duas fontes na mesma tabela: com Evento vinculado, lê
+# evento.pagamentos (pago) — cobre inclusive reimpressão após lançar parcela
+# nova; sem Evento, lê só o snapshot de entrada gravado no próprio Contrato.
+
+def _tabela_pagamentos(contrato, st) -> list:
+    from .models import PagamentoEvento
+
+    if contrato.evento_id:
+        pagamentos = contrato.evento.pagamentos.filter(status='pago')
+        linhas = [
+            (p.data_pagamento, p.get_forma_pagamento_display(), p.valor, p.observacao)
+            for p in pagamentos
+        ]
+    elif contrato.valor_entrada_pago and contrato.valor_entrada_pago > 0:
+        linhas = [(
+            contrato.data_pagamento_entrada,
+            dict(PagamentoEvento.FORMA_CHOICES).get(contrato.forma_pagamento_entrada, 'Outro'),
+            contrato.valor_entrada_pago,
+            contrato.observacao_entrada or 'Entrada paga no ato da assinatura',
+        )]
+    else:
+        linhas = []
+
+    total_pago = sum((valor for _, _, valor, _ in linhas), Decimal('0'))
+    saldo      = contrato.valor_total - total_pago
+
+    flowables = [Paragraph('Registro de Pagamentos Recebidos', st['secao'])]
+
+    if not linhas:
+        flowables.append(Paragraph('Nenhum pagamento registrado até o momento.', st['pagamentos_vazio']))
+        flowables.append(Paragraph(f'SALDO RESTANTE: {_brl(saldo)}', st['pagamentos_saldo']))
+        return flowables
+
+    table_data = [['Data', 'Forma', 'Observação', 'Valor']]
+    for data_pg, forma, valor, obs in linhas:
+        table_data.append([_data(data_pg), forma, obs or '—', _brl(valor)])
+    n = len(table_data) - 1
+    table_data.append(['', '', 'TOTAL PAGO', _brl(total_pago)])
+    n_total = len(table_data) - 1
+    table_data.append(['', '', 'SALDO RESTANTE', _brl(saldo)])
+    n_saldo = len(table_data) - 1
+
+    col_w = [MW * 0.14, MW * 0.20, MW * 0.46, MW * 0.20]
+    t = Table(table_data, colWidths=col_w)
+    t.setStyle(TableStyle([
+        ('BACKGROUND',     (0, 0), (-1, 0), MARROM),
+        ('TEXTCOLOR',      (0, 0), (-1, 0), colors.white),
+        ('FONTNAME',       (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME',       (0, 1), (-1, n), 'Helvetica'),
+        ('FONTSIZE',       (0, 0), (-1, -1), 8.3),
+        ('ALIGN',          (0, 0), (0, -1), 'CENTER'),
+        ('ALIGN',          (3, 0), (3, -1), 'RIGHT'),
+        ('GRID',           (0, 0), (-1, n), 0.4, CINZA_LIG),
+        ('ROWBACKGROUNDS', (0, 1), (-1, n), [colors.white, LISTRA]),
+        ('LINEBELOW',      (0, n), (-1, n), 0.8, CINZA_LIG),
+        ('FONTNAME',       (2, n_total), (-1, n_saldo), 'Helvetica-Bold'),
+        ('TEXTCOLOR',      (2, n_total), (-1, n_saldo), CARAMELO),
+        ('TOPPADDING',     (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING',  (0, 0), (-1, -1), 5),
+    ]))
+    flowables.append(Spacer(1, 3))
+    flowables.append(t)
+    flowables.append(Spacer(1, 6))
+    return flowables
 
 
 # ── Geração do conteúdo ────────────────────────────────────────────────────────
@@ -274,6 +349,8 @@ def _gerar_conteudo(contrato) -> bytes:
         f'mês e correção monetária pelo IPCA, contados da data do vencimento.',
         st['clausula'],
     ))
+
+    story.extend(_tabela_pagamentos(contrato, st))
 
     # ── 6. Da rescisão ──────────────────────────────────────────────────────
     story.append(Paragraph('6. DA RESCISÃO', st['secao']))

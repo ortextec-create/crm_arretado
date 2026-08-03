@@ -624,6 +624,14 @@ class Contrato(models.Model):
     valor_sinal      = models.DecimalField(max_digits=10, decimal_places=2)
     data_quitacao    = models.DateField()
 
+    # ── Snapshot da entrada paga no ato da assinatura (ver PAGAMENTOS_CONTRATO.md) ──
+    # Só é a fonte da tabela de pagamentos do PDF quando `evento` (acima) é None —
+    # com Evento vinculado, a tabela lê de `evento.pagamentos` (fonte única, nunca as duas juntas)
+    valor_entrada_pago      = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    forma_pagamento_entrada = models.CharField(max_length=20, choices=PagamentoEvento.FORMA_CHOICES, blank=True, default='')
+    data_pagamento_entrada  = models.DateField(null=True, blank=True)
+    observacao_entrada      = models.CharField(max_length=300, blank=True, default='')
+
     criado_em     = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

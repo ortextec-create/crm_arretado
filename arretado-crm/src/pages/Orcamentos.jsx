@@ -1585,6 +1585,13 @@ const ESTADO_CIVIL_OPTS = [
   ['uniao_estavel', 'União Estável'],
 ]
 
+const FORMA_PAGAMENTO_ENTRADA_OPTS = [
+  ['pix',      'Pix'],
+  ['dinheiro', 'Dinheiro'],
+  ['cartao',   'Cartão'],
+  ['outro',    'Outro'],
+]
+
 function ModalEmitirContrato({ orc, onClose, onGerado }) {
   const [loadingCliente,       setLoadingCliente]       = useState(true)
   const [temEnderecoPrincipal, setTemEnderecoPrincipal] = useState(false)
@@ -1595,6 +1602,12 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
   const [saving, setSaving] = useState(false)
   const [erro,   setErro]   = useState('')
   const [contrato, setContrato] = useState(null)
+
+  const [registrarEntrada, setRegistrarEntrada] = useState(false)
+  const [entrada, setEntrada] = useState({
+    valor_entrada_pago: '', forma_pagamento_entrada: 'pix',
+    data_pagamento_entrada: new Date().toISOString().slice(0, 10), observacao_entrada: '',
+  })
 
   const [mensagem,   setMensagem]   = useState('')
   const [sendingWpp, setSendingWpp] = useState(false)
@@ -1632,7 +1645,8 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
     }
     setSaving(true); setErro('')
     try {
-      const res = await orcamentosApi.gerarContrato(orc.id, form)
+      const payload = registrarEntrada ? { ...form, ...entrada } : form
+      const res = await orcamentosApi.gerarContrato(orc.id, payload)
       setContrato(res.data)
       onGerado?.(res.data)
     } catch (e) {
@@ -1757,6 +1771,56 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
           </div>
         )}
       </div>
+
+      <div className={styles.formGroup} style={{ marginTop: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+          <input
+            type="checkbox"
+            checked={registrarEntrada}
+            onChange={e => setRegistrarEntrada(e.target.checked)}
+          />
+          Pagamento recebido no ato
+        </label>
+      </div>
+      {registrarEntrada && (
+        <div className={styles.formGrid}>
+          <div className={styles.formGroup}>
+            <label>Valor</label>
+            <input
+              type="number" step="0.01" min="0"
+              value={entrada.valor_entrada_pago}
+              onChange={e => setEntrada(f => ({ ...f, valor_entrada_pago: e.target.value }))}
+              placeholder="0,00"
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label>Forma de pagamento</label>
+            <select
+              value={entrada.forma_pagamento_entrada}
+              onChange={e => setEntrada(f => ({ ...f, forma_pagamento_entrada: e.target.value }))}
+            >
+              {FORMA_PAGAMENTO_ENTRADA_OPTS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div className={styles.formGroup}>
+            <label>Data</label>
+            <input
+              type="date"
+              value={entrada.data_pagamento_entrada}
+              onChange={e => setEntrada(f => ({ ...f, data_pagamento_entrada: e.target.value }))}
+            />
+          </div>
+          <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+            <label>Observação</label>
+            <input
+              value={entrada.observacao_entrada}
+              onChange={e => setEntrada(f => ({ ...f, observacao_entrada: e.target.value }))}
+              placeholder="Entrada paga no ato da assinatura"
+            />
+          </div>
+        </div>
+      )}
+
       {erro && <p className={styles.erro}>{erro}</p>}
       <div className={styles.modalActions}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
