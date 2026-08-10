@@ -73,7 +73,9 @@ arretado/                        ← raiz Django
 │   │                               (via `AuditoriaCreateMixin`/`AuditoriaUpdateMixin`/`AuditoriaStatusMixin`, ver
 │   │                               `auditoria/mixins.py`) e exigem login — exceção oportunista continua só em
 │   │                               `converter_em_evento`/`enviar_whatsapp` (AllowAny, captura o ator quando o token vier)
-│   ├── pdf_orcamento.py          ← gera PDF (ReportLab, canvas cru, 1 página) — inclui linha "Taxa de entrega" quando houver
+│   ├── pdf_orcamento.py          ← gera PDF (ReportLab, canvas cru, 1 página) — inclui linha "Taxa de entrega" quando houver;
+│   │                               bloco "CONDIÇÕES COMERCIAIS" é lista fixa `condicoes` no código (não vem de
+│   │                               ConfiguracaoContrato nem de outro model) — ver "O Que NÃO Fazer"
 │   ├── pdf_contrato.py           ← gera PDF do contrato (ReportLab Platypus, multi-página) — texto e cláusulas vêm de
 │   │                               ConfiguracaoContrato.get() + snapshot do Contrato, nunca hardcoded
 │   ├── pdf_resumo_cozinha.py     ← gera PDF do resumo de cozinha do Evento (ReportLab Platypus, multi-página,
@@ -735,6 +737,7 @@ Infra já configurada em produção (não precisa recriar):
 - Não criar `ItemContrato` — o PDF do contrato lê os itens direto de `contrato.orcamento.itens`
 - Não permitir `gerar-contrato/` em orçamento que não esteja `status == 'aprovado'`, nem sem CPF/RG/nacionalidade/profissão/estado civil preenchidos
 - Ao mesclar o PDF do contrato com o timbre (`pdf_contrato.py::_mesclar_timbre`), reler o `PdfReader` do timbre a cada página — reutilizar o mesmo objeto entre iterações faz o `pypdf` duplicar o conteúdo da primeira página em todas (só aparece em PDFs multi-página; `pdf_orcamento.py` nunca bateu nisso por ser sempre 1 página)
+- Ao adicionar/remover linha da lista `condicoes` em `pdf_orcamento.py` (bloco "CONDIÇÕES COMERCIAIS"), ajustar o piso `cond_y = max(y - 10, N)` na mesma proporção (±11pt por linha) — esse piso é o que impede o bloco de colidir com a área de assinatura (`sig_y = 98`, fixa) no cenário de orçamento mais longo (muitos itens/observações empurram `y` pra baixo); esquecer de ajustar faz a última linha sobrepor "Teresina, ____/____/________" nesse cenário (bug real corrigido ao adicionar 2 linhas nesta sessão — piso subiu de 162 para 184)
 - Não criar `ImagemInspiracao` por item de Orçamento — a galeria pertence ao Orçamento inteiro (decisão já confirmada com o usuário)
 - Não incluir as imagens de `ImagemInspiracao` no PDF do orçamento nem na mensagem de WhatsApp — é uso interno da equipe, nunca client-facing
 - Não duplicar `ImagemInspiracao` para o Evento na conversão — o Evento só **lê** via `orcamento_origem`, nunca copia as imagens
