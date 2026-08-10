@@ -239,7 +239,7 @@ def _gerar_conteudo(orc) -> bytes:
         y -= 6
 
     # ── Condições comerciais ──────────────────────────────────────────────
-    cond_y = max(y - 10, 162)
+    cond_y = max(y - 10, 184)
 
     _draw_separator(c, cond_y + 14)
 
@@ -251,8 +251,10 @@ def _gerar_conteudo(orc) -> bytes:
     condicoes = [
         f'• Esta proposta é válida até {valido_ate}. Após esse prazo os preços poderão ser reajustados.',
         '• A confirmação do pedido está condicionada ao pagamento de um sinal de 50% do valor total.',
+        '• O saldo restante (50%) deve ser pago até 7 dias antes da data do evento.',
         '• Todo pedido é artesanal — o prazo de produção será combinado no momento da confirmação.',
         '• Cancelamentos comunicados com menos de 7 dias de antecedência não terão devolução do sinal.',
+        '• Ao confirmar o pedido (pagamento do sinal e/ou resposta de confirmação), o cliente declara estar de acordo com estas condições.',
         '• Dúvidas ou ajustes: WhatsApp / Instagram @arretado.doces.',
     ]
     c.setFont('Helvetica', 7.5)
