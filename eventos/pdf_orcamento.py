@@ -85,7 +85,7 @@ def _gerar_conteudo(orc) -> bytes:
 
     c.setFont('Helvetica', 8)
     c.setFillColor(CINZA_MED)
-    c.drawRightString(MR, y, '@arretado.doces  ·  arretado.ortex.solutions')
+    c.drawRightString(MR, y, '@arretadodoces  ·  arretado.ortex.solutions')
     y -= 16
 
     # ── Linha decorativa ──────────────────────────────────────────────────
@@ -255,7 +255,7 @@ def _gerar_conteudo(orc) -> bytes:
         '• Todo pedido é artesanal — o prazo de produção será combinado no momento da confirmação.',
         '• Cancelamentos comunicados com menos de 7 dias de antecedência não terão devolução do sinal.',
         '• Ao confirmar o pedido (pagamento do sinal e/ou resposta de confirmação), o cliente declara estar de acordo com estas condições.',
-        '• Dúvidas ou ajustes: WhatsApp / Instagram @arretado.doces.',
+        '• Dúvidas ou ajustes: WhatsApp / Instagram @arretadodoces.',
     ]
     c.setFont('Helvetica', 7.5)
     c.setFillColor(CINZA_ESC)
@@ -287,7 +287,7 @@ def _gerar_conteudo(orc) -> bytes:
     c.setFont('Helvetica', 7.5)
     c.setFillColor(CINZA_MED)
     c.drawCentredString(W / 2, 34,
-        'Arretado Doces — Confeitaria Artesanal  ·  Teresina, PI  ·  @arretado.doces  ·  arretado.ortex.solutions')
+        'Arretado Doces — Confeitaria Artesanal  ·  Teresina, PI  ·  @arretadodoces  ·  arretado.ortex.solutions')
 
     c.save()
     return buf.getvalue()
