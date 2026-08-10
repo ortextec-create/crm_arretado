@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 30/jul/2026.
+> Última atualização: 10/ago/2026.
 
 ---
 
