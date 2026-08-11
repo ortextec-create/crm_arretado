@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 10/ago/2026.
+> Última atualização: 11/ago/2026.
 
 ---
 
@@ -25,9 +25,22 @@ Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, cat
 ```
 arretado/                        ← raiz Django
 ├── config/
-│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/
+│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard, financeiro, manutencao, empresas
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/
 │   └── wsgi.py
+├── empresas/                    ← Multi-Empresa (Fase 0 de 6, ver MULTIEMPRESA.md) — model Empresa (multi-tenant
+│   │                               por linha), ainda não consumido por nenhum outro app (Fases 1-5 pendentes)
+│   ├── models.py                ← Empresa (nome/subtitulo/razao_social/cnpj único quando preenchido,
+│   │                               `padrao` — exatamente uma True via UniqueConstraint condicional, `ativo`,
+│   │                               12 campos de cor hex (`cor_*`, blank — vazio herda o token CSS atual),
+│   │                               3 ImageField de logo + 1 FileField de timbre (preparatório, nenhum gerador
+│   │                               de PDF lê daqui ainda) · `Empresa.get_padrao()` — nunca resolver a empresa
+│   │                               padrão por id fixo em código
+│   └── views.py                 ← EmpresaViewSet (CRUD sem DELETE/PUT — `http_method_names` restrito, inativar
+│                                    é `ativo=False` — create/update exigem login, list/retrieve AllowAny,
+│                                    audita via AuditoriaCreateMixin/UpdateMixin) + action `branding-login`
+│                                    (AllowAny, devolve nome/logos/cores da empresa `padrao=True` pra tela de
+│                                    login — ainda não consumida pelo frontend, `Login.jsx` intocado nesta fase)
 ├── clientes/                    ← Fase 1: CRM de clientes
 │   ├── models.py                ← Cliente (inclui rg/rg_orgao_emissor/nacionalidade/profissao/estado_civil —
 │   │                               opcionais no cadastro, exigidos na emissão de Contrato, ver Contrato.md), Endereço, TagCliente
@@ -243,7 +256,10 @@ arretado-crm/                    ← raiz React
     │                               configuracao, telefonesAlerta),
     │                               financeiroApi (categorias, contasBancarias, fornecedores, contasPagar
     │                               com baixa/cancelar/resumo, contasReceber com baixa/resumo, recorrentes,
-    │                               movimentos com manual, conferencias, fluxoCaixa, configuracao, telefonesAlerta)
+    │                               movimentos com manual, conferencias, fluxoCaixa, configuracao, telefonesAlerta),
+    │                               empresasApi (list/create/update, uploadArquivo/removerArquivo por campo
+    │                               de logo/timbre — FormData, mesmo padrão de pdvApi.updateFoto —,
+    │                               brandingLogin — ver "Multi-Empresa" abaixo)
     ├── utils/
     │   └── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — extraído de Auditoria.jsx,
     │                               reusado também pela aba/seção "Histórico" no modal de Orçamento/Evento
@@ -274,7 +290,10 @@ arretado-crm/                    ← raiz React
     │   ├── TaxasEntrega.jsx     ← cadastro de taxas por bairro + frete padrão (ver FRETE.md)
     │   ├── Notificacoes.jsx
     │   ├── Configuracoes.jsx
-    │   └── Vinculacoes.jsx
+    │   ├── Vinculacoes.jsx
+    │   └── Empresas.jsx         ← Multi-Empresa Fase 0: lista + modal criar/editar (dados básicos, 12
+    │                               swatches de cor com preview ao vivo, upload dos 3 logos + timbre depois
+    │                               de criada) — rota /empresas, menu Administração, `AdminRoute` (role=admin)
     ├── components/
     │   ├── layout/
     │   │   ├── AppLayout.jsx
@@ -347,6 +366,7 @@ arretado-crm/                    ← raiz React
 - **`POST /financeiro/movimentos/manual/`** (Fase 6, action em `MovimentoFinanceiroViewSet`, exige login) — único jeito de criar um `MovimentoFinanceiro` fora dos signals automáticos e das baixas de conta: lançamento avulso (ex.: saldo inicial de uma conta nova) ou estorno manual de qualquer situação não coberta pelos estornos automáticos dos signals. Sempre `origem_tipo='manual'` (fora da `UniqueConstraint` condicional, permite múltiplos lançamentos livremente) — chama `MovimentoFinanceiro.registrar()` como qualquer outro caminho de escrita, nunca `.objects.create()`. Audita `movimento_manual`
 - **`GET /financeiro/fluxo-caixa/?dias=N`** (Fase 6, `FluxoCaixaView`, `AllowAny`, `N` limitado a 1-90, default 14) — agregador sem model próprio: por dia, entre hoje e hoje+N-1, `entrada_realizada`/`saida_realizada` somam `MovimentoFinanceiro` com aquele `data_movimento` (bate exatamente com o ledger); `entrada_projetada`/`saida_projetada` somam o saldo restante (`valor - valor_recebido`/`valor - valor_pago`) de `ContaReceber`/`ContaPagar` `pendente`/`parcial` com aquele `data_vencimento` — já inclui `ContaPagar` de origem `recorrente` e `nota_fiscal` automaticamente, é a mesma query genérica por status, sem tratamento especial por origem. Resposta também traz `saldos_por_conta` (na chave `contas`) com a última `SaldoConferido` de cada `ContaBancaria` ativa (`None` se nunca conferida). **Não inclui o saldo dinâmico de Evento** (diferente de `contas-receber/resumo/`) — decisão de escopo desta sessão, para não estender o agregador além do que o texto da Fase 6 do `FINANCEIRO.md` pedia; revisitar se o usuário quiser ver eventos no fluxo de caixa também
 - **Módulo de Backup** (app `manutencao/`, spec completa em `backup.md`, fases 1-5 concluídas e envio externo configurado em 30/jul/2026) — cron diário `fazer_backup` (03:00) faz `pg_dump -Fc` do Postgres inteiro + `tarfile` de `MEDIA_ROOT`, salva local em `ConfiguracaoBackup.pasta_backup_db`/`pasta_backup_media` (padrão `/var/backups/arretado/{db,media}`), rotaciona local (`retencao_local_dias`, padrão 14) e envia pro Backblaze B2 via `rclone` (remote `backup-remoto`, bucket `arretado-backups`), rotacionando remoto (`retencao_remota_dias`, padrão 90). Cron `verificar_backup` (08:00) checa idade/tamanho do backup mais recente e alerta `TelefoneAlertaBackup` via WhatsApp se algo estiver errado — **sem dedup de alerta** (repete todo dia enquanto quebrado, diferente de `AlertaEventoEnviado`/`AlertaEstoqueEnviado`/`AlertaFinanceiroEnviado`, decisão consciente porque backup quebrado é o único problema que fica invisível até o dia em que se precisa dele). `fazer_backup` nunca chama `notificar()` — só `verificar_backup` alerta, fonte única de verdade sobre "o backup está ok". O `rclone.conf` (`/root/.config/rclone/rclone.conf`, fora do repo) está **sem senha de criptografia** de propósito — o arquivo já é `600 root:root`, mesmo nível de proteção do crontab que precisaria da senha de qualquer forma; ver `backup.md` se um dia precisar reconfigurar. **Restauração é sempre manual, nunca um management command** (decisão consciente, ver "O Que NÃO Fazer") — `pg_restore -h localhost -p 5432 -U arretado_user -d arretado_db --clean --if-exists --no-owner /var/backups/arretado/db/crm_db_TIMESTAMP.dump` (com `arretado.service` parado antes e religado depois) para o banco, `tar xzf /var/backups/arretado/media/media_TIMESTAMP.tar.gz -C /var/www/crm_arretado/ --overwrite` pra mídia; se o backup local também tiver sumido, baixar primeiro do B2 com `rclone copy backup-remoto:arretado-backups/{db,media}/ /var/backups/arretado/{db,media}/`
+- **Multi-Empresa** (app `empresas/`, spec completa em `MULTIEMPRESA.md`, 6 fases — só a Fase 0 implementada até aqui) — `empresas.Empresa` é multi-tenant **por linha** (FK `empresa`, mesmo banco), nunca `django-tenants`/schema separado. **Exatamente uma** `Empresa` tem `padrao=True` (`UniqueConstraint` condicional `Q(padrao=True)`), resolvida sempre via `Empresa.get_padrao()` — nunca por id fixo em código. Os 12 campos `cor_*` são hex opcionais (`blank=True`) — vazio significa "usa o valor default do token CSS", então a empresa matriz nasce (via data migration, `nome='Empresa Principal'`) sem nenhuma cor cadastrada e a UI continua idêntica à atual; o usuário renomeia/preenche depois pelo painel (`/empresas`, menu Administração, `role=admin`). `EmpresaViewSet` não tem `DELETE` nem `PUT` (`http_method_names` restrito) — inativar é sempre `ativo=False`, mesma filosofia de `DespesaRecorrente`/`ConfiguracaoIFood`. `create`/`update` exigem login e auditam via `AuditoriaCreateMixin`/`AuditoriaUpdateMixin` (genéricos, `registro_criado`/`registro_atualizado`); `list`/`retrieve`/`branding-login` continuam `AllowAny`. O serializer bloqueia (400) tanto criar uma 2ª empresa com `padrao=True` (a `UniqueConstraint` condicional já é detectada automaticamente pelo DRF como `UniqueValidator`, respeitando a condição) quanto desmarcar `padrao` da única empresa que o tem, sem promover outra na mesma requisição — hoje **não existe** endpoint de troca atômica de empresa padrão (fora de escopo da Fase 0; o campo `padrao` nem aparece editável no formulário do frontend, só como badge "Padrão" somente-leitura). `logo_horizontal`/`logo_negativo`/`logo_simbolo`/`timbre` reaproveitam a infra `/media/` já existente — `timbre` é campo **preparatório**, nenhum gerador de PDF lê dele nesta entrega. Nada em nenhum outro app foi alterado nesta fase (iFood/Financeiro/Dashboard/temas são Fases 1-5, ainda não iniciadas)
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -404,6 +424,7 @@ arretado-crm/                    ← raiz React
 | Resumo de Cozinha (Evento) | PDF operacional (A4 página cheia, ReportLab Platypus, sem timbre) com itens do Evento agrupados por categoria, pra a equipe de cozinha montar a produção — sem preços. Botão em `Eventos.jsx` (card de detalhe + linha da lista) | ✅ Concluída (só A4 página cheia — meia-folha/térmica fora de escopo por ora) |
 | Módulo Financeiro — Fases 0-7 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo, `DespesaRecorrente` + crons, `ContaReceber` + signals PDV/iFood/PagamentoEvento, integração Estoque → nota fiscal vira `ContaPagar`, fluxo de caixa + conferência de saldo + lançamento manual, frontend `Financeiro.jsx`) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`) + action `movimentos/manual/`, `ContaPagar`/`ContaReceber` (obrigação projetada, `valor_pago`/`valor_recebido`/`status` derivados), `DespesaRecorrente` + `AlertaFinanceiroEnviado` + crons `gerar_contas_recorrentes`/`alertar_vencimentos`, signals de venda (PDV/iFood/PagamentoEvento) batendo automaticamente no ledger com estorno em cancelamento, `estoque.ImportacaoNotaFiscal.fornecedor_cnpj` + geração automática de `ContaPagar` na confirmação da nota, `SaldoConferido` (conferências/) + `fluxo-caixa/` (agregador realizado x projetado + saldos por conta) + `Financeiro.jsx` (5 abas, `financeiroApi` em `services.js`, rota `/financeiro` + item de menu) | 🔄 Em andamento (fases 0-7 de 8 — falta só a Fase 8, testes finais + revisão do CLAUDE.md canônico) |
 | Sistema de Backup (Banco + Mídia) | App `manutencao/` (spec completa em `backup.md`) — `ConfiguracaoBackup`/`TelefoneAlertaBackup`, cron `fazer_backup` (pg_dump + tarfile de media/ + rotação local + envio pro Backblaze B2 via rclone + rotação remota) e `verificar_backup` (alerta WhatsApp sem dedup se backup ausente/velho/corrompido) | ✅ Concluída (fases 1-5 — envio externo configurado com Backblaze B2 em 30/jul/2026; restauração é sempre manual, ver Padrões Obrigatórios) |
+| Multi-Empresa + Temas — Fase 0 (app `empresas/` + model `Empresa`) | Spec completa em `MULTIEMPRESA.md` (6 fases, 0-5). App `empresas/`: model `Empresa` (multi-tenant por linha, branding em 12 campos de cor + 3 logos + timbre preparatório, `padrao` único via constraint condicional), `EmpresaViewSet` (CRUD sem DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (rota `/empresas`, menu Administração, `role=admin`) | 🔄 Em andamento (fase 0 de 6 — matriz criada via data migration, MANGAIO ainda não cadastrada; iFood/Usuários/Temas/Financeiro/Dashboard multi-empresa são as próximas 5 fases) |
 
 ---
 
@@ -606,6 +627,10 @@ GET              /api/v1/financeiro/fluxo-caixa/?dias=N            ← N entre 1
 GET/PATCH             /api/v1/manutencao/configuracao-backup/1/      ← singleton · exige login
 GET/POST              /api/v1/manutencao/telefones-alerta/           ← exige login
 GET/PATCH/DELETE      /api/v1/manutencao/telefones-alerta/{id}/      ← exige login · DELETE audita registro_excluido
+
+# Multi-Empresa — Fase 0 (ver MULTIEMPRESA.md e Padrões Obrigatórios)
+GET/POST/PATCH        /api/v1/empresas/[{id}/]           ← sem DELETE/PUT · POST/PATCH exigem login · audita registro_criado/registro_atualizado
+GET                   /api/v1/empresas/branding-login/   ← AllowAny · nome/logos/cores da empresa padrao=True (tela de login, ainda não consumido pelo frontend)
 ```
 
 ---
@@ -794,3 +819,8 @@ Infra já configurada em produção (não precisa recriar):
 - Não criar um management command `restaurar_backup` — restauração é sempre manual (`pg_restore`/`tar` direto, documentado em Padrões Obrigatórios e `backup.md`), decisão consciente pra evitar que algo tão raro e arriscado seja disparado sem querer
 - Não incluir o `.env` no backup — contém chaves (Z-API, `ANTHROPIC_API_KEY` futura); guardar `.env` é procedimento manual separado, fora deste sistema
 - Não adicionar dedup de alerta (`AlertaBackupEnviado`) ao `verificar_backup` — repetição diária enquanto o backup estiver quebrado é decisão consciente (é o único problema do sistema que fica invisível até o dia em que se precisa dele)
+- Não resolver a empresa padrão por id fixo em código (`Empresa.objects.get(pk=1)`) — sempre `Empresa.get_padrao()`
+- Não permitir duas empresas com `padrao=True`, nem desmarcar a única com `padrao=True` sem promover outra na mesma requisição — os dois casos são bloqueados no `EmpresaSerializer.validate()`/`UniqueConstraint` condicional; não contornar essa validação em nenhum endpoint novo
+- Não implementar `DELETE`/`PUT` em `empresas.Empresa` — inativar é sempre `ativo=False` (mesma filosofia de `DespesaRecorrente`/`ConfiguracaoIFood`); FKs de outros apps vão apontar pra cá com `PROTECT` nas próximas fases
+- Não hardcodar nome/cor/CNPJ de nenhuma empresa (Arretado ou futuras) em código, CSS ou serializer — é requisito de revenda do multi-empresa (ver `MULTIEMPRESA.md`); campo de cor vazio já cai no token CSS atual por construção, não duplicar a paleta da Arretado em nenhum lugar
+- Não tocar em iFood/Financeiro/Dashboard/Usuários/frontend de temas por causa do multi-empresa ainda — são as Fases 1-5 do `MULTIEMPRESA.md`, cada uma é sessão própria com sua própria migration/teste/confirmação de deploy

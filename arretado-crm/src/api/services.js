@@ -410,3 +410,20 @@ export const financeiroApi = {
     remove: (id)   => api.delete(`/financeiro/telefones-alerta/${id}/`),
   },
 }
+
+// ─── EMPRESAS (multi-empresa — Fase 0) ─────────────────────────────────────────
+
+export const empresasApi = {
+  list:   (params = {}) => api.get('/empresas/', { params }),
+  create: (data)        => api.post('/empresas/', data),
+  update: (id, data)    => api.patch(`/empresas/${id}/`, data),
+  // campo: 'logo_horizontal' | 'logo_negativo' | 'logo_simbolo' | 'timbre'
+  // FormData (arquivo) precisa de Content-Type undefined — navegador define o boundary (ver CLAUDE.md)
+  uploadArquivo: (id, campo, file) => {
+    const formData = new FormData()
+    formData.append(campo, file)
+    return api.patch(`/empresas/${id}/`, formData, { headers: { 'Content-Type': undefined } })
+  },
+  removerArquivo: (id, campo) => api.patch(`/empresas/${id}/`, { [campo]: null }),
+  brandingLogin:  ()          => api.get('/empresas/branding-login/'),
+}

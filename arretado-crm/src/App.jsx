@@ -26,6 +26,7 @@ import Relatorios from './pages/Relatorios'
 import Auditoria from './pages/Auditoria'
 import Estoque from './pages/Estoque'
 import Financeiro from './pages/Financeiro'
+import Empresas from './pages/Empresas'
 
 
 
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="financeiro" element={<Financeiro />} />
             <Route path="relatorios/ifood" element={<Relatorios />} />
             <Route path="auditoria" element={<AdminRoute><Auditoria /></AdminRoute>} />
+            <Route path="empresas" element={<AdminRoute><Empresas /></AdminRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

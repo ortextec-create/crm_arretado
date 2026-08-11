@@ -53,6 +53,7 @@ const NAV = [
       { to: '/usuarios',        icon: 'shield-lock', label: 'Usuários' },
       { to: '/taxas-entrega',   icon: 'map-pin',     label: 'Taxas de Entrega' },
       { to: '/configuracoes',   icon: 'settings',    label: 'Configurações' },
+      { to: '/empresas',        icon: 'building-store', label: 'Empresas', adminOnly: true },
       { to: '/auditoria',       icon: 'history',     label: 'Log de Auditoria', adminOnly: true },
     ],
   },

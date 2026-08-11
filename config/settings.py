@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'dashboard',
     'financeiro',
     'manutencao',
+    'empresas',
 ]
 
 MIDDLEWARE = [
