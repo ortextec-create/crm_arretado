@@ -26,7 +26,11 @@ Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, cat
 arretado/                        ← raiz Django
 ├── config/
 │   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard, financeiro, manutencao, empresas
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/versao/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/
+│   ├── versao.py                ← `obter_versao()` — versão da app via `git describe --tags --always --dirty`
+│   │                               (nunca mantida à mão), cacheada por processo com `lru_cache` — ver "Versão
+│   │                               do Sistema" abaixo
+│   ├── views.py                 ← `VersaoView` (APIView, AllowAny) — único endpoint fora de um app de domínio
 │   └── wsgi.py
 ├── empresas/                    ← Multi-Empresa (Fase 0 de 6, ver MULTIEMPRESA.md) — model Empresa (multi-tenant
 │   │                               por linha), ainda não consumido por nenhum outro app (Fases 1-5 pendentes)
@@ -259,7 +263,8 @@ arretado-crm/                    ← raiz React
     │                               movimentos com manual, conferencias, fluxoCaixa, configuracao, telefonesAlerta),
     │                               empresasApi (list/create/update, uploadArquivo/removerArquivo por campo
     │                               de logo/timbre — FormData, mesmo padrão de pdvApi.updateFoto —,
-    │                               brandingLogin — ver "Multi-Empresa" abaixo)
+    │                               brandingLogin — ver "Multi-Empresa" abaixo),
+    │                               sistemaApi (versao — ver "Versão do Sistema" abaixo)
     ├── utils/
     │   └── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — extraído de Auditoria.jsx,
     │                               reusado também pela aba/seção "Histórico" no modal de Orçamento/Evento
@@ -367,6 +372,7 @@ arretado-crm/                    ← raiz React
 - **`GET /financeiro/fluxo-caixa/?dias=N`** (Fase 6, `FluxoCaixaView`, `AllowAny`, `N` limitado a 1-90, default 14) — agregador sem model próprio: por dia, entre hoje e hoje+N-1, `entrada_realizada`/`saida_realizada` somam `MovimentoFinanceiro` com aquele `data_movimento` (bate exatamente com o ledger); `entrada_projetada`/`saida_projetada` somam o saldo restante (`valor - valor_recebido`/`valor - valor_pago`) de `ContaReceber`/`ContaPagar` `pendente`/`parcial` com aquele `data_vencimento` — já inclui `ContaPagar` de origem `recorrente` e `nota_fiscal` automaticamente, é a mesma query genérica por status, sem tratamento especial por origem. Resposta também traz `saldos_por_conta` (na chave `contas`) com a última `SaldoConferido` de cada `ContaBancaria` ativa (`None` se nunca conferida). **Não inclui o saldo dinâmico de Evento** (diferente de `contas-receber/resumo/`) — decisão de escopo desta sessão, para não estender o agregador além do que o texto da Fase 6 do `FINANCEIRO.md` pedia; revisitar se o usuário quiser ver eventos no fluxo de caixa também
 - **Módulo de Backup** (app `manutencao/`, spec completa em `backup.md`, fases 1-5 concluídas e envio externo configurado em 30/jul/2026) — cron diário `fazer_backup` (03:00) faz `pg_dump -Fc` do Postgres inteiro + `tarfile` de `MEDIA_ROOT`, salva local em `ConfiguracaoBackup.pasta_backup_db`/`pasta_backup_media` (padrão `/var/backups/arretado/{db,media}`), rotaciona local (`retencao_local_dias`, padrão 14) e envia pro Backblaze B2 via `rclone` (remote `backup-remoto`, bucket `arretado-backups`), rotacionando remoto (`retencao_remota_dias`, padrão 90). Cron `verificar_backup` (08:00) checa idade/tamanho do backup mais recente e alerta `TelefoneAlertaBackup` via WhatsApp se algo estiver errado — **sem dedup de alerta** (repete todo dia enquanto quebrado, diferente de `AlertaEventoEnviado`/`AlertaEstoqueEnviado`/`AlertaFinanceiroEnviado`, decisão consciente porque backup quebrado é o único problema que fica invisível até o dia em que se precisa dele). `fazer_backup` nunca chama `notificar()` — só `verificar_backup` alerta, fonte única de verdade sobre "o backup está ok". O `rclone.conf` (`/root/.config/rclone/rclone.conf`, fora do repo) está **sem senha de criptografia** de propósito — o arquivo já é `600 root:root`, mesmo nível de proteção do crontab que precisaria da senha de qualquer forma; ver `backup.md` se um dia precisar reconfigurar. **Restauração é sempre manual, nunca um management command** (decisão consciente, ver "O Que NÃO Fazer") — `pg_restore -h localhost -p 5432 -U arretado_user -d arretado_db --clean --if-exists --no-owner /var/backups/arretado/db/crm_db_TIMESTAMP.dump` (com `arretado.service` parado antes e religado depois) para o banco, `tar xzf /var/backups/arretado/media/media_TIMESTAMP.tar.gz -C /var/www/crm_arretado/ --overwrite` pra mídia; se o backup local também tiver sumido, baixar primeiro do B2 com `rclone copy backup-remoto:arretado-backups/{db,media}/ /var/backups/arretado/{db,media}/`
 - **Multi-Empresa** (app `empresas/`, spec completa em `MULTIEMPRESA.md`, 6 fases — só a Fase 0 implementada até aqui) — `empresas.Empresa` é multi-tenant **por linha** (FK `empresa`, mesmo banco), nunca `django-tenants`/schema separado. **Exatamente uma** `Empresa` tem `padrao=True` (`UniqueConstraint` condicional `Q(padrao=True)`), resolvida sempre via `Empresa.get_padrao()` — nunca por id fixo em código. Os 12 campos `cor_*` são hex opcionais (`blank=True`) — vazio significa "usa o valor default do token CSS", então a empresa matriz nasce (via data migration, `nome='Empresa Principal'`) sem nenhuma cor cadastrada e a UI continua idêntica à atual; o usuário renomeia/preenche depois pelo painel (`/empresas`, menu Administração, `role=admin`). `EmpresaViewSet` não tem `DELETE` nem `PUT` (`http_method_names` restrito) — inativar é sempre `ativo=False`, mesma filosofia de `DespesaRecorrente`/`ConfiguracaoIFood`. `create`/`update` exigem login e auditam via `AuditoriaCreateMixin`/`AuditoriaUpdateMixin` (genéricos, `registro_criado`/`registro_atualizado`); `list`/`retrieve`/`branding-login` continuam `AllowAny`. O serializer bloqueia (400) tanto criar uma 2ª empresa com `padrao=True` (a `UniqueConstraint` condicional já é detectada automaticamente pelo DRF como `UniqueValidator`, respeitando a condição) quanto desmarcar `padrao` da única empresa que o tem, sem promover outra na mesma requisição — hoje **não existe** endpoint de troca atômica de empresa padrão (fora de escopo da Fase 0; o campo `padrao` nem aparece editável no formulário do frontend, só como badge "Padrão" somente-leitura). `logo_horizontal`/`logo_negativo`/`logo_simbolo`/`timbre` reaproveitam a infra `/media/` já existente — `timbre` é campo **preparatório**, nenhum gerador de PDF lê dele nesta entrega. Nada em nenhum outro app foi alterado nesta fase (iFood/Financeiro/Dashboard/temas são Fases 1-5, ainda não iniciadas)
+- **Versão do Sistema** (`config/versao.py`, `config/views.py::VersaoView`) — a versão da aplicação é **sempre derivada do Git** (`git describe --tags --always --dirty`, `subprocess` puro), nunca mantida à mão em arquivo/settings. `obter_versao()` roda uma vez por worker do Gunicorn (`functools.lru_cache`) e não recalcula até o próximo restart. `GET /api/v1/versao/` (`AllowAny`, sem auditoria — é leitura pública, mesmo espírito de `branding-login/`) devolve `{versao, commit, commit_data, branch}`; `Sidebar.jsx` mostra no rodapé (substituiu o texto fixo `"CRM v1.0"`), com commit/data no `title` (hover). Cada release recebe uma **tag anotada** `vX.Y.Z` (`git tag -a vX.Y.Z -m "..."`, depois `git push origin vX.Y.Z` — tags não sobem com `git push` sem `--tags`/tag explícita) **e** uma entrada nova no `CHANGELOG.md` (formato Keep a Changelog) — os dois sempre juntos, no mesmo commit/momento do deploy. Baseline: `v1.0.0` tageada no commit que já estava em produção antes deste sistema existir (11/ago/2026)
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
@@ -453,6 +459,9 @@ arretado-crm/                    ← raiz React
 ## Endpoints Principais
 
 ```
+# Versão do Sistema (ver Padrões Obrigatórios)
+GET /api/v1/versao/    ← AllowAny · {versao, commit, commit_data, branch}, derivado de `git describe`
+
 # Clientes
 GET/POST             /api/v1/clientes/
 GET/PUT/PATCH/DELETE /api/v1/clientes/{id}/        ← DELETE exige login · audita registro_excluido
@@ -726,6 +735,12 @@ python manage.py migrate
 python manage.py collectstatic --noinput
 cd arretado-crm && npm ci && npm run build && cd ..
 systemctl restart arretado
+
+# Se o deploy marca uma nova versão (ver "Versão do Sistema" em Padrões Obrigatórios):
+git tag -a vX.Y.Z -m "Descrição curta da release"
+git push origin vX.Y.Z
+# + adicionar a entrada correspondente no CHANGELOG.md (commit separado ou junto do
+# último commit da feature, antes de tagear)
 ```
 
 **Atenção:** `npm run build` grava direto em `arretado-crm/dist/`, que é o `root` servido pelo Nginx (`/etc/nginx/sites-available/arretado`) — o build já é o deploy do frontend, não existe ambiente de teste isolado. Sempre confirmar com o usuário antes de rodar build na VPS.
@@ -824,3 +839,5 @@ Infra já configurada em produção (não precisa recriar):
 - Não implementar `DELETE`/`PUT` em `empresas.Empresa` — inativar é sempre `ativo=False` (mesma filosofia de `DespesaRecorrente`/`ConfiguracaoIFood`); FKs de outros apps vão apontar pra cá com `PROTECT` nas próximas fases
 - Não hardcodar nome/cor/CNPJ de nenhuma empresa (Arretado ou futuras) em código, CSS ou serializer — é requisito de revenda do multi-empresa (ver `MULTIEMPRESA.md`); campo de cor vazio já cai no token CSS atual por construção, não duplicar a paleta da Arretado em nenhum lugar
 - Não tocar em iFood/Financeiro/Dashboard/Usuários/frontend de temas por causa do multi-empresa ainda — são as Fases 1-5 do `MULTIEMPRESA.md`, cada uma é sessão própria com sua própria migration/teste/confirmação de deploy
+- Não hardcodar a versão do sistema em nenhum arquivo/settings/variável — `obter_versao()` sempre deriva de `git describe --tags`; criar uma release é sempre `git tag -a` + push da tag + entrada no `CHANGELOG.md`, nunca editar um número em código
+- Não esquecer da tag ao fazer um deploy que o usuário considera uma "versão nova" — sem tag, `git describe` só mostra `vX.Y.Z-N-g<hash>` (commits à frente da última tag), o que é informativo mas não é uma versão "oficial"; perguntar ao usuário se o deploy atual merece uma tag antes de criar uma (nem todo commit/deploy precisa virar release)

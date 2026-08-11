@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { sistemaApi } from '../../api/services'
 import { Avatar } from '../ui'
 import styles from './Sidebar.module.css'
 
@@ -64,6 +66,11 @@ const ROLE_LABEL = { admin: 'Administrador', gerente: 'Gerente', atendente: 'Ate
 export default function Sidebar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [versao, setVersao] = useState(null)
+
+  useEffect(() => {
+    sistemaApi.versao().then((r) => setVersao(r.data)).catch(() => {})
+  }, [])
 
   const handleLogout = async () => {
     await logout()
@@ -76,7 +83,12 @@ export default function Sidebar() {
         <h2 className="serif">
           Arretado <span style={{ color: 'var(--caramelo)' }}>Doces</span>
         </h2>
-        <p className={styles.brandSub}>CRM v1.0</p>
+        <p
+          className={styles.brandSub}
+          title={versao ? `Commit ${versao.commit} · ${versao.commit_data?.slice(0, 10) || ''}` : ''}
+        >
+          CRM {versao?.versao || '···'}
+        </p>
       </div>
 
       <nav className={styles.nav}>

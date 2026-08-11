@@ -427,3 +427,9 @@ export const empresasApi = {
   removerArquivo: (id, campo) => api.patch(`/empresas/${id}/`, { [campo]: null }),
   brandingLogin:  ()          => api.get('/empresas/branding-login/'),
 }
+
+// ─── SISTEMA (versão — derivada do Git, ver CLAUDE.md) ─────────────────────────
+
+export const sistemaApi = {
+  versao: () => api.get('/versao/'),
+}
