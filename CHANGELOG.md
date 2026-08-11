@@ -5,6 +5,20 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.1.0] - 2026-08-11
+
+### Adicionado
+- **Multi-Empresa — Fase 0** (app `empresas/`, spec completa em `MULTIEMPRESA.md`): model `Empresa`
+  (multi-tenant por linha, branding em 12 cores hex opcionais + 3 logos + timbre preparatório,
+  `padrao=True` único e protegido por constraint condicional), `EmpresaViewSet` (CRUD sem
+  DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (`/empresas`, menu Administração,
+  admin-only). Empresa matriz criada via data migration, sem cores/logos — UI da Arretado
+  permanece idêntica. Próximas 5 fases (iFood, Usuários/empresa ativa, temas, Financeiro,
+  Dashboard) ainda não iniciadas.
+- **Versão do Sistema**: `GET /api/v1/versao/` e rodapé da Sidebar agora derivam a versão de
+  `git describe --tags` (nunca mantida à mão). `CHANGELOG.md` (este arquivo) passa a documentar
+  cada release a partir daqui.
+
 ## [v1.0.0] - 2026-08-10
 
 Baseline — estado do sistema em produção antes da introdução do versionamento por Git.
