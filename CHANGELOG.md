@@ -5,6 +5,23 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.2.0] - 2026-08-12
+
+### Adicionado
+- **Multi-Empresa — Fase 1** (iFood, spec completa em `MULTIEMPRESA.md`): FK `empresa` (`PROTECT`)
+  em `ifood.ConfiguracaoIFood` e `ifood.PedidoIFood` (denormalizada — snapshot da empresa da
+  config no momento da criação do pedido), e FK `empresa` (`PROTECT`, `null=True`) em
+  `pedidos.PedidoUnificado`. Credencial de ação de pedido (confirmar/cancelar/despachar/
+  pronto-retirada/negociação) agora sempre resolvida pela empresa do pedido — nunca mais por
+  `ConfiguracaoIFood.objects.first()` —, permitindo dois merchants iFood simultâneos no mesmo
+  worker de polling. `GET /ifood/config/status/`, `GET /ifood/pedidos/estatisticas/` e
+  `GET /ifood/pedidos/` aceitam `?empresa=<id>`. PDV e Eventos continuam mono-empresa, sempre
+  gravando `Empresa.get_padrao()` no `PedidoUnificado`. `IFood.jsx` ganha seletor de empresa no
+  topo da tela (só visível com 2+ empresas ativas — hoje ainda invisível, MANGAIO não cadastrada).
+  2255 pedidos históricos e a configuração existente migrados para a empresa matriz sem perda de
+  dados. Próximas 4 fases (Usuários/empresa ativa, Temas, Financeiro, Dashboard/Relatórios)
+  ainda não iniciadas.
+
 ## [v1.1.0] - 2026-08-11
 
 ### Adicionado
