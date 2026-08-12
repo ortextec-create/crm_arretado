@@ -18,7 +18,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ifoodApi, clientesApi } from '../api/services'
+import { ifoodApi, clientesApi, empresasApi } from '../api/services'
 import Topbar from '../components/layout/Topbar'
 import { Btn, Avatar, Spinner, Toast, Modal, Field, Input } from '../components/ui'
 import styles from './IFood.module.css'
@@ -430,7 +430,7 @@ function PedidoDetail({ pedido, statusCfg, navigate, onCriarCliente, criandoClie
 }
 
 // ─── ConfigModal ──────────────────────────────────────────────────────────────
-function ConfigModal({ open, onClose, config, onSaved, setToast }) {
+function ConfigModal({ open, onClose, config, empresaId, empresaNome, onSaved, setToast }) {
   const [form, setForm]             = useState({ client_id: '', client_secret: '', merchant_id: '', polling_intervalo: 30, auto_confirmar: false, auto_despachar: false })
   const [saving, setSaving]         = useState(false)
   const [testing, setTesting]       = useState(false)
@@ -458,8 +458,11 @@ function ConfigModal({ open, onClose, config, onSaved, setToast }) {
     try {
       const payload = { ...form }
       if (!payload.client_secret) delete payload.client_secret
-      if (config) await ifoodApi.updateConfig(config.id, payload)
-      else        await ifoodApi.createConfig(payload)
+      if (config) {
+        await ifoodApi.updateConfig(config.id, payload)
+      } else {
+        await ifoodApi.createConfig({ ...payload, empresa: empresaId })
+      }
       setToast({ message: 'Configuração salva!', type: 'success' })
       onSaved()
     } catch {
@@ -498,7 +501,8 @@ function ConfigModal({ open, onClose, config, onSaved, setToast }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Configuração iFood" width={500}
+    <Modal open={open} onClose={onClose}
+      title={empresaNome ? `Configuração iFood — ${empresaNome}` : 'Configuração iFood'} width={500}
       footer={
         <>
           <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
@@ -645,6 +649,9 @@ export default function IFood() {
   const [loading,      setLoading]      = useState(true)
   const [selected,     setSelected]     = useState(null)
   const [config,       setConfig]       = useState(null)
+  const [configs,      setConfigs]      = useState([])
+  const [empresas,     setEmpresas]     = useState([])
+  const [empresaId,    setEmpresaId]    = useState(null)
 
   // Modals
   const [showConfig,   setShowConfig]   = useState(false)
@@ -668,13 +675,14 @@ export default function IFood() {
     try {
       const params = {}
       if (search) params.search = search
+      if (empresaId) params.empresa = empresaId
       const statusFilter = TAB_FILTERS[tab]
       if (typeof statusFilter === 'string') params.status = statusFilter
 
       const [pedRes, statsRes, statusRes] = await Promise.allSettled([
         ifoodApi.listPedidos(params),
-        ifoodApi.estatisticas(),
-        ifoodApi.statusGeral(),
+        ifoodApi.estatisticas(empresaId),
+        ifoodApi.statusGeral(empresaId),
       ])
 
       let lista = pedRes.status === 'fulfilled'
@@ -696,7 +704,7 @@ export default function IFood() {
     } finally {
       setLoading(false)
     }
-  }, [tab, search])
+  }, [tab, search, empresaId])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -713,12 +721,28 @@ export default function IFood() {
   const loadConfig = async () => {
     try {
       const r = await ifoodApi.getConfig()
-      const configs = r.data.results ?? r.data
-      setConfig(configs[0] || null)
-    } catch { setConfig(null) }
+      const lista = r.data.results ?? r.data
+      setConfigs(lista)
+    } catch { setConfigs([]) }
   }
 
-  useEffect(() => { loadConfig() }, [])
+  const loadEmpresas = async () => {
+    try {
+      const r = await empresasApi.list()
+      const lista = (r.data.results ?? r.data).filter(e => e.ativo)
+      setEmpresas(lista)
+      const padrao = lista.find(e => e.padrao) || lista[0]
+      if (padrao) setEmpresaId(padrao.id)
+    } catch { setEmpresas([]) }
+  }
+
+  useEffect(() => { loadConfig(); loadEmpresas() }, [])
+
+  // Config exibida no card/modal é sempre a da empresa selecionada — nunca configs[0]
+  // (uma empresa nova pode não ter config ainda; ver MULTIEMPRESA.md Fase 1)
+  useEffect(() => {
+    setConfig(configs.find(c => c.empresa === empresaId) || null)
+  }, [configs, empresaId])
 
   // ── Ações ──────────────────────────────────────────────────────────────────
   const openDetail = async (pedido) => {
@@ -864,6 +888,15 @@ export default function IFood() {
         onSearch={setSearch}
         actions={
           <>
+            {empresas.length > 1 && (
+              <select className={styles.select} value={empresaId ?? ''}
+                onChange={e => setEmpresaId(Number(e.target.value))}
+                title="Empresa">
+                {empresas.map(e => (
+                  <option key={e.id} value={e.id}>{e.nome}</option>
+                ))}
+              </select>
+            )}
             {statusGeral?.polling_ativo
               ? <div className={styles.pollingBadge}><span className={styles.dot} />Polling ativo</div>
               : <div className={styles.pollingBadgeOff}><span className={styles.dotOff} />Polling pausado</div>
@@ -931,6 +964,15 @@ export default function IFood() {
                       style={{ background: sc.color + '22', color: sc.color, border: `1px solid ${sc.color}44` }}>
                       <i className={`ti ti-${sc.icon}`} style={{ fontSize: 11 }} /> {sc.label}
                     </span>
+                    {empresas.length > 1 && p.empresa_nome && (
+                      <span style={{
+                        fontSize: 10, padding: '1px 7px', borderRadius: 10,
+                        background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', fontWeight: 600,
+                        border: '1px solid var(--border)',
+                      }}>
+                        {p.empresa_nome}
+                      </span>
+                    )}
                     {/* Badge de negociação pendente */}
                     {p.negociacao_pendente && (
                       <span style={{
@@ -1182,6 +1224,8 @@ export default function IFood() {
         open={showConfig}
         onClose={() => setShowConfig(false)}
         config={config}
+        empresaId={empresaId}
+        empresaNome={empresas.length > 1 ? empresas.find(e => e.id === empresaId)?.nome : null}
         onSaved={() => { loadConfig(); loadData(); setShowConfig(false) }}
         setToast={setToast}
       />

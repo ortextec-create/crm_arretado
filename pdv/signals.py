@@ -20,6 +20,7 @@ def on_pedido_pdv_save(sender, instance, **kwargs):
 
 
 def _sincronizar(pedido):
+    from empresas.models import Empresa
     from pedidos.models import PedidoUnificado
 
     # Mapa de status PDV → status normalizado
@@ -64,6 +65,7 @@ def _sincronizar(pedido):
 
     defaults = {
         'canal':           'pdv',
+        'empresa':         Empresa.get_padrao(),
         'numero':          pedido.numero,
         'cliente':         pedido.cliente,
         'status':          STATUS_MAP.get(pedido.status, 'pendente'),

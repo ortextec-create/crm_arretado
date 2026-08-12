@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
+from empresas.models import Empresa
 from eventos.models import Evento, ItemEvento
 from fichas.models import FichaTecnica, ItemFichaTecnica, MateriaPrima
 from financeiro.models import ConfiguracaoFinanceira, ContaPagar, Fornecedor
@@ -213,7 +214,9 @@ class DebitoVendaIFoodTests(TestCase):
             materia_prima_origem=_materia(nome='Chocolate (compra)'),
             quantidade_estoque=Decimal('30'),
         )
-        pedido = PedidoIFood.objects.create(ifood_order_id='abc-123', ifood_merchant_id='merch-1')
+        pedido = PedidoIFood.objects.create(
+            ifood_order_id='abc-123', ifood_merchant_id='merch-1', empresa=Empresa.get_padrao(),
+        )
         ItemPedidoIFood.objects.create(pedido=pedido, nome='Brigadeiro Gourmet', quantidade=4)
 
         pedido.status = 'CONFIRMED'
@@ -223,7 +226,9 @@ class DebitoVendaIFoodTests(TestCase):
         self.assertEqual(produto.quantidade_estoque, Decimal('26'))
 
     def test_sem_correspondencia_nao_falha_e_nao_debita(self):
-        pedido = PedidoIFood.objects.create(ifood_order_id='abc-456', ifood_merchant_id='merch-1')
+        pedido = PedidoIFood.objects.create(
+            ifood_order_id='abc-456', ifood_merchant_id='merch-1', empresa=Empresa.get_padrao(),
+        )
         ItemPedidoIFood.objects.create(pedido=pedido, nome='Produto Que Nao Existe', quantidade=2)
 
         pedido.status = 'CONFIRMED'

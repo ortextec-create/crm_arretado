@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
 from clientes.models import Cliente
+from empresas.models import Empresa
 from eventos.models import Evento, PagamentoEvento
 from ifood.models import PedidoIFood
 from pdv.models import PedidoPDV
@@ -452,6 +453,7 @@ class IfoodSignalTests(TestCase):
     def _pedido(self, order_id='order-1'):
         return PedidoIFood.objects.create(
             ifood_order_id=order_id, ifood_merchant_id='merch-1', total_valor=Decimal('45.00'),
+            empresa=Empresa.get_padrao(),
         )
 
     def test_concluded_no_ato_gera_movimento_direto(self):

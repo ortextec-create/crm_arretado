@@ -486,6 +486,7 @@ def sincronizar_evento(evento):
     Cria ou atualiza o PedidoUnificado correspondente a um Evento.
     Chamado pelo signal post_save do Evento (eventos/signals.py).
     """
+    from empresas.models import Empresa
     from pedidos.models import PedidoUnificado
 
     itens_snapshot = [
@@ -500,6 +501,7 @@ def sincronizar_evento(evento):
     ]
 
     defaults = {
+        'empresa':    Empresa.get_padrao(),
         'cliente':    evento.cliente,
         'numero':     evento.numero,
         'status':     EVENTO_STATUS_MAP.get(evento.status, 'pendente'),

@@ -382,6 +382,7 @@ def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
         ifood_order_id    = order_id,
         ifood_merchant_id = detalhe.get('merchant', {}).get('id', config.merchant_id),
         display_id        = detalhe.get('displayId', ''),
+        empresa           = config.empresa,
         cliente           = cliente_obj,
         status            = STATUS_MAP.get(detalhe.get('fullCode', 'PLACED'), 'PLACED'),
         order_type        = detalhe.get('orderType', 'DELIVERY'),

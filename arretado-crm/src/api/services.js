@@ -29,11 +29,11 @@ export const tagsApi = {
 // ─── IFOOD ──────────────────────────────────────────────────────────────────
 
 export const ifoodApi = {
-  // Configuração
+  // Configuração — uma linha por empresa (ver MULTIEMPRESA.md Fase 1)
   getConfig:      ()          => api.get('/ifood/config/'),
   createConfig:   (data)      => api.post('/ifood/config/', data),
   updateConfig:   (id, data)  => api.patch(`/ifood/config/${id}/`, data),
-  statusGeral:    ()          => api.get('/ifood/config/status/'),
+  statusGeral:    (empresaId) => api.get('/ifood/config/status/', { params: empresaId ? { empresa: empresaId } : {} }),
   testarConexao:  (id)        => api.post(`/ifood/config/${id}/testar/`),
   pollingManual:  (id)        => api.post(`/ifood/config/${id}/polling-manual/`),
   ativarPolling:  (id)        => api.post(`/ifood/config/${id}/ativar-polling/`),
@@ -41,7 +41,7 @@ export const ifoodApi = {
   // Pedidos
   listPedidos:    (params={}) => api.get('/ifood/pedidos/', { params }),
   getPedido:      (id)        => api.get(`/ifood/pedidos/${id}/`),
-  estatisticas:   ()          => api.get('/ifood/pedidos/estatisticas/'),
+  estatisticas:   (empresaId) => api.get('/ifood/pedidos/estatisticas/', { params: empresaId ? { empresa: empresaId } : {} }),
   confirmar:      (id)        => api.post(`/ifood/pedidos/${id}/confirmar/`),
   despachar:      (id)        => api.post(`/ifood/pedidos/${id}/despachar/`),
   prontoRetirada: (id)        => api.post(`/ifood/pedidos/${id}/pronto-retirada/`),

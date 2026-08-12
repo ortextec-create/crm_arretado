@@ -4,13 +4,14 @@ from .models import ConfiguracaoIFood, PedidoIFood, ItemPedidoIFood, EventoPolli
 
 class ConfiguracaoIFoodSerializer(serializers.ModelSerializer):
     token_valido    = serializers.ReadOnlyField()
+    empresa_nome    = serializers.CharField(source='empresa.nome', read_only=True)
     # Nunca expõe o secret completo — apenas os primeiros 6 chars
     client_secret_preview = serializers.SerializerMethodField()
 
     class Meta:
         model  = ConfiguracaoIFood
         fields = [
-            'id', 'client_id', 'client_secret', 'client_secret_preview',
+            'id', 'empresa', 'empresa_nome', 'client_id', 'client_secret', 'client_secret_preview',
             'merchant_id', 'polling_ativo', 'polling_intervalo', 'auto_confirmar', 'auto_despachar',
             'token_valido', 'ultimo_polling', 'token_expira_em',
             'criado_em', 'atualizado_em',
@@ -45,11 +46,13 @@ class PedidoIFoodListSerializer(serializers.ModelSerializer):
     status_display     = serializers.CharField(source='get_status_display', read_only=True)
     order_type_display = serializers.CharField(source='get_order_type_display', read_only=True)
     cliente_nome_crm   = serializers.SerializerMethodField()
+    empresa_nome       = serializers.CharField(source='empresa.nome', read_only=True)
 
     class Meta:
         model  = PedidoIFood
         fields = [
             'id', 'ifood_order_id', 'display_id',
+            'empresa', 'empresa_nome',
             'status', 'status_display',
             'order_type', 'order_type_display', 'delivery_mode',
             'total_valor', 'payment_method',
@@ -69,6 +72,7 @@ class PedidoIFoodDetailSerializer(serializers.ModelSerializer):
     itens              = ItemPedidoSerializer(many=True, read_only=True)
     cliente_crm_id     = serializers.SerializerMethodField()
     cliente_nome_crm   = serializers.SerializerMethodField()
+    empresa_nome       = serializers.CharField(source='empresa.nome', read_only=True)
 
     # ── Campos extras para homologação ──────────────────────────────────────
     # Pagamento detalhado
@@ -98,6 +102,7 @@ class PedidoIFoodDetailSerializer(serializers.ModelSerializer):
         model  = PedidoIFood
         fields = [
             'id', 'ifood_order_id', 'display_id',
+            'empresa', 'empresa_nome',
             'status', 'status_display',
             'order_type', 'order_type_display', 'delivery_mode',
             'total_valor', 'subtotal', 'taxa_entrega', 'desconto',

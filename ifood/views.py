@@ -8,12 +8,26 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from empresas.models import Empresa
+
 from .models import ConfiguracaoIFood, PedidoIFood, EventoPollingIFood
 from notificacoes.servico import notificar, _fone_pedido
 
 
 def _notificar_ifood(pedido, mensagem):
     notificar(_fone_pedido(pedido), mensagem, cliente=pedido.cliente, tipo='pedido')
+
+
+def _resolver_config_por_empresa(request):
+    """
+    Resolve a ConfiguracaoIFood a partir de ?empresa=<id> (querystring); sem o
+    parâmetro, cai na empresa padrao=True — nunca .objects.first() (ver
+    MULTIEMPRESA.md Fase 1, "não escolher credencial por .objects.first()").
+    """
+    empresa_id = request.query_params.get('empresa')
+    if empresa_id:
+        return ConfiguracaoIFood.objects.filter(empresa_id=empresa_id).select_related('empresa').first()
+    return ConfiguracaoIFood.objects.filter(empresa=Empresa.get_padrao()).select_related('empresa').first()
 from .serializers import (
     ConfiguracaoIFoodSerializer,
     PedidoIFoodListSerializer,
@@ -37,7 +51,7 @@ class CsrfExemptMixin:
 
 class ConfiguracaoIFoodViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     """CRUD da configuração iFood + ações de teste e polling manual."""
-    queryset           = ConfiguracaoIFood.objects.all()
+    queryset           = ConfiguracaoIFood.objects.select_related('empresa').all()
     serializer_class   = ConfiguracaoIFoodSerializer
     permission_classes = [AllowAny]
 
@@ -87,16 +101,17 @@ class ConfiguracaoIFoodViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='status')
     def status_geral(self, request):
-        config = ConfiguracaoIFood.objects.first()
+        config = _resolver_config_por_empresa(request)
         if not config:
             return Response({'configurado': False})
 
-        pendentes    = PedidoIFood.objects.filter(status='PLACED').count()
+        pendentes    = PedidoIFood.objects.filter(status='PLACED', empresa=config.empresa).count()
         hoje         = timezone.localtime(timezone.now()).date()
-        pedidos_hoje = PedidoIFood.objects.filter(ifood_criado_em__date=hoje).count()
+        pedidos_hoje = PedidoIFood.objects.filter(ifood_criado_em__date=hoje, empresa=config.empresa).count()
 
         return Response({
             'configurado':    True,
+            'empresa':        config.empresa_id,
             'polling_ativo':  config.polling_ativo,
             'token_valido':   config.token_valido,
             'ultimo_polling': config.ultimo_polling,
@@ -108,7 +123,7 @@ class ConfiguracaoIFoodViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
 class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
     """Listagem e detalhe de pedidos iFood + ações confirmar/cancelar/despachar."""
-    queryset           = PedidoIFood.objects.prefetch_related('itens').select_related('cliente').all()
+    queryset           = PedidoIFood.objects.prefetch_related('itens').select_related('cliente', 'empresa').all()
     permission_classes = [AllowAny]
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['ifood_criado_em', 'total_valor', 'status']
@@ -126,6 +141,10 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
         status_f = params.get('status')
         if status_f:
             qs = qs.filter(status=status_f)
+
+        empresa_f = params.get('empresa')
+        if empresa_f:
+            qs = qs.filter(empresa_id=empresa_f)
 
         search = params.get('search', '').strip()
         if search:
@@ -145,11 +164,13 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
 
         return qs
 
-    def _get_client(self):
-        config = ConfiguracaoIFood.objects.first()
+    def _get_client(self, pedido):
+        # Credencial sempre resolvida pela empresa do pedido — nunca .objects.first()
+        # (ver MULTIEMPRESA.md Fase 1: dois merchants simultâneos, cada um com a sua)
+        config = ConfiguracaoIFood.objects.filter(empresa=pedido.empresa).first()
         if not config:
             return None, Response(
-                {'detail': 'Integração iFood não configurada.'},
+                {'detail': 'Integração iFood não configurada para a empresa deste pedido.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         return IFoodClient(config), None
@@ -159,7 +180,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
         pedido = self.get_object()
         if not pedido.pode_confirmar:
             return Response({'detail': f'Pedido não pode ser confirmado (status: {pedido.status})'}, status=400)
-        client, err = self._get_client()
+        client, err = self._get_client(pedido)
         if err:
             return err
         try:
@@ -178,7 +199,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             return Response({'detail': f'Pedido não pode ser cancelado (status: {pedido.status})'}, status=400)
         reason_code = request.data.get('cancellationCode', '501')
         reason_desc = request.data.get('reason', '')
-        client, err = self._get_client()
+        client, err = self._get_client(pedido)
         if err:
             return err
         try:
@@ -206,7 +227,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
                 status=400,
             )
 
-        client, err = self._get_client()
+        client, err = self._get_client(pedido)
         if err:
             return err
 
@@ -236,7 +257,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
                 status=400,
             )
 
-        client, err = self._get_client()
+        client, err = self._get_client(pedido)
         if err:
             return err
 
@@ -257,7 +278,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['post'], url_path='despachar')
     def despachar(self, request, pk=None):
         pedido = self.get_object()
-        client, err = self._get_client()
+        client, err = self._get_client(pedido)
         if err:
             return err
         try:
@@ -272,7 +293,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['post'], url_path='pronto-retirada')
     def pronto_retirada(self, request, pk=None):
         pedido = self.get_object()
-        client, err = self._get_client()
+        client, err = self._get_client(pedido)
         if err:
             return err
         try:
@@ -308,7 +329,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['get'], url_path='motivos-cancelamento')
     def motivos_cancelamento(self, request, pk=None):
         pedido = self.get_object()
-        client, err = self._get_client()
+        client, err = self._get_client(pedido)
         if err:
             return err
         try:
@@ -322,11 +343,16 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
         hoje = timezone.localtime(timezone.now()).date()
         mes  = timezone.localtime(timezone.now()).replace(day=1).date()
 
-        qs_hoje = PedidoIFood.objects.filter(ifood_criado_em__date=hoje)
-        qs_mes  = PedidoIFood.objects.filter(ifood_criado_em__date__gte=mes)
+        base = PedidoIFood.objects.all()
+        empresa_f = request.query_params.get('empresa')
+        if empresa_f:
+            base = base.filter(empresa_id=empresa_f)
+
+        qs_hoje = base.filter(ifood_criado_em__date=hoje)
+        qs_mes  = base.filter(ifood_criado_em__date__gte=mes)
 
         por_status = {}
-        for row in PedidoIFood.objects.values('status').annotate(total=Count('id')):
+        for row in base.values('status').annotate(total=Count('id')):
             por_status[row['status']] = row['total']
 
         return Response({
@@ -342,7 +368,7 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
             },
             'pendentes':   por_status.get('PLACED', 0),
             'por_status':  por_status,
-            'total_geral': PedidoIFood.objects.count(),
+            'total_geral': base.count(),
         })
 
 

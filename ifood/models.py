@@ -1,10 +1,12 @@
 from django.db import models
 from django.utils import timezone
 from clientes.models import Cliente
+from empresas.models import Empresa
 
 
 class ConfiguracaoIFood(models.Model):
-    """Credenciais OAuth e configurações do merchant iFood."""
+    """Credenciais OAuth e configurações do merchant iFood. Uma linha por empresa/merchant (ver MULTIEMPRESA.md Fase 1)."""
+    empresa       = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name='configuracoes_ifood')
     client_id     = models.CharField(max_length=200)
     client_secret = models.CharField(max_length=200)
     merchant_id   = models.CharField(max_length=200)
@@ -67,6 +69,10 @@ class PedidoIFood(models.Model):
         ('TAKEOUT',   'Retirada'),
         ('INDOOR',    'Mesa'),
     ]
+
+    # Empresa dona do pedido — denormalizada a partir da ConfiguracaoIFood no momento
+    # da criação (snapshot, ver polling_worker.py::_criar_pedido, MULTIEMPRESA.md Fase 1)
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name='pedidos_ifood')
 
     # iFood IDs
     ifood_order_id  = models.CharField(max_length=100, unique=True, db_index=True)

@@ -11,6 +11,7 @@ que permite consultas unificadas por cliente sem joins complexos.
 from django.db import models
 from django.utils import timezone
 from clientes.models import Cliente
+from empresas.models import Empresa
 
 
 class PedidoUnificado(models.Model):
@@ -46,6 +47,16 @@ class PedidoUnificado(models.Model):
 
     # Número/código exibível ao operador (display_id do iFood, número do PDV…)
     numero = models.CharField(max_length=50, blank=True, default='')
+
+    # Empresa dona do pedido (ver MULTIEMPRESA.md Fase 1). iFood propaga a empresa da
+    # ConfiguracaoIFood; PDV/Eventos são mono-empresa por escopo e sempre gravam a
+    # empresa padrao=True, resolvida em runtime via Empresa.get_padrao() — nunca id fixo.
+    empresa = models.ForeignKey(
+        Empresa,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name='pedidos_unificados',
+    )
 
     # ── Vínculo com o CRM ─────────────────────────────────────────────────
     cliente = models.ForeignKey(
@@ -194,6 +205,7 @@ def sincronizar_pedido_ifood(pedido_ifood):
     """
     defaults = {
         'numero':          pedido_ifood.display_id or pedido_ifood.ifood_order_id[:8],
+        'empresa':         pedido_ifood.empresa,
         'cliente':         pedido_ifood.cliente,
         'status':          IFOOD_STATUS_MAP.get(pedido_ifood.status, 'pendente'),
         'status_original': pedido_ifood.status,
