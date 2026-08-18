@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 11/ago/2026.
+> Última atualização: 18/ago/2026.
 
 ---
 
@@ -172,8 +172,10 @@ arretado/                        ← raiz Django
 │   └── management/commands/alertar_estoque_baixo.py ← cron diário: alerta a equipe (WhatsApp) sobre insumo/produto
 │                                     com quantidade_estoque abaixo de estoque_minimo
 ├── relatorios/                  ← Relatórios consolidados por canal
-│   ├── views.py                 ← RelatorioIFoodView (resumo + agrupado por dia/mês, export Excel/PDF)
-│   └── urls.py                  ← ifood/ (mais canais a adicionar conforme necessário)
+│   ├── views.py                 ← RelatorioIFoodView (resumo + agrupado por dia/mês, export Excel/PDF — só
+│   │                               canal iFood) + ProdutosMaisVendidosView (ranking cross-canal iFood+PDV+
+│   │                               Eventos, ver "Produtos Mais Vendidos" abaixo — só JSON, sem export)
+│   └── urls.py                  ← ifood/, produtos-mais-vendidos/ (mais canais a adicionar conforme necessário)
 ├── dashboard/                    ← Dashboard multi-canal (só leitura, sem models próprios)
 │   ├── views.py                 ← DashboardResumoView (APIView, GET) — agrega PedidoUnificado (iFood/PDV)
 │   │                               + PagamentoEvento/Evento (eventos) num único JSON, ver regras abaixo
@@ -294,7 +296,10 @@ arretado-crm/                    ← raiz React
     │   ├── CentralPrecos.jsx    ← precificação (matérias, ajuste linear, semáforo, parâmetros)
     │   ├── Estoque.jsx          ← controle de estoque (4 abas: Insumos, Produtos, Produção, Movimentações) +
     │   │                          modais Registrar Compra (manual), Ajuste de Inventário, Configurações
-    │   ├── Relatorios.jsx       ← relatório consolidado iFood (resumo, gráfico por período, export Excel/PDF)
+    │   ├── Relatorios.jsx       ← 2 abas: "Por Canal (iFood)" (relatório original, resumo + gráfico por
+    │   │                          período + export Excel/PDF) e "Produtos Mais Vendidos" (ranking cross-canal
+    │   │                          iFood+PDV+Eventos, toggle de canais + período + ordenar por quantidade/valor,
+    │   │                          só tela — sem export)
     │   ├── Financeiro.jsx       ← 5 abas: Contas a Pagar (+ seção Despesas Recorrentes), Contas a Receber,
     │   │                          Fluxo de Caixa (gráfico divergente realizado×projetado + cards de conta
     │   │                          com conferência de saldo + lançamento manual), Categorias, Configurações
@@ -368,6 +373,7 @@ arretado-crm/                    ← raiz React
 - **Resumo de Cozinha** (`GET /eventos/{id}/resumo-cozinha/`, `eventos/pdf_resumo_cozinha.py::gerar_pdf_resumo_cozinha(evento)`) — PDF operacional interno (não client-facing) com a lista de itens do Evento agrupada por categoria, pra a cozinha montar a produção. Usa ReportLab **Platypus** (não canvas cru como `pdf_orcamento.py`), porque a lista de itens tem tamanho variável e pode quebrar página — e **sem** timbre/marca d'água (`_mesclar_timbre` nunca é chamado aqui). Itens são ordenados por `produto__categoria__ordem`/`produto__categoria__nome`/`nome` na própria query e agrupados em memória com `itertools.groupby` (nunca reordenar em Python depois) — item sem `produto` ou cujo `produto` não tem `categoria` cai no grupo `"Outros"`, sempre por último (a ordenação por `ordem` já garante isso via `NULLS LAST` do Postgres, então o agrupamento em Python não precisa reordenar nada). **Nunca expõe preço** (`preco_unit`/`preco_total`/`valor_total`) — é 100% operacional. Todo texto livre (nome do cliente, endereço do local, observação do item/evento) passa por `xml.sax.saxutils.escape()` antes de virar `Paragraph`, porque a mini-sintaxe XML do ReportLab quebra a geração do PDF se o texto tiver `&`/`<`/`>` sem escapar. Endpoint é `AllowAny` (mesmo padrão de `OrcamentoViewSet.pdf`/`ContratoViewSet.pdf` — é leitura pura, não audita). Botão "Imprimir resumo de cozinha" (`ti-printer`) em dois lugares no frontend — card de detalhe do Evento e linha da lista — ambos chamando `eventosApi.resumoCozinha(id)` (blob) e abrindo com `window.open(url, '_blank')`, mesmo padrão de `handlePdf`/`handleVerPdf` já usado pros outros PDFs do sistema
 - **Criação/edição/status/item de Orçamento e Evento exigem login** (`create`, `update`/`partial_update`, `enviar`/`aprovar`/`recusar`/`restaurar` no Orçamento, `confirmar`/`iniciar_producao`/`marcar_pronto`/`entregar`/`cancelar` no Evento, `adicionar_item`/`editar_item`) — mudança de comportamento em relação ao que existia antes desta auditoria (essas actions eram `AllowAny`). Único motivo de exigir login aqui é garantir que sempre exista um ator no log; `converter_em_evento` e `enviar_whatsapp` continuam `AllowAny` de propósito (oportunistas, capturam o ator só quando o token vier)
 - **`dashboard/` é um app só-leitura, sem models** — `DashboardResumoView` (`GET /api/v1/dashboard/resumo/`) apenas agrega dados que já existem em `pedidos.PedidoUnificado` e `eventos.Evento`/`PagamentoEvento`. Regra importante: a receita de **Eventos** no dia (`canais.eventos.recebido_hoje` e a fatia "eventos" do `grafico_7dias`) vem **exclusivamente** de `PagamentoEvento` com `status='pago'` e `data_pagamento` do dia — nunca de `Evento.valor_total` nem do status de entrega (é recebimento efetivo de caixa, não valor do pedido). Já `ticket_medio.eventos` é a exceção: usa `Evento.valor_total` (não `PagamentoEvento`) dos eventos `status='entregue'` nos últimos 30 dias, porque ali a métrica é tamanho médio de venda, não fluxo de caixa. `fila_operacional` cruza os 3 canais lendo só `PedidoUnificado` (o `Evento` já sincroniza pra lá via `EVENTO_STATUS_MAP`), nunca faz query separada em `eventos.Evento`
+- **`relatorios.ProdutosMaisVendidosView`** (`GET /relatorios/produtos-mais-vendidos/`, `AllowAny`, sem model próprio) — ranking de produtos mais vendidos consolidando iFood + PDV + Eventos por quantidade e valor, num período configurável. Só conta venda **de fato concretizada**: iFood `status='CONCLUDED'` (via `ItemPedidoIFood`), PDV `status` em confirmado/em_preparo/pronto/concluido — exclui aberto/cancelado (via `ItemPedidoPDV`), Evento `status='entregue'` (via `ItemEvento`). **Orçamentos ficam de fora de propósito** — `ItemOrcamento` é cotação, não venda fechada, mesmo raciocínio de nunca materializar `ContaReceber` pra Evento. Agrupa por **nome do item normalizado** (`unicodedata` remove acento, lowercase, colapsa espaços) — nunca por `pdv.Produto`, porque `ItemPedidoIFood` nunca tem FK pra `Produto` (só nome em texto, mesma limitação já documentada no débito automático de estoque); então "Bolo de Chocolate" e "BOLO DE CHOCOLATE" agrupam junto entre canais, mas variações reais de nome (ex: com/sem tamanho) ficam separadas — decisão consciente de simplicidade, sem fuzzy match. `canal` aceita múltiplos valores (`?canal=ifood&canal=pdv`, default: todos os 3), `ordenar` é `quantidade` (default) ou `valor`, `limit` entre 1-200 (default 30). Resposta sempre traz o breakdown por canal de cada produto (`produtos[].canais.{ifood,pdv,eventos}`), não só o total agregado. Só JSON — sem export Excel/PDF (diferente de `RelatorioIFoodView`), decisão consciente desta entrega; revisitar se o usuário pedir
 - **Módulo Financeiro** (app `financeiro/`, spec completa em `FINANCEIRO.md` — em andamento, fases 0-6 de 8 concluídas) — duas camadas, mesma filosofia de `Evento`/`PagamentoEvento`: `ContaPagar`/`ContaReceber` são a obrigação projetada (tem vencimento e status, pode nunca acontecer); `MovimentoFinanceiro` é o ledger (fonte única da verdade do que passou pelo caixa). Requisito de revenda: **nenhum valor da Arretado hardcoded** — `CategoriaFinanceira` nasce vazia, sem seed automático
 - **`financeiro.MovimentoFinanceiro` é o ledger — fonte única da verdade.** Todo movimento passa por `MovimentoFinanceiro.registrar()` (nunca `.objects.create()` direto em view/signal/command), mesmo contrato de `estoque.MovimentoEstoque.registrar()`: `transaction.atomic()` + `select_for_update()` na `ContaBancaria` (evita race condition entre baixas/vendas concorrentes), quantiza `valor` a 2 casas antes de `full_clean()`, calcula `saldo_posterior` e atualiza `ContaBancaria.saldo_atual` via `update_fields`. `UniqueConstraint(origem_tipo, origem_id)` é **condicional** — só se aplica quando `origem_tipo in ('pdv','ifood','evento_pagamento')` (idempotência dos signals de venda, ver `financeiro/signals.py`); baixas de conta (`conta_pagar`/`conta_receber`, permitem múltiplos movimentos parciais) e `manual` (livre — usado pelos estornos automáticos) ficam de fora da constraint. Violar essa constraint condicional é pego por `full_clean()` como `ValidationError` (Django valida `UniqueConstraint` com `condition` no nível do model, não só no banco) — `registrar()` não faz try/except em cima disso, quem chama é quem decide como tratar (os signals de venda fazem um `.exists()` explícito antes de chamar, mesmo padrão de `estoque.signals`). **Não implementar DELETE de `MovimentoFinanceiro`** — ledger imutável, erro se corrige com um movimento manual inverso (estorno), nunca apagando o original. `POST /financeiro/movimentos/manual/` (Fase 6, exige login) é o endpoint pra isso — chama `MovimentoFinanceiro.registrar()` com `origem_tipo='manual'` (fora da constraint condicional, permite múltiplos lançamentos livremente), audita `movimento_manual`
 - **`financeiro.ContaPagar`** é a obrigação projetada (`CP-0001` via `proximo_numero()`, mesmo padrão de `Orcamento`/`Contrato`/`Evento`). `valor_pago`/`status` **nunca** são gravados direto — sempre via `recalcular_valor_pago()` (soma os `MovimentoFinanceiro` com `origem_tipo='conta_pagar'`/`origem_id=self.id`/`tipo='saida'`; deriva `paga` se `valor_pago >= valor`, `parcial` se `0 < valor_pago < valor`, senão mantém `pendente`) — mesma filosofia de `Evento.sinal_pago`. `cancelar/` só é permitido com `valor_pago == 0`. `PATCH` só é permitido com `status == 'pendente'` (mesma restrição de `Orcamento.update()` — depois de qualquer baixa, a conta fica imutável nesses campos). Campo `recorrente` (FK pra `DespesaRecorrente`, opcional, `PROTECT`) é preenchido só pelo cron `gerar_contas_recorrentes` — nunca pela API (`read_only_fields` no serializer); `UniqueConstraint(recorrente, data_vencimento)` condicional (`recorrente__isnull=False`) garante que o cron nunca duplica a mesma competência. **Cuidado com ordem de operações na migration**: quando o autodetector do Django gera `AddConstraint` referenciando um campo que só existe depois de um `AddField` posterior na mesma migration, ele pode ordenar o `AddConstraint` **antes** do `AddField` (bug real encontrado nesta feature — `FieldDoesNotExist: ContaPagar has no field named 'recorrente'` ao rodar `migrate`) — sempre conferir a ordem das `operations` geradas quando `makemigrations` cria constraint condicional sobre campo novo, e mover o `AddConstraint` pra depois do `AddField` correspondente se necessário. `categoria` é **opcional** (`null=True`/`blank=True`, decisão da Fase 5 — ver "Nota Fiscal → ContaPagar" abaixo) — `ContaPagar` gerada automaticamente por nota fiscal nasce sem categoria, `DespesaRecorrente` sempre tem (copiada do molde); o serializer trata `categoria=None` como válido (`validate_categoria` só valida `tipo == 'saida'` quando uma categoria é de fato informada)
@@ -429,6 +435,7 @@ arretado-crm/                    ← raiz React
 | Catálogo — Revenda/Kit/Faixas de Preço | `Produto.tipo` (fabricado/revenda/kit) com custo polimórfico, `ItemKit`, `FaixaPreco` (quantidade/canal), `DadosFiscaisProduto` (prepara NFC-e), redesign do `Catalogo.jsx` em cards | ✅ Concluída |
 | Frete por Bairro | Cálculo de taxa de entrega por bairro no PDV e Orçamentos/Eventos + frete padrão configurável + cadastro de Locais de Evento | ✅ Concluída (ver `FRETE.md`) |
 | Relatórios | Relatório consolidado iFood (resumo, agrupamento por dia/mês, export Excel/PDF) — app `relatorios/` | ✅ Concluída (apenas canal iFood por enquanto) |
+| Produtos Mais Vendidos | Ranking cross-canal (iFood+PDV+Eventos) por quantidade/valor, período configurável, agrupado por nome de item normalizado — `ProdutosMaisVendidosView`, aba nova em `Relatorios.jsx` | ✅ Concluída (só JSON, sem export Excel/PDF) |
 | Contrato | Emissão de Contrato de Aquisição de Produtos a partir de Orçamento aprovado (PDF com cláusulas configuráveis + envio por WhatsApp) + reenvio por WhatsApp direto da listagem/detalhe de Orçamentos e Eventos (reaproveita o mesmo endpoint `enviar-whatsapp/`) | ✅ Concluída (ver `Contrato.md`) |
 | Imagens de Inspiração | Galeria de imagens de referência anexada ao Orçamento (upload múltiplo, lightbox, uso interno, visível também no Evento após conversão) | ✅ Concluída |
 | Pagamentos Parciais de Evento | `eventos.PagamentoEvento` (parcelas), `Evento.sinal_pago` derivado, redesign do modal de detalhe do Evento (stepper + abas), edição de Orçamento antes da conversão | ✅ Concluída |
@@ -453,7 +460,7 @@ arretado-crm/                    ← raiz React
    - Curto prazo: impressora térmica TCP/IP (Django imprime via socket ESC/POS) + caixa registradora pelo mesmo cabo
    - Médio prazo: NFC-e (nota fiscal — SEFAZ-PI)
    - Longo prazo: TEF integrado
-4. **Relatórios cobrem só iFood** — `relatorios/` tem apenas `RelatorioIFoodView`; expandir para PDV e Eventos/Orçamentos seguindo o mesmo padrão (resumo + agrupado + export Excel/PDF)
+4. **Relatório de canal (`RelatorioIFoodView`, resumo + agrupado + export Excel/PDF) cobre só iFood** — expandir para PDV e Eventos/Orçamentos seguindo o mesmo padrão. (O ranking de produtos mais vendidos, `ProdutosMaisVendidosView`, já cobre os 3 canais desde 18/ago/2026 — pendência diferente, não confundir: ali falta só export Excel/PDF, aqui falta o relatório de canal inteiro pra PDV/Eventos)
 5. **Logging/observabilidade** — hoje é rudimentar: sem `LOGGING` dict em `config/settings.py` (usa o padrão implícito do Django), sem Sentry/monitoramento de erros. Só alguns apps chamam `logger.info/warning/error` (`notificacoes/`, `ifood/` — bem detalhado em `polling_worker.py`/`ifood_client.py`/`views.py` —, e uns warnings pontuais em `pdv/signals.py`, `eventos/signals.py`, `pedidos/apps.py`, `pedidos/views.py`); `clientes`, `fichas`, `relatorios`, `dashboard` não logam nada. `usuarios` agora grava eventos de segurança/negócio (login, CRUD, mudança de role/perms) em `auditoria.LogAuditoria` via `auditoria/utils.py::registrar()` — isso é **auditoria de negócio** ("quem fez o quê"), não logging operacional (`logger.info/warning/error`); a pendência de `LOGGING` dict/Sentry abaixo continua válida e é um conceito separado. Gunicorn (`arretado.service`) e o worker (`arretado-polling.service`) não redirecionam pra arquivo — tudo vai pro stdout/stderr, só acessível via `journalctl -u arretado`/`journalctl -u arretado-polling` na VPS; sem persistência em arquivo nem rotação. Considerar no futuro: `LOGGING` dict com `RotatingFileHandler`/`TimedRotatingFileHandler` e/ou integração com Sentry
 6. **Divergência de receita "hoje" entre o card iFood do Dashboard e o menu iFood** — investigado, causa raiz identificada, correção ainda não decidida com o usuário. Ver `IFOOD_RECEITA_DASHBOARD.md`
 7. **Variáveis de ambiente em prod para WhatsApp (Z-API):**
@@ -612,6 +619,7 @@ POST          /api/v1/estoque/notas/{id}/descartar/               ← exige logi
 
 # Relatórios
 GET /api/v1/relatorios/ifood/                    ← query params: data_inicio, data_fim, agrupamento (dia|mes), formato (json|excel|pdf)
+GET /api/v1/relatorios/produtos-mais-vendidos/   ← query params: canal (repetível: ifood|pdv|eventos, default todos), data_inicio, data_fim, ordenar (quantidade|valor), limit (1-200, default 30) · só JSON
 
 # Dashboard
 GET /api/v1/dashboard/resumo/                    ← sem parâmetros; agrega canais (iFood/PDV/Eventos/Anota AI),
@@ -719,10 +727,16 @@ rclone copy backup-remoto:arretado-backups/db/ /var/backups/arretado/db/
 rclone copy backup-remoto:arretado-backups/media/ /var/backups/arretado/media/
 # Parar `arretado.service` antes de restaurar o banco e religar depois
 
-# Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos, estoque, financeiro)
+# Testes automatizados (clientes, eventos, fichas, pdv, auditoria, usuarios, notificacoes, pedidos, estoque, financeiro, relatorios)
 python manage.py test --settings=config.settings_test
 # settings_test.py roda contra SQLite em memória — o usuário do Postgres em produção
 # não tem permissão CREATE DATABASE, então `manage.py test` direto (sem --settings) falha
+# settings_test.py também isola MEDIA_ROOT num tempfile.mkdtemp() — sem isso, testes com
+# FileField/ImageField (ImagemInspiracao, ImportacaoNotaFiscal) gravam de verdade no media/
+# real (só o banco é isolado por padrão, não o filesystem). Bug real encontrado 18/ago/2026:
+# rodar os testes como root criava diretórios em media/ com dono root:root, e o próximo
+# upload real de usuário (processo www-data do Gunicorn) quebrava com PermissionError —
+# ver "O Que NÃO Fazer"
 
 # Frontend
 cd arretado-crm/
@@ -747,6 +761,7 @@ python manage.py migrate
 python manage.py collectstatic --noinput
 cd arretado-crm && npm ci && npm run build && cd ..
 systemctl restart arretado
+systemctl restart arretado-polling   # ver "Atenção" abaixo — nunca esquecer este
 
 # Se o deploy marca uma nova versão (ver "Versão do Sistema" em Padrões Obrigatórios):
 git tag -a vX.Y.Z -m "Descrição curta da release"
@@ -756,6 +771,8 @@ git push origin vX.Y.Z
 ```
 
 **Atenção:** `npm run build` grava direto em `arretado-crm/dist/`, que é o `root` servido pelo Nginx (`/etc/nginx/sites-available/arretado`) — o build já é o deploy do frontend, não existe ambiente de teste isolado. Sempre confirmar com o usuário antes de rodar build na VPS.
+
+**Atenção — `arretado-polling` também precisa reiniciar, sempre que o deploy mexe em models.** `systemctl restart arretado` (Gunicorn) sozinho não é suficiente: o worker `arretado-polling` é um processo de longa duração separado, que só recarrega o código Python quando o systemd o reinicia — ele não é stateless por request como o Gunicorn. **Incidente real (12-17/ago/2026):** o deploy da Fase 1 do Multi-Empresa adicionou o campo obrigatório `empresa` em `ifood.PedidoIFood` e só reiniciou `arretado`, esquecendo do `arretado-polling` — o worker ficou rodando a classe de modelo antiga em memória, todo `INSERT` de pedido novo saiu sem a coluna `empresa_id` e o Postgres rejeitou (`NotNullViolation`) silenciosamente por **5 dias**, sem nenhum pedido iFood novo sendo capturado (245 pedidos reais perdidos, recuperados depois via re-fetch na API do iFood + replay do histórico de `EventoPollingIFood` — ver `project_multiempresa_spec` na memória). Regra: qualquer deploy que rode `migrate` deve reiniciar os dois serviços juntos, não só o `arretado`.
 
 Infra já configurada em produção (não precisa recriar):
 - Nginx: `location /media/ { alias /var/www/crm_arretado/media/; }` (serve uploads de `ImageField`/`FileField`) e `proxy_set_header X-Forwarded-Proto $scheme;` no bloco `/api/`
@@ -856,3 +873,5 @@ Infra já configurada em produção (não precisa recriar):
 - Não materializar `pdv.PedidoPDV`/`eventos.Evento` com empresa diferente da padrão — PDV e Eventos são mono-empresa por decisão de escopo do `MULTIEMPRESA.md` (Fases 3-ext-A e 4 do produto, não do multi-empresa), sempre gravam `Empresa.get_padrao()` no `PedidoUnificado`, nunca a empresa "ativa" de um usuário (esse conceito só existe a partir da Fase 2 do multi-empresa)
 - Não hardcodar a versão do sistema em nenhum arquivo/settings/variável — `obter_versao()` sempre deriva de `git describe --tags`; criar uma release é sempre `git tag -a` + push da tag + entrada no `CHANGELOG.md`, nunca editar um número em código
 - Não esquecer da tag ao fazer um deploy que o usuário considera uma "versão nova" — sem tag, `git describe` só mostra `vX.Y.Z-N-g<hash>` (commits à frente da última tag), o que é informativo mas não é uma versão "oficial"; perguntar ao usuário se o deploy atual merece uma tag antes de criar uma (nem todo commit/deploy precisa virar release)
+- Não reiniciar só `arretado.service` num deploy que muda `models.py` de qualquer app usado pelo `arretado-polling` (hoje: `ifood`, `clientes`, `pedidos`, `empresas`) — reiniciar os dois serviços juntos (`systemctl restart arretado arretado-polling`), sempre. Incidente real: esquecer o `arretado-polling` fez o worker rodar 5 dias com o modelo antigo em memória, perdendo 245 pedidos reais do iFood (ver "Deploy VPS (checklist)")
+- Não rodar `manage.py test` esperando que o filesystem fique isolado igual ao banco — só o banco vira SQLite em memória; `MEDIA_ROOT` é isolado à parte em `settings_test.py` (`tempfile.mkdtemp()`, já corrigido) porque testes com `FileField`/`ImageField` gravam de verdade no disco. Se algum dia criar um `settings_test.py` novo do zero (outro app, outro ambiente), lembrar de isolar `MEDIA_ROOT` também — bug real já causou `PermissionError` em upload de usuário real em produção (ver "Como Rodar")
