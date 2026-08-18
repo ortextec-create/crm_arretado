@@ -5,6 +5,23 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.3.0] - 2026-08-18
+
+### Adicionado
+- **Multi-Empresa — Fase 2** (Usuários × Empresas + empresa ativa, spec completa em
+  `MULTIEMPRESA.md`): `usuarios.Usuario` ganha `empresas` (M2M → `empresas.Empresa`),
+  `empresa_ativa` (FK `SET_NULL`) e `preferencia_tema` (choices — aplicação visual do tema
+  fica pra Fase 3). Login nunca é bloqueado por falta de vínculo: sem nenhuma empresa
+  vinculada, o usuário cai na empresa padrão em runtime; `role=admin` sempre enxerga/pode
+  ativar qualquer empresa ativa, não só as vinculadas. Novos endpoints
+  `POST /usuarios/definir-empresa-ativa/` (audita `empresa_alternada`) e
+  `POST /usuarios/preferencia-tema/` (cosmético, não audita). Frontend: `EscolherEmpresa.jsx`
+  (tela pós-login quando o usuário tem 2+ empresas), `EmpresaSwitcher.jsx` (pill de troca na
+  Sidebar — o projeto não tem header global, só sidebar), checkbox de vínculo de empresa em
+  `Usuarios.jsx` (criação e edição). Todos os 6 usuários existentes vinculados à empresa
+  matriz via data migration — comportamento pós-deploy idêntico ao anterior à fase. Próximas
+  3 fases (Temas de fato, Financeiro, Dashboard/Relatórios) ainda não iniciadas.
+
 ## [v1.2.0] - 2026-08-12
 
 ### Adicionado
