@@ -12,7 +12,43 @@ const mesPasado = () => {
 const BRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+const CANAL_LABEL = { ifood: 'iFood', pdv: 'PDV', eventos: 'Eventos' }
+
 export default function Relatorios() {
+  const [aba, setAba] = useState('canal')
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.header}>
+        <div>
+          <h1 className={`${styles.titulo} serif`}>Relatórios</h1>
+          <p className={styles.subtitulo}>Análise consolidada de pedidos</p>
+        </div>
+      </div>
+
+      <div className={styles.tabBar}>
+        <button
+          className={`${styles.tabBtn} ${aba === 'canal' ? styles.tabBtnActive : ''}`}
+          onClick={() => setAba('canal')}
+        >
+          <i className="ti ti-brand-firebase" /> Por Canal (iFood)
+        </button>
+        <button
+          className={`${styles.tabBtn} ${aba === 'produtos' ? styles.tabBtnActive : ''}`}
+          onClick={() => setAba('produtos')}
+        >
+          <i className="ti ti-trophy" /> Produtos Mais Vendidos
+        </button>
+      </div>
+
+      {aba === 'canal' ? <RelatorioCanal /> : <RelatorioProdutos />}
+    </div>
+  )
+}
+
+// ── Aba: Por Canal (iFood) — relatório original ──────────────────────────────
+
+function RelatorioCanal() {
   const [dataInicio, setDataInicio]   = useState(mesPasado)
   const [dataFim, setDataFim]         = useState(hoje)
   const [agrupamento, setAgrupamento] = useState('dia')
@@ -48,14 +84,9 @@ export default function Relatorios() {
   const ticketGeral     = naoCancel ? totalReceita / naoCancel : 0
 
   return (
-    <div className={styles.page}>
-      {/* ── Cabeçalho ── */}
-      <div className={styles.header}>
-        <div>
-          <h1 className={`${styles.titulo} serif`}>Relatórios</h1>
-          <p className={styles.subtitulo}>Análise consolidada de pedidos</p>
-        </div>
-        {dados && (
+    <>
+      {dados && (
+        <div className={styles.exportRow}>
           <div className={styles.exportBtns}>
             <button className={styles.btnExcel} onClick={() => exportar('excel')}>
               <i className="ti ti-table-export" /> Excel
@@ -64,8 +95,8 @@ export default function Relatorios() {
               <i className="ti ti-file-type-pdf" /> PDF
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Filtros ── */}
       <div className={styles.filtros}>
@@ -253,6 +284,203 @@ export default function Relatorios() {
           )}
         </>
       )}
-    </div>
+    </>
+  )
+}
+
+// ── Aba: Produtos Mais Vendidos ───────────────────────────────────────────────
+
+function RelatorioProdutos() {
+  const [dataInicio, setDataInicio] = useState(mesPasado)
+  const [dataFim, setDataFim]       = useState(hoje)
+  const [canais, setCanais]         = useState(['ifood', 'pdv', 'eventos'])
+  const [ordenar, setOrdenar]       = useState('quantidade')
+  const [dados, setDados]           = useState(null)
+  const [loading, setLoading]       = useState(false)
+  const [erro, setErro]             = useState(null)
+
+  const toggleCanal = (c) => {
+    setCanais(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+  }
+
+  const buscar = useCallback(async () => {
+    if (canais.length === 0) {
+      setErro('Selecione ao menos um canal.')
+      return
+    }
+    setLoading(true)
+    setErro(null)
+    try {
+      const params = new URLSearchParams({ data_inicio: dataInicio, data_fim: dataFim, ordenar })
+      canais.forEach(c => params.append('canal', c))
+      const res = await relatoriosApi.produtosMaisVendidos(params)
+      setDados(res.data)
+    } catch (e) {
+      setErro('Falha ao carregar relatório.')
+    } finally {
+      setLoading(false)
+    }
+  }, [dataInicio, dataFim, canais, ordenar])
+
+  const produtos = dados?.produtos || []
+  const canaisAtivos = dados?.canais || []
+
+  return (
+    <>
+      {/* ── Filtros ── */}
+      <div className={styles.filtros}>
+        <div className={styles.filtroGrupo}>
+          <label>Canais</label>
+          <div className={styles.canalToggleRow}>
+            {['ifood', 'pdv', 'eventos'].map(c => (
+              <button
+                key={c}
+                className={`${styles.canalToggle} ${canais.includes(c) ? styles.canalToggleActive : ''}`}
+                onClick={() => toggleCanal(c)}
+                type="button"
+              >
+                {CANAL_LABEL[c]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.filtroGrupo}>
+          <label>Período</label>
+          <div className={styles.dateRange}>
+            <input
+              type="date"
+              value={dataInicio}
+              max={dataFim}
+              onChange={e => setDataInicio(e.target.value)}
+              className={styles.dateInput}
+            />
+            <span className={styles.dateSep}>até</span>
+            <input
+              type="date"
+              value={dataFim}
+              min={dataInicio}
+              max={hoje()}
+              onChange={e => setDataFim(e.target.value)}
+              className={styles.dateInput}
+            />
+          </div>
+        </div>
+
+        <div className={styles.filtroGrupo}>
+          <label>Ordenar por</label>
+          <div className={styles.segControl}>
+            {[['quantidade', 'Quantidade'], ['valor', 'Valor']].map(([v, l]) => (
+              <button
+                key={v}
+                className={`${styles.segBtn} ${ordenar === v ? styles.segBtnActive : ''}`}
+                onClick={() => setOrdenar(v)}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button
+          className={styles.btnBuscar}
+          onClick={buscar}
+          disabled={loading}
+        >
+          {loading ? <i className="ti ti-loader-2 spin" /> : <i className="ti ti-search" />}
+          {loading ? 'Buscando…' : 'Buscar'}
+        </button>
+      </div>
+
+      {erro && <div className={styles.erro}><i className="ti ti-alert-circle" /> {erro}</div>}
+
+      {!dados && !loading && (
+        <div className={styles.vazio}>
+          <i className="ti ti-trophy" />
+          <p>Configure o período e os canais e clique em <strong>Buscar</strong> para ver o ranking.</p>
+        </div>
+      )}
+
+      {loading && (
+        <div className={styles.vazio}>
+          <i className="ti ti-loader-2 spin" style={{ fontSize: 32 }} />
+          <p>Carregando dados…</p>
+        </div>
+      )}
+
+      {dados && !loading && (
+        <>
+          <div className={styles.cards}>
+            <div className={styles.card}>
+              <div className={styles.cardIcon} style={{ background: 'rgba(201,122,58,.12)', color: 'var(--caramelo)' }}>
+                <i className="ti ti-tag" />
+              </div>
+              <div>
+                <p className={styles.cardLabel}>Produtos Distintos</p>
+                <p className={styles.cardVal}>{dados.resumo.produtos_distintos}</p>
+              </div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardIcon} style={{ background: 'rgba(59,130,246,.12)', color: '#2563eb' }}>
+                <i className="ti ti-package" />
+              </div>
+              <div>
+                <p className={styles.cardLabel}>Quantidade Total</p>
+                <p className={styles.cardVal}>{dados.resumo.quantidade_total}</p>
+              </div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardIcon} style={{ background: 'rgba(34,197,94,.12)', color: '#16a34a' }}>
+                <i className="ti ti-currency-dollar" />
+              </div>
+              <div>
+                <p className={styles.cardLabel}>Valor Total</p>
+                <p className={styles.cardVal}>{BRL(dados.resumo.valor_total)}</p>
+              </div>
+            </div>
+          </div>
+
+          {produtos.length === 0 ? (
+            <div className={styles.vazio}>
+              <i className="ti ti-inbox" />
+              <p>Nenhuma venda encontrada no período/canais selecionados.</p>
+            </div>
+          ) : (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 36 }}>#</th>
+                    <th>Produto</th>
+                    <th className={styles.num}>Qtd. Total</th>
+                    <th className={styles.num}>Valor Total</th>
+                    {canaisAtivos.map(c => (
+                      <th key={c} className={styles.num}>{CANAL_LABEL[c]}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {produtos.map((p, i) => (
+                    <tr key={p.nome}>
+                      <td className={styles.num}>{i + 1}</td>
+                      <td className={styles.label}>{p.nome}</td>
+                      <td className={styles.num}>{p.quantidade_total}</td>
+                      <td className={styles.num}>{BRL(p.valor_total)}</td>
+                      {canaisAtivos.map(c => (
+                        <td key={c} className={styles.num}>
+                          {p.canais[c]
+                            ? <span title={BRL(p.canais[c].valor)}>{p.canais[c].quantidade}</span>
+                            : <span className={styles.muted}>—</span>}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </>
   )
 }

@@ -1,4 +1,5 @@
 import io
+import unicodedata
 from datetime import date, timedelta
 
 from django.db.models import Sum, Count, Q
@@ -9,11 +10,21 @@ from rest_framework import views
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from ifood.models import PedidoIFood
+from ifood.models import PedidoIFood, ItemPedidoIFood
+from pdv.models import ItemPedidoPDV
+from eventos.models import ItemEvento
 
 
 class CsrfExemptMixin:
     authentication_classes = []
+
+
+def _normalizar_nome(nome):
+    """Chave de agrupamento sem acento/caixa — nenhum canal garante FK pra
+    pdv.Produto (ItemPedidoIFood nunca tem), então o agrupamento entre canais
+    é sempre por texto do nome do item, nunca por catálogo."""
+    n = unicodedata.normalize('NFKD', nome or '').encode('ascii', 'ignore').decode('ascii')
+    return ' '.join(n.strip().lower().split())
 
 
 class RelatorioIFoodView(CsrfExemptMixin, views.APIView):
@@ -359,3 +370,135 @@ class RelatorioIFoodView(CsrfExemptMixin, views.APIView):
         response = HttpResponse(buf, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{fname}"'
         return response
+
+
+CANAIS_VALIDOS = ('ifood', 'pdv', 'eventos')
+
+
+class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
+    """
+    Ranking de produtos mais vendidos, consolidando iFood + PDV + Eventos.
+
+    Só considera pedido/evento que representa venda de fato concretizada:
+    iFood status=CONCLUDED, PDV status confirmado/em_preparo/pronto/concluido
+    (exclui aberto/cancelado), Evento status=entregue. Orçamentos ficam de
+    fora de propósito — são cotação, não venda fechada.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        params = request.query_params
+        hoje = timezone.localtime(timezone.now()).date()
+        try:
+            data_inicio = date.fromisoformat(params['data_inicio']) if params.get('data_inicio') else hoje - timedelta(days=29)
+        except ValueError:
+            data_inicio = hoje - timedelta(days=29)
+        try:
+            data_fim = date.fromisoformat(params['data_fim']) if params.get('data_fim') else hoje
+        except ValueError:
+            data_fim = hoje
+        if data_inicio > data_fim:
+            data_inicio, data_fim = data_fim, data_inicio
+
+        canais = [c for c in params.getlist('canal') if c in CANAIS_VALIDOS] or list(CANAIS_VALIDOS)
+
+        ordenar = params.get('ordenar', 'quantidade')
+        if ordenar not in ('quantidade', 'valor'):
+            ordenar = 'quantidade'
+
+        try:
+            limit = int(params.get('limit', 30))
+        except (TypeError, ValueError):
+            limit = 30
+        limit = max(1, min(limit, 200))
+
+        agregados = {}
+        if 'ifood' in canais:
+            self._somar(agregados, 'ifood', self._qs_ifood(data_inicio, data_fim))
+        if 'pdv' in canais:
+            self._somar(agregados, 'pdv', self._qs_pdv(data_inicio, data_fim))
+        if 'eventos' in canais:
+            self._somar(agregados, 'eventos', self._qs_eventos(data_inicio, data_fim))
+
+        produtos = []
+        for item in agregados.values():
+            quantidade_total = sum(c['quantidade'] for c in item['canais'].values())
+            valor_total = sum(c['valor'] for c in item['canais'].values())
+            produtos.append({
+                'nome': item['nome'],
+                'quantidade_total': quantidade_total,
+                'valor_total': round(valor_total, 2),
+                'canais': {
+                    canal: {'quantidade': v['quantidade'], 'valor': round(v['valor'], 2)}
+                    for canal, v in item['canais'].items()
+                },
+            })
+
+        produtos.sort(
+            key=lambda p: p['quantidade_total'] if ordenar == 'quantidade' else p['valor_total'],
+            reverse=True,
+        )
+
+        resumo = {
+            'produtos_distintos': len(produtos),
+            'quantidade_total': sum(p['quantidade_total'] for p in produtos),
+            'valor_total': round(sum(p['valor_total'] for p in produtos), 2),
+        }
+
+        return Response({
+            'periodo': {'inicio': str(data_inicio), 'fim': str(data_fim)},
+            'canais': canais,
+            'ordenar': ordenar,
+            'resumo': resumo,
+            'produtos': produtos[:limit],
+        })
+
+    # ── Querysets por canal ──────────────────────────────────────────────
+
+    def _qs_ifood(self, data_inicio, data_fim):
+        return (
+            ItemPedidoIFood.objects
+            .filter(
+                pedido__status='CONCLUDED',
+                pedido__ifood_criado_em__date__gte=data_inicio,
+                pedido__ifood_criado_em__date__lte=data_fim,
+            )
+            .values('nome')
+            .annotate(quantidade=Sum('quantidade'), valor=Sum('preco_total'))
+        )
+
+    def _qs_pdv(self, data_inicio, data_fim):
+        return (
+            ItemPedidoPDV.objects
+            .filter(
+                pedido__status__in=['confirmado', 'em_preparo', 'pronto', 'concluido'],
+                pedido__criado_em__date__gte=data_inicio,
+                pedido__criado_em__date__lte=data_fim,
+            )
+            .values('nome')
+            .annotate(quantidade=Sum('quantidade'), valor=Sum('preco_total'))
+        )
+
+    def _qs_eventos(self, data_inicio, data_fim):
+        return (
+            ItemEvento.objects
+            .filter(
+                evento__status='entregue',
+                evento__data_evento__gte=data_inicio,
+                evento__data_evento__lte=data_fim,
+            )
+            .values('nome')
+            .annotate(quantidade=Sum('quantidade'), valor=Sum('preco_total'))
+        )
+
+    # ── Merge cross-canal por nome normalizado ────────────────────────────
+
+    def _somar(self, agregados, canal, qs):
+        for row in qs:
+            nome = row['nome'] or '(sem nome)'
+            chave = _normalizar_nome(nome)
+            if chave not in agregados:
+                agregados[chave] = {'nome': nome, 'canais': {}}
+            bucket = agregados[chave]['canais'].setdefault(canal, {'quantidade': 0, 'valor': 0.0})
+            bucket['quantidade'] += row['quantidade'] or 0
+            bucket['valor'] += float(row['valor'] or 0)

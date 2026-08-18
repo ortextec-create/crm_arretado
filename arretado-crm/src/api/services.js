@@ -343,6 +343,7 @@ export const estoqueApi = {
 
 export const relatoriosApi = {
   ifood: (params = {}) => api.get('/relatorios/ifood/', { params }),
+  produtosMaisVendidos: (params = {}) => api.get('/relatorios/produtos-mais-vendidos/', { params }),
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
