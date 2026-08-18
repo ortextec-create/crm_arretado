@@ -46,3 +46,21 @@ class EmpresaBrandingSerializer(serializers.ModelSerializer):
             'cor_sidebar', 'cor_sidebar_texto', 'cor_sidebar_ativo',
             'logo_horizontal', 'logo_negativo', 'logo_simbolo',
         ]
+
+
+class EmpresaResumoSerializer(serializers.ModelSerializer):
+    """
+    Resumo reusado fora do módulo Empresas (login, empresas vinculadas de um
+    Usuario, resposta de definir-empresa-ativa/) — mesmos campos do branding
+    (nome/cores/logos) + `id`, necessário pra selecionar/trocar de empresa.
+    """
+
+    class Meta:
+        model = Empresa
+        fields = [
+            'id', 'nome', 'subtitulo',
+            'cor_fundo', 'cor_surface', 'cor_surface_alt', 'cor_borda', 'cor_texto', 'cor_muted',
+            'cor_primaria', 'cor_primaria_texto', 'cor_acento',
+            'cor_sidebar', 'cor_sidebar_texto', 'cor_sidebar_ativo',
+            'logo_horizontal', 'logo_negativo', 'logo_simbolo',
+        ]

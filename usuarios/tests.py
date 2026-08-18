@@ -2,6 +2,7 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from auditoria.models import LogAuditoria
+from empresas.models import Empresa
 from .models import Usuario
 from .views import UsuarioViewSet
 
@@ -75,6 +76,124 @@ class AutenticacaoTokenTests(TestCase):
 
         log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_LOGOUT).latest('id')
         self.assertEqual(log.usuario_id, self.admin.id)
+
+
+class MultiEmpresaUsuarioTests(TestCase):
+    """Fase 2 do MULTIEMPRESA.md — vínculo usuário×empresa e empresa ativa."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.padrao = Empresa.get_padrao()
+        self.mangaio = Empresa.objects.create(nome='Mangaio')
+
+        self.admin = Usuario(name='Admin Teste', email='admin@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+
+        self.atendente = Usuario(name='Atendente Teste', email='atendente@teste.com', role='atendente')
+        self.atendente.set_password('senha-123')
+        self.atendente.save()
+        self.atendente.empresas.add(self.padrao)
+
+    def _login(self, email, password='senha-123'):
+        view = UsuarioViewSet.as_view({'post': 'login'})
+        req = self.factory.post('/api/v1/usuarios/login/', {'email': email, 'password': password}, format='json')
+        return view(req)
+
+    def _authed(self, usuario, method, path, data=None):
+        usuario.auth_token = 'tok-' + str(usuario.id)
+        usuario.save(update_fields=['auth_token'])
+        factory_method = getattr(self.factory, method)
+        return factory_method(path, data, format='json', HTTP_AUTHORIZATION=f'Token {usuario.auth_token}')
+
+    def test_login_usuario_sem_vinculo_cai_na_empresa_padrao(self):
+        # Usuário não-admin, nunca vinculado a nenhuma empresa — não pode bloquear o login
+        sem_vinculo = Usuario(name='Sem Vinculo', email='semvinculo@teste.com', role='gerente')
+        sem_vinculo.set_password('senha-123')
+        sem_vinculo.save()
+
+        resp = self._login('semvinculo@teste.com')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data['empresas']), 1)
+        self.assertEqual(resp.data['empresas'][0]['id'], self.padrao.id)
+        self.assertEqual(resp.data['empresa_ativa']['id'], self.padrao.id)
+        self.assertEqual(resp.data['preferencia_tema'], 'empresa')
+
+    def test_login_admin_ve_todas_as_empresas_ativas(self):
+        resp = self._login('admin@teste.com')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual({e['id'] for e in resp.data['empresas']}, {self.padrao.id, self.mangaio.id})
+
+    def test_login_usuario_com_vinculo_devolve_empresas_e_ativa(self):
+        resp = self._login('atendente@teste.com')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data['empresas']), 1)
+        self.assertEqual(resp.data['empresas'][0]['id'], self.padrao.id)
+        self.assertEqual(resp.data['empresa_ativa']['id'], self.padrao.id)
+
+    def test_definir_empresa_ativa_rejeita_empresa_nao_vinculada(self):
+        view = UsuarioViewSet.as_view({'post': 'definir_empresa_ativa'})
+        req = self._authed(self.atendente, 'post', '/api/v1/usuarios/definir-empresa-ativa/', {'empresa': self.mangaio.id})
+        resp = view(req)
+        self.assertEqual(resp.status_code, 403)
+
+    def test_definir_empresa_ativa_admin_pode_ativar_qualquer_empresa(self):
+        view = UsuarioViewSet.as_view({'post': 'definir_empresa_ativa'})
+        req = self._authed(self.admin, 'post', '/api/v1/usuarios/definir-empresa-ativa/', {'empresa': self.mangaio.id})
+        resp = view(req)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['empresa_ativa']['id'], self.mangaio.id)
+
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.empresa_ativa_id, self.mangaio.id)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_EMPRESA_ALTERNADA).latest('id')
+        self.assertEqual(log.detalhes['para'], 'Mangaio')
+
+    def test_definir_empresa_ativa_usuario_vinculado_funciona(self):
+        self.atendente.empresas.add(self.mangaio)
+        view = UsuarioViewSet.as_view({'post': 'definir_empresa_ativa'})
+        req = self._authed(self.atendente, 'post', '/api/v1/usuarios/definir-empresa-ativa/', {'empresa': self.mangaio.id})
+        resp = view(req)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['empresa_ativa']['id'], self.mangaio.id)
+
+    def test_definir_empresa_ativa_empresa_inativa_404(self):
+        self.mangaio.ativo = False
+        self.mangaio.save(update_fields=['ativo'])
+        view = UsuarioViewSet.as_view({'post': 'definir_empresa_ativa'})
+        req = self._authed(self.admin, 'post', '/api/v1/usuarios/definir-empresa-ativa/', {'empresa': self.mangaio.id})
+        resp = view(req)
+        self.assertEqual(resp.status_code, 404)
+
+    def test_preferencia_tema_grava_sem_auditar(self):
+        antes = LogAuditoria.objects.count()
+        view = UsuarioViewSet.as_view({'post': 'preferencia_tema'})
+        req = self._authed(self.atendente, 'post', '/api/v1/usuarios/preferencia-tema/', {'tema': 'neutro_escuro'})
+        resp = view(req)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['preferencia_tema'], 'neutro_escuro')
+
+        self.atendente.refresh_from_db()
+        self.assertEqual(self.atendente.preferencia_tema, 'neutro_escuro')
+        self.assertEqual(LogAuditoria.objects.count(), antes)
+
+    def test_preferencia_tema_invalida_400(self):
+        view = UsuarioViewSet.as_view({'post': 'preferencia_tema'})
+        req = self._authed(self.atendente, 'post', '/api/v1/usuarios/preferencia-tema/', {'tema': 'roxo'})
+        resp = view(req)
+        self.assertEqual(resp.status_code, 400)
+
+    def test_criar_usuario_com_empresas_ids(self):
+        view = UsuarioViewSet.as_view({'post': 'create'})
+        req = self._authed(self.admin, 'post', '/api/v1/usuarios/', {
+            'name': 'Novo Usuario', 'email': 'novo2@teste.com', 'password': '123456',
+            'role': 'atendente', 'empresas_ids': [self.padrao.id, self.mangaio.id],
+        })
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201)
+        criado = Usuario.objects.get(email='novo2@teste.com')
+        self.assertEqual(criado.empresas.count(), 2)
 
 
 class CrudUsuarioAuditoriaTests(TestCase):

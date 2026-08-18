@@ -20,8 +20,11 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      await login(email, password)
-      navigate('/')
+      const u = await login(email, password)
+      // Multi-Empresa — Fase 2: com 2+ empresas vinculadas, escolhe qual entrar
+      // nesta sessão antes do app (1 empresa só entra direto, comportamento
+      // idêntico ao anterior à fase — ver MULTIEMPRESA.md).
+      navigate((u.empresas?.length || 0) >= 2 ? '/escolher-empresa' : '/')
       // não chama setLoading(false) aqui — a navegação desmonta o componente
     } catch (err) {
       const detail = err?.response?.data?.detail
@@ -49,7 +52,7 @@ export default function Login() {
             <line x1="5" y1="33" x2="53" y2="33" stroke="rgba(184,115,10,0.2)" strokeWidth="0.8"/>
           </svg>
           <h1 className="serif">Arretado <span style={{ color: 'var(--caramelo)' }}>Doces</span></h1>
-          <p className={styles.logoSub}>Sistema de Gestão de Clientes</p>
+          <p className={styles.logoSub}>Central de Gestão do Negócio</p>
         </div>
 
         <p className={styles.subtitle}>Entre com suas credenciais para acessar</p>

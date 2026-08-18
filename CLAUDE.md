@@ -117,11 +117,17 @@ arretado/                        ← raiz Django
 │                                    (pagamentos/, pagamentos/{id}/remover/, historico/) +
 │                                    ContratoViewSet (só leitura + pdf/enviar-whatsapp) + ConfiguracaoContratoViewSet +
 │                                    ConfiguracaoAlertaEventoViewSet + TelefoneAlertaEventoViewSet
-├── usuarios/                    ← Gestão de usuários + RBAC + autenticação real por token
-│   ├── models.py                ← Usuario (auth_token, gerar_token(), is_authenticated/is_anonymous — compatibilidade DRF)
+├── usuarios/                    ← Gestão de usuários + RBAC + autenticação real por token + vínculo multi-empresa
+│   │                               (Fase 2 do MULTIEMPRESA.md, ver "Multi-Empresa — Fase 2" abaixo)
+│   ├── models.py                ← Usuario (auth_token, gerar_token(), is_authenticated/is_anonymous — compatibilidade DRF,
+│   │                               `empresas` M2M → empresas.Empresa, `empresa_ativa` FK SET_NULL, `preferencia_tema`
+│   │                               choices empresa/neutro_claro/neutro_escuro — default 'empresa')
 │   ├── authentication.py        ← TokenAuthentication (lê "Authorization: Token <valor>", popula request.user)
 │   ├── permissions.py           ← IsAdminRole (reusado por auditoria/)
-│   └── views.py                 ← login/logout (regenera/invalida auth_token), CRUD instrumentado via auditoria.utils.registrar()
+│   └── views.py                 ← login/logout (regenera/invalida auth_token, login devolve empresas/empresa_ativa/
+│                                    preferencia_tema "efetivos" — com fallback pra empresa padrão, ver abaixo),
+│                                    definir-empresa-ativa/ + preferencia-tema/ (Fase 2), CRUD instrumentado via
+│                                    auditoria.utils.registrar()
 ├── auditoria/                   ← Log de auditoria (login, CRUD de usuário, mudança de role/perms) — extensível a outros sistemas críticos
 │   ├── models.py                ← LogAuditoria (usuario FK SET_NULL + usuario_nome_snapshot, acao, detalhes JSON, ip, criado_em) ·
 │   │                               PresencaEdicao (heartbeat de "quem está vendo/editando agora" — usuario/model/objeto_id,
@@ -265,7 +271,9 @@ arretado-crm/                    ← raiz React
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi,
     │                               eventosApi, locaisEventoApi, orcamentosApi, contratosApi, configContratoApi,
     │                               alertasEventoApi (config + telefones.list/create/remove — ver "Alertas de Evento"),
-    │                               notificacoesApi, usuariosApi, authApi, fichasApi,
+    │                               notificacoesApi, usuariosApi (inclui definirEmpresaAtiva/preferenciaTema —
+    │                               Multi-Empresa Fase 2), authApi (login/logout/me + atualizarCache — espelha
+    │                               empresa_ativa/preferencia_tema no localStorage após trocar, ver abaixo), fichasApi,
     │                               taxasEntregaApi, configEntregaApi, relatoriosApi, dashboardApi, auditoriaApi,
     │                               presencaApi (heartbeat de presença — ver Padrões Obrigatórios),
     │                               estoqueApi (movimentos, registrarCompra, ajusteInventario, producoes,
@@ -280,14 +288,26 @@ arretado-crm/                    ← raiz React
     ├── utils/
     │   └── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — extraído de Auditoria.jsx,
     │                               reusado também pela aba/seção "Histórico" no modal de Orçamento/Evento
+    ├── hooks/
+    │   └── useAuth.jsx          ← AuthProvider/useAuth — user (cache em localStorage, exceção já existente,
+    │                               ver Padrões Obrigatórios) + login/logout + Multi-Empresa Fase 2:
+    │                               `empresas`/`empresaAtiva` (derivados de `user.empresas`/`user.empresa_ativa`,
+    │                               vindos do payload de login) + `trocarEmpresa(id)`/`definirPreferenciaTema(tema)`
+    │                               (chamam a API, depois espelham a resposta em `authApi.atualizarCache()`)
     ├── pages/
     │   ├── Login.jsx
+    │   ├── EscolherEmpresa.jsx  ← Multi-Empresa Fase 2: tela pós-login com 2+ empresas vinculadas (rota
+    │   │                          própria /escolher-empresa, fora do AppLayout — sem sidebar) — cards por
+    │   │                          empresa (logo/cor/nome), escolha chama trocarEmpresa() e navega pro app
     │   ├── Dashboard.jsx        ← agrega dashboardApi.resumo() (canais + gráfico 7 dias + a receber +
     │   │                          fila operacional + próximos eventos + ticket médio) e clientesApi (recentes)
     │   ├── Clientes.jsx
     │   ├── ClienteDetail.jsx
     │   ├── Tags.jsx
-    │   ├── Usuarios.jsx
+    │   ├── Usuarios.jsx         ← CRUD + permissões; Multi-Empresa Fase 2: checkbox de vínculo de empresa
+    │   │                          no form de criação (`empresas_ids`) e no painel de detalhe do usuário
+    │   │                          selecionado (mesmo padrão de toggle das permissões) — só aparece com 2+
+    │   │                          empresas ativas cadastradas
     │   ├── IFood.jsx
     │   ├── PDV.jsx
     │   ├── CatalogoPDV.jsx      ← catálogo do PDV (gestão de produtos para venda)
@@ -317,11 +337,17 @@ arretado-crm/                    ← raiz React
     ├── components/
     │   ├── layout/
     │   │   ├── AppLayout.jsx
-    │   │   └── Sidebar.jsx
+    │   │   ├── Sidebar.jsx
+    │   │   ├── Topbar.jsx       ← topbar por página (título + busca/ações) — não é um header global; o
+    │   │   │                      projeto não tem chrome compartilhado além da Sidebar (ver Multi-Empresa Fase 2)
+    │   │   └── EmpresaSwitcher.jsx  ← Multi-Empresa Fase 2: pill no rodapé da Sidebar (acima do userPill),
+    │   │                              só renderiza com 2+ empresas no contexto (`useAuth().empresas`) — spec
+    │   │                              original previa "switcher no header", mas este projeto não tem header
+    │   │                              global, só Sidebar; troca chama `trocarEmpresa()` de useAuth.jsx
     │   └── ui/                  ← Btn, Modal, Spinner, Avatar, etc. · PresencaAtiva.jsx (badge "Fulano também
     │                               está vendo isso agora", heartbeat a cada 15s via presencaApi — usado no
     │                               modal de detalhe de Orçamento e Evento)
-    └── App.jsx                  ← rotas do frontend
+    └── App.jsx                  ← rotas do frontend — inclui /escolher-empresa (ProtectedRoute, fora do AppLayout)
 ```
 
 ---
@@ -389,6 +415,43 @@ arretado-crm/                    ← raiz React
 - **Módulo de Backup** (app `manutencao/`, spec completa em `backup.md`, fases 1-5 concluídas e envio externo configurado em 30/jul/2026) — cron diário `fazer_backup` (03:00) faz `pg_dump -Fc` do Postgres inteiro + `tarfile` de `MEDIA_ROOT`, salva local em `ConfiguracaoBackup.pasta_backup_db`/`pasta_backup_media` (padrão `/var/backups/arretado/{db,media}`), rotaciona local (`retencao_local_dias`, padrão 14) e envia pro Backblaze B2 via `rclone` (remote `backup-remoto`, bucket `arretado-backups`), rotacionando remoto (`retencao_remota_dias`, padrão 90). Cron `verificar_backup` (08:00) checa idade/tamanho do backup mais recente e alerta `TelefoneAlertaBackup` via WhatsApp se algo estiver errado — **sem dedup de alerta** (repete todo dia enquanto quebrado, diferente de `AlertaEventoEnviado`/`AlertaEstoqueEnviado`/`AlertaFinanceiroEnviado`, decisão consciente porque backup quebrado é o único problema que fica invisível até o dia em que se precisa dele). `fazer_backup` nunca chama `notificar()` — só `verificar_backup` alerta, fonte única de verdade sobre "o backup está ok". O `rclone.conf` (`/root/.config/rclone/rclone.conf`, fora do repo) está **sem senha de criptografia** de propósito — o arquivo já é `600 root:root`, mesmo nível de proteção do crontab que precisaria da senha de qualquer forma; ver `backup.md` se um dia precisar reconfigurar. **Restauração é sempre manual, nunca um management command** (decisão consciente, ver "O Que NÃO Fazer") — `pg_restore -h localhost -p 5432 -U arretado_user -d arretado_db --clean --if-exists --no-owner /var/backups/arretado/db/crm_db_TIMESTAMP.dump` (com `arretado.service` parado antes e religado depois) para o banco, `tar xzf /var/backups/arretado/media/media_TIMESTAMP.tar.gz -C /var/www/crm_arretado/ --overwrite` pra mídia; se o backup local também tiver sumido, baixar primeiro do B2 com `rclone copy backup-remoto:arretado-backups/{db,media}/ /var/backups/arretado/{db,media}/`
 - **Multi-Empresa** (app `empresas/`, spec completa em `MULTIEMPRESA.md`, 6 fases — Fases 0 e 1 implementadas até aqui) — `empresas.Empresa` é multi-tenant **por linha** (FK `empresa`, mesmo banco), nunca `django-tenants`/schema separado. **Exatamente uma** `Empresa` tem `padrao=True` (`UniqueConstraint` condicional `Q(padrao=True)`), resolvida sempre via `Empresa.get_padrao()` — nunca por id fixo em código. Os 12 campos `cor_*` são hex opcionais (`blank=True`) — vazio significa "usa o valor default do token CSS", então a empresa matriz nasce (via data migration, `nome='Empresa Principal'`) sem nenhuma cor cadastrada e a UI continua idêntica à atual; o usuário renomeia/preenche depois pelo painel (`/empresas`, menu Administração, `role=admin`). `EmpresaViewSet` não tem `DELETE` nem `PUT` (`http_method_names` restrito) — inativar é sempre `ativo=False`, mesma filosofia de `DespesaRecorrente`/`ConfiguracaoIFood`. `create`/`update` exigem login e auditam via `AuditoriaCreateMixin`/`AuditoriaUpdateMixin` (genéricos, `registro_criado`/`registro_atualizado`); `list`/`retrieve`/`branding-login` continuam `AllowAny`. O serializer bloqueia (400) tanto criar uma 2ª empresa com `padrao=True` (a `UniqueConstraint` condicional já é detectada automaticamente pelo DRF como `UniqueValidator`, respeitando a condição) quanto desmarcar `padrao` da única empresa que o tem, sem promover outra na mesma requisição — hoje **não existe** endpoint de troca atômica de empresa padrão (fora de escopo da Fase 0; o campo `padrao` nem aparece editável no formulário do frontend, só como badge "Padrão" somente-leitura). `logo_horizontal`/`logo_negativo`/`logo_simbolo`/`timbre` reaproveitam a infra `/media/` já existente — `timbre` é campo **preparatório**, nenhum gerador de PDF lê dele nesta entrega.
 - **Multi-Empresa — Fase 1 (iFood)** — `ifood.ConfiguracaoIFood` ganhou FK `empresa` (`PROTECT`) — uma linha por empresa/merchant (a config já não era singleton de verdade antes disso, então múltiplas linhas simultâneas já eram suportadas pela arquitetura; agora cada uma pertence a uma `Empresa`). `ifood.PedidoIFood` ganhou FK `empresa` (`PROTECT`) **denormalizada** — `polling_worker.py::_criar_pedido()` grava `empresa=config.empresa` no momento da criação, snapshot que nunca muda depois (mesma filosofia de `ItemOrcamento`/`SnapshotPrecos`). `pedidos.PedidoUnificado` ganhou FK `empresa` (`PROTECT`, `null=True` por decisão de escopo — ver `MULTIEMPRESA.md`): o signal do iFood (`pedidos/models.py::sincronizar_pedido_ifood`) propaga `pedido_ifood.empresa`; os signals de PDV (`pdv/signals.py`) e Eventos (`eventos/models.py::sincronizar_evento`) — mono-empresa por escopo desta entrega — gravam sempre `Empresa.get_padrao()`, resolvida em runtime, nunca id fixo. **Nenhum ponto resolve a credencial de uma ação de pedido (confirmar/cancelar/despachar/pronto-retirada/negociação/motivos-cancelamento) via `ConfiguracaoIFood.objects.first()`** — `ifood/views.py::PedidoIFoodViewSet._get_client(pedido)` sempre filtra `ConfiguracaoIFood.objects.filter(empresa=pedido.empresa)`, essencial pra ter dois merchants (matriz + MANGAIO) operando no mesmo worker sem misturar credencial. `GET /ifood/config/status/` e `GET /ifood/pedidos/estatisticas/` aceitam `?empresa=<id>` (default: `Empresa.get_padrao()` via helper `ifood/views.py::_resolver_config_por_empresa()` — nunca `.objects.first()`); `GET /ifood/pedidos/` aceita `?empresa=<id>` sem default (sem o parâmetro, lista de todas as empresas, com `empresa_nome` no serializer pra badge no frontend). `IFood.jsx` só mostra o seletor de empresa no topo quando existe mais de uma `Empresa` ativa — hoje (12/ago/2026) a MANGAIO ainda não foi cadastrada, então o seletor fica invisível e o comportamento é idêntico ao anterior à fase. Nada em Financeiro/Dashboard/Usuários/temas foi alterado nesta fase (Fases 2-5, ainda não iniciadas) — Estoque também não foi tocado, o fuzzy match sem correspondência da MANGAIO logando warning é o comportamento correto e esperado, não um bug.
+- **Multi-Empresa — Fase 2 (Usuários × Empresas + empresa ativa)** — `usuarios.Usuario` ganhou `empresas` (M2M →
+  `empresas.Empresa`, `blank=True` — nunca choice com nome de empresa), `empresa_ativa` (FK `SET_NULL`, `null=True`)
+  e `preferencia_tema` (choices `empresa`/`neutro_claro`/`neutro_escuro`, default `'empresa'` — a aplicação real do
+  tema é Fase 3, aqui só o campo/persistência existem). Migration de dados (`usuarios/migrations/0004_...`) vinculou
+  todos os usuários existentes à empresa `padrao=True` e setou `empresa_ativa` pra ela — comportamento pós-deploy
+  idêntico ao anterior à fase. **Login nunca é bloqueado por falta de vínculo**: `usuarios/views.py::_empresas_efetivas()`
+  resolve o conjunto de empresas que o usuário enxerga — `role=admin` sempre vê **todas** as `Empresa.objects.filter(ativo=True)`
+  (mesma exceção de `definir-empresa-ativa/` abaixo); demais roles veem só `usuario.empresas.filter(ativo=True)`, e
+  sem nenhuma vinculada (usuário legado, ou cuja única empresa virou `ativo=False`) cai na empresa padrão
+  (`Empresa.get_padrao()`) — nunca persistido automaticamente, só usado pra montar a resposta. `_empresa_ativa_efetiva()`
+  usa `usuario.empresa_ativa` se ainda estiver no conjunto efetivo, senão cai no primeiro item. `POST /usuarios/login/`
+  devolve `empresas`/`empresa_ativa`/`preferencia_tema` **sempre a versão efetiva** (com fallback aplicado), nunca o
+  estado bruto do banco — `data.update(_payload_empresas(usuario))` sobrescreve de propósito os campos homônimos que
+  `UsuarioSerializer` já monta a partir do banco. `POST /usuarios/definir-empresa-ativa/` (`IsAuthenticated`, body
+  `{"empresa": id}`) valida que a empresa está entre as vinculadas do usuário — **exceto `role=admin`, que pode ativar
+  qualquer empresa `ativo=True`** (decisão fechada do spec) — grava `Usuario.empresa_ativa` e audita
+  `ACAO_EMPRESA_ALTERNADA` (`detalhes={'de':..., 'para':...}`, afeta o que o usuário enxerga de dados financeiros nas
+  próximas fases). `POST /usuarios/preferencia-tema/` (`IsAuthenticated`, body `{"tema": ...}`) só grava o campo —
+  **não audita** (cosmético, mesma decisão do spec). `UsuarioSerializer` expõe `empresas`/`empresa_ativa` (nested,
+  read-only, via `empresas.EmpresaResumoSerializer` — resumo com `id`+branding, reusado também no payload de login)
+  e aceita escrita por `empresas_ids` (`PrimaryKeyRelatedField(many=True, source='empresas')`) no create/update — o
+  `create()`/`update()` do serializer faz `.set()` manual no M2M porque o serializer já sobrescreve os dois métodos
+  (não usa o `create()`/`update()` genérico do `ModelSerializer`, que trataria M2M sozinho). `empresa_ativa` e
+  `preferencia_tema` são **sempre read-only** no `UsuarioSerializer` geral — só mudam via os dois endpoints dedicados
+  acima, nunca por `PATCH /usuarios/{id}/` direto (nem por um admin editando outro usuário). Frontend: `useAuth.jsx`
+  expõe `empresas`/`empresaAtiva` (derivados do `user` já cacheado) e `trocarEmpresa(id)`/`definirPreferenciaTema(tema)`
+  (chamam a API e depois espelham a resposta via `authApi.atualizarCache()` — **não** é uma nova forma de persistir
+  em `localStorage`, é só manter coerente o mesmo objeto `auth_user` que a exceção já documentada do projeto usa pra
+  sobreviver a um F5). `Login.jsx` navega pra `/escolher-empresa` quando o login devolve 2+ `empresas` (senão vai
+  direto pra `/`); `EscolherEmpresa.jsx` é rota própria fora do `AppLayout` (sem sidebar). `EmpresaSwitcher.jsx` (pill
+  no rodapé da Sidebar, acima do `userPill`) só renderiza com 2+ empresas no contexto — **o spec original previa o
+  switcher "no header"**, mas este projeto não tem header/topbar global (só `Sidebar.jsx` + um `Topbar.jsx` por
+  página) — decisão desta sessão: colocar na Sidebar, único chrome realmente compartilhado por todo o app.
+  `Usuarios.jsx` ganhou checkbox de vínculo de empresa no form de criação e no painel de detalhe do usuário
+  selecionado (toggle, mesmo padrão das permissões) — só aparece com 2+ empresas ativas cadastradas (mesmo critério
+  usado em `IFood.jsx` Fase 1). **Fora desta fase:** aplicação de tema de fato (Fase 3), Financeiro/Dashboard
+  filtrados por empresa (Fases 4-5) — `preferencia_tema` já existe no banco mas nenhuma tela lê/aplica o valor ainda.
 - **Versão do Sistema** (`config/versao.py`, `config/views.py::VersaoView`) — a versão da aplicação é **sempre derivada do Git** (`git describe --tags --always --dirty`, `subprocess` puro), nunca mantida à mão em arquivo/settings. `obter_versao()` roda uma vez por worker do Gunicorn (`functools.lru_cache`) e não recalcula até o próximo restart. `GET /api/v1/versao/` (`AllowAny`, sem auditoria — é leitura pública, mesmo espírito de `branding-login/`) devolve `{versao, commit, commit_data, branch}`; `Sidebar.jsx` mostra no rodapé (substituiu o texto fixo `"CRM v1.0"`), com commit/data no `title` (hover). Cada release recebe uma **tag anotada** `vX.Y.Z` (`git tag -a vX.Y.Z -m "..."`, depois `git push origin vX.Y.Z` — tags não sobem com `git push` sem `--tags`/tag explícita) **e** uma entrada nova no `CHANGELOG.md` (formato Keep a Changelog) — os dois sempre juntos, no mesmo commit/momento do deploy. Baseline: `v1.0.0` tageada no commit que já estava em produção antes deste sistema existir (11/ago/2026). **Pegadinha de infra encontrada nesta feature:** o Gunicorn roda como `www-data` (`User=www-data` em `arretado.service`) mas o repositório é dono por `root` — o Git bloqueia qualquer comando (`detected dubious ownership in repository`) quando o usuário do processo difere do dono do diretório, desde o Git 2.35.2. Corrigido com `git config --system --add safe.directory /var/www/crm_arretado` (grava em `/etc/gitconfig`, libera pra todos os usuários da VPS — já aplicado em produção, não precisa recriar). Sem isso, `obter_versao()` cai silenciosamente no fallback `'desconhecida'` (nunca lança exceção — `_git()` engole qualquer erro do `subprocess`), então o sintoma é só a versão aparecer errada, sem erro nenhum nos logs
 
 ### Frontend
@@ -448,7 +511,7 @@ arretado-crm/                    ← raiz React
 | Resumo de Cozinha (Evento) | PDF operacional (A4 página cheia, ReportLab Platypus, sem timbre) com itens do Evento agrupados por categoria, pra a equipe de cozinha montar a produção — sem preços. Botão em `Eventos.jsx` (card de detalhe + linha da lista) | ✅ Concluída (só A4 página cheia — meia-folha/térmica fora de escopo por ora) |
 | Módulo Financeiro — Fases 0-7 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo, `DespesaRecorrente` + crons, `ContaReceber` + signals PDV/iFood/PagamentoEvento, integração Estoque → nota fiscal vira `ContaPagar`, fluxo de caixa + conferência de saldo + lançamento manual, frontend `Financeiro.jsx`) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`) + action `movimentos/manual/`, `ContaPagar`/`ContaReceber` (obrigação projetada, `valor_pago`/`valor_recebido`/`status` derivados), `DespesaRecorrente` + `AlertaFinanceiroEnviado` + crons `gerar_contas_recorrentes`/`alertar_vencimentos`, signals de venda (PDV/iFood/PagamentoEvento) batendo automaticamente no ledger com estorno em cancelamento, `estoque.ImportacaoNotaFiscal.fornecedor_cnpj` + geração automática de `ContaPagar` na confirmação da nota, `SaldoConferido` (conferências/) + `fluxo-caixa/` (agregador realizado x projetado + saldos por conta) + `Financeiro.jsx` (5 abas, `financeiroApi` em `services.js`, rota `/financeiro` + item de menu) | 🔄 Em andamento (fases 0-7 de 8 — falta só a Fase 8, testes finais + revisão do CLAUDE.md canônico) |
 | Sistema de Backup (Banco + Mídia) | App `manutencao/` (spec completa em `backup.md`) — `ConfiguracaoBackup`/`TelefoneAlertaBackup`, cron `fazer_backup` (pg_dump + tarfile de media/ + rotação local + envio pro Backblaze B2 via rclone + rotação remota) e `verificar_backup` (alerta WhatsApp sem dedup se backup ausente/velho/corrompido) | ✅ Concluída (fases 1-5 — envio externo configurado com Backblaze B2 em 30/jul/2026; restauração é sempre manual, ver Padrões Obrigatórios) |
-| Multi-Empresa + Temas — Fases 0-1 (app `empresas/` + model `Empresa`; iFood multi-empresa) | Spec completa em `MULTIEMPRESA.md` (6 fases, 0-5). Fase 0: app `empresas/`: model `Empresa` (multi-tenant por linha, branding em 12 campos de cor + 3 logos + timbre preparatório, `padrao` único via constraint condicional), `EmpresaViewSet` (CRUD sem DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (rota `/empresas`, menu Administração, `role=admin`). Fase 1: FK `empresa` (`PROTECT`) em `ifood.ConfiguracaoIFood`/`ifood.PedidoIFood` e `pedidos.PedidoUnificado` (`null=True`); credencial de ação de pedido sempre resolvida pela empresa do pedido (nunca `.objects.first()`); `IFood.jsx` com seletor de empresa (só visível com 2+ empresas ativas) | 🔄 Em andamento (fases 0-1 de 6 — matriz criada via data migration, MANGAIO ainda não cadastrada; Usuários/empresa ativa, Temas, Financeiro, Dashboard/Relatórios multi-empresa são as próximas 4 fases) |
+| Multi-Empresa + Temas — Fases 0-2 (app `empresas/` + model `Empresa`; iFood multi-empresa; Usuários × Empresas + empresa ativa) | Spec completa em `MULTIEMPRESA.md` (6 fases, 0-5). Fase 0: app `empresas/`: model `Empresa` (multi-tenant por linha, branding em 12 campos de cor + 3 logos + timbre preparatório, `padrao` único via constraint condicional), `EmpresaViewSet` (CRUD sem DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (rota `/empresas`, menu Administração, `role=admin`). Fase 1: FK `empresa` (`PROTECT`) em `ifood.ConfiguracaoIFood`/`ifood.PedidoIFood` e `pedidos.PedidoUnificado` (`null=True`); credencial de ação de pedido sempre resolvida pela empresa do pedido (nunca `.objects.first()`); `IFood.jsx` com seletor de empresa (só visível com 2+ empresas ativas). Fase 2: `usuarios.Usuario` ganhou `empresas` (M2M) + `empresa_ativa` (FK) + `preferencia_tema`; login devolve empresas/empresa_ativa/tema "efetivos" (fallback pra empresa padrão, nunca bloqueia); `POST /usuarios/definir-empresa-ativa/` (audita `empresa_alternada`, admin pode ativar qualquer empresa) + `POST /usuarios/preferencia-tema/` (não audita); `useAuth.jsx` (`trocarEmpresa`/`definirPreferenciaTema`), `EscolherEmpresa.jsx` (rota pós-login com 2+ empresas), `EmpresaSwitcher.jsx` (pill na Sidebar — projeto não tem header global), checkbox de vínculo em `Usuarios.jsx` | 🔄 Em andamento (fases 0-2 de 6 — matriz criada via data migration, MANGAIO ainda não cadastrada; Temas, Financeiro, Dashboard/Relatórios multi-empresa são as próximas 3 fases) |
 
 ---
 
@@ -572,12 +635,18 @@ GET  /api/v1/notificacoes/mensagens/status-conexao/
 GET/PATCH /api/v1/notificacoes/configuracao/          ← singleton · GET e PATCH exigem login (só aqui GET também é restrito — expõe credencial Z-API) · PATCH audita config_whatsapp_alterada
 POST      /api/v1/notificacoes/configuracao/testar/   ← exige login · testa conexão Z-API, não muda nada, não audita
 
-# Usuários
-GET/POST              /api/v1/usuarios/
+# Usuários (Multi-Empresa Fase 2 — ver Padrões Obrigatórios)
+GET/POST              /api/v1/usuarios/                  ← aceita "empresas_ids" (lista de ids) no POST/PATCH
 GET/PUT/PATCH/DELETE  /api/v1/usuarios/{id}/
 POST                  /api/v1/usuarios/login/           ← AllowAny — retorna dados do usuário + "token" (Usuario.auth_token)
+                                                            + empresas/empresa_ativa/preferencia_tema "efetivos"
 POST                  /api/v1/usuarios/logout/           ← autenticado — invalida o token no servidor
 POST                  /api/v1/usuarios/{id}/redefinir-senha/
+POST                  /api/v1/usuarios/definir-empresa-ativa/  ← exige login · body {"empresa": id} · admin ativa
+                                                                   qualquer empresa ativa=True, demais só vinculadas ·
+                                                                   audita empresa_alternada
+POST                  /api/v1/usuarios/preferencia-tema/       ← exige login · body {"tema": "empresa"|"neutro_claro"|
+                                                                   "neutro_escuro"} · não audita (cosmético)
 
 # Auditoria (restrito a role=admin)
 GET /api/v1/auditoria/logs/   ← query params: usuario, acao, model (filtra detalhes.model — só relevante com acao=registro_excluido), data_inicio, data_fim
@@ -868,7 +937,13 @@ Infra já configurada em produção (não precisa recriar):
 - Não permitir duas empresas com `padrao=True`, nem desmarcar a única com `padrao=True` sem promover outra na mesma requisição — os dois casos são bloqueados no `EmpresaSerializer.validate()`/`UniqueConstraint` condicional; não contornar essa validação em nenhum endpoint novo
 - Não implementar `DELETE`/`PUT` em `empresas.Empresa` — inativar é sempre `ativo=False` (mesma filosofia de `DespesaRecorrente`/`ConfiguracaoIFood`); FKs de outros apps vão apontar pra cá com `PROTECT` nas próximas fases
 - Não hardcodar nome/cor/CNPJ de nenhuma empresa (Arretado ou futuras) em código, CSS ou serializer — é requisito de revenda do multi-empresa (ver `MULTIEMPRESA.md`); campo de cor vazio já cai no token CSS atual por construção, não duplicar a paleta da Arretado em nenhum lugar
-- Não tocar em Financeiro/Dashboard/Usuários/frontend de temas por causa do multi-empresa ainda — são as Fases 2-5 do `MULTIEMPRESA.md` (Fase 1, iFood, já concluída), cada uma é sessão própria com sua própria migration/teste/confirmação de deploy
+- Não tocar em Financeiro/Dashboard/frontend de temas por causa do multi-empresa ainda — são as Fases 3-5 do `MULTIEMPRESA.md` (Fases 0-2 já concluídas), cada uma é sessão própria com sua própria migration/teste/confirmação de deploy
+- Não bloquear login por falta de vínculo de empresa — `usuarios.Usuario` sem nenhuma `empresas` vinculada (ou cuja única empresa virou `ativo=False`) sempre cai na empresa padrão via `_empresas_efetivas()`; nunca retornar 403/404 nesse caso
+- Não permitir `definir-empresa-ativa/` pra empresa fora do vínculo do usuário — exceto `role=admin`, que pode ativar qualquer empresa `ativo=True` (checar sempre `usuario.empresas.filter(pk=empresa.pk).exists()` antes, exceto pra admin)
+- Não auditar `preferencia-tema/` (cosmético) — auditar sempre `definir-empresa-ativa/` (`empresa_alternada`, afeta dado financeiro que o usuário enxerga nas próximas fases)
+- Não deixar `empresa_ativa`/`preferencia_tema` editáveis por `PATCH /usuarios/{id}/` direto (nem por admin editando outro usuário) — só mudam via os dois endpoints dedicados (`UsuarioSerializer` mantém os dois como `read_only`)
+- Não usar `localStorage` como fonte da verdade de empresa ativa/tema — o padrão é sempre gravar no backend primeiro (`usuariosApi.definirEmpresaAtiva`/`preferenciaTema`) e só depois espelhar a resposta via `authApi.atualizarCache()` (mantém o mesmo objeto `auth_user` já cacheado coerente após F5 — não é uma fonte de verdade nova, é o mesmo padrão já existente do cache de sessão)
+- Não aplicar tema de fato (troca de tokens CSS) nesta fase — `preferencia_tema` já existe no banco/API, mas a aplicação visual é Fase 3 do `MULTIEMPRESA.md`
 - Não resolver credencial de ação de pedido iFood (confirmar/cancelar/despachar/pronto-retirada/negociação) via `ConfiguracaoIFood.objects.first()` — sempre `ConfiguracaoIFood.objects.filter(empresa=pedido.empresa)` (ver `ifood/views.py::PedidoIFoodViewSet._get_client()`); com dois merchants ativos (matriz + MANGAIO), `.first()` mistura credencial de uma empresa com pedido de outra
 - Não materializar `pdv.PedidoPDV`/`eventos.Evento` com empresa diferente da padrão — PDV e Eventos são mono-empresa por decisão de escopo do `MULTIEMPRESA.md` (Fases 3-ext-A e 4 do produto, não do multi-empresa), sempre gravam `Empresa.get_padrao()` no `PedidoUnificado`, nunca a empresa "ativa" de um usuário (esse conceito só existe a partir da Fase 2 do multi-empresa)
 - Não hardcodar a versão do sistema em nenhum arquivo/settings/variável — `obter_versao()` sempre deriva de `git describe --tags`; criar uma release é sempre `git tag -a` + push da tag + entrada no `CHANGELOG.md`, nunca editar um número em código

@@ -15,6 +15,12 @@ ROLE_CHOICES = [
     ('atendente', 'Atendente'),
 ]
 
+TEMA_CHOICES = [
+    ('empresa',        'Tema da empresa'),
+    ('neutro_claro',   'Claro'),
+    ('neutro_escuro',  'Noturno'),
+]
+
 PERMS_DEFAULT = {
     'admin': {
         'ver_clientes': True, 'criar_clientes': True, 'editar_clientes': True,
@@ -50,6 +56,20 @@ class Usuario(models.Model):
     )
     criado_em  = models.DateTimeField('Criado em', auto_now_add=True)
     atualizado_em = models.DateTimeField('Atualizado em', auto_now=True)
+
+    # Multi-Empresa — Fase 2 (ver MULTIEMPRESA.md). Nunca usar choice com nome de
+    # empresa aqui — vínculo é sempre M2M pro registro em empresas.Empresa.
+    empresas = models.ManyToManyField(
+        'empresas.Empresa', blank=True, related_name='usuarios',
+        verbose_name='Empresas vinculadas',
+    )
+    empresa_ativa = models.ForeignKey(
+        'empresas.Empresa', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='usuarios_com_ela_ativa', verbose_name='Empresa ativa',
+    )
+    preferencia_tema = models.CharField(
+        'Preferência de tema', max_length=20, choices=TEMA_CHOICES, default='empresa',
+    )
 
     class Meta:
         db_table = 'usuarios'

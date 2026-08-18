@@ -122,6 +122,9 @@ export const usuariosApi = {
   atualizarPermissoes: (id, perms)   => api.patch(`/usuarios/${id}/`, { perms }),
   remover:             (id)          => api.delete(`/usuarios/${id}/`),
   redefinirSenha:      (id, password) => api.post(`/usuarios/${id}/redefinir-senha/`, { password }),
+  // Multi-Empresa — Fase 2 (ver MULTIEMPRESA.md)
+  definirEmpresaAtiva: (empresaId)   => api.post('/usuarios/definir-empresa-ativa/', { empresa: empresaId }),
+  preferenciaTema:     (tema)        => api.post('/usuarios/preferencia-tema/', { tema }),
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -157,6 +160,19 @@ export const authApi = {
   me: () => {
     const raw = localStorage.getItem('auth_user')
     return raw ? JSON.parse(raw) : null
+  },
+
+  // Atualiza o cache local do usuário logado (mesmo objeto já persistido no
+  // login) sem novo login — usado depois de trocar empresa ativa/tema, pra
+  // sobreviver a um F5. A fonte da verdade continua o backend (Usuario.empresa_ativa/
+  // preferencia_tema); isto só mantém o espelho do localStorage coerente,
+  // dentro da mesma exceção já documentada em CLAUDE.md (authApi usa localStorage).
+  atualizarCache: (patch) => {
+    const atual = authApi.me()
+    if (!atual) return null
+    const atualizado = { ...atual, ...patch }
+    localStorage.setItem('auth_user', JSON.stringify(atualizado))
+    return atualizado
   },
 }
 

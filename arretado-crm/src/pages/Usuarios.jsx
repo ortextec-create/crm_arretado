@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Topbar from '../components/layout/Topbar'
 import { Btn, Avatar, Toast, Modal, Field, Input, Select } from '../components/ui'
-import { usuariosApi } from '../api/services'
+import { usuariosApi, empresasApi } from '../api/services'
 import styles from './Usuarios.module.css'
 
 const ROLES = { admin: 'Administrador', gerente: 'Gerente', atendente: 'Atendente' }
@@ -47,7 +47,7 @@ const DEFAULT_PERMS = {
   },
 }
 
-const FORM_EMPTY = { name: '', email: '', role: 'atendente', password: '' }
+const FORM_EMPTY = { name: '', email: '', role: 'atendente', password: '', empresas_ids: [] }
 
 export default function Usuarios() {
   const [users, setUsers]       = useState([])
@@ -57,6 +57,9 @@ export default function Usuarios() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm]         = useState(FORM_EMPTY)
   const [toast, setToast]       = useState(null)
+  // Multi-Empresa — Fase 2 (ver MULTIEMPRESA.md). Picker de vínculo só aparece
+  // com 2+ empresas ativas cadastradas (mesmo padrão do seletor em IFood.jsx).
+  const [empresasAtivas, setEmpresasAtivas] = useState([])
 
   // ── Carrega lista da API ──────────────────────────────────────────────────
   const carregarUsuarios = useCallback(async () => {
@@ -74,6 +77,32 @@ export default function Usuarios() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { carregarUsuarios() }, [carregarUsuarios])
+
+  useEffect(() => {
+    empresasApi.list().then((res) => {
+      const lista = res.data?.results ?? res.data ?? []
+      setEmpresasAtivas(lista.filter((e) => e.ativo))
+    }).catch(() => {})
+  }, [])
+
+  // ── Toggle vínculo de empresa e persiste ──────────────────────────────────
+  const toggleEmpresaVinculo = async (userId, empresaId) => {
+    const user = users.find((u) => u.id === userId)
+    if (!user) return
+
+    const jaTem = (user.empresas || []).some((e) => e.id === empresaId)
+    const novosIds = jaTem
+      ? (user.empresas || []).filter((e) => e.id !== empresaId).map((e) => e.id)
+      : [...(user.empresas || []).map((e) => e.id), empresaId]
+
+    try {
+      const res = await usuariosApi.atualizar(userId, { empresas_ids: novosIds })
+      setUsers((prev) => prev.map((u) => (u.id === userId ? res.data : u)))
+      if (selected?.id === userId) setSelected(res.data)
+    } catch {
+      setToast({ message: 'Erro ao salvar vínculo de empresa.', type: 'error' })
+    }
+  }
 
   // ── Toggle permissão e persiste ──────────────────────────────────────────
   const togglePerm = async (userId, key) => {
@@ -134,6 +163,7 @@ export default function Usuarios() {
         role:     form.role,
         password: form.password,
         perms:    { ...DEFAULT_PERMS[form.role] },
+        ...(empresasAtivas.length >= 2 ? { empresas_ids: form.empresas_ids } : {}),
       })
       const novo = res.data
       setUsers((prev) => [...prev, novo])
@@ -266,6 +296,23 @@ export default function Usuarios() {
                     </div>
                   ))}
                 </div>
+
+                {empresasAtivas.length >= 2 && (
+                  <div className={styles.permsPanel} style={{ marginTop: 16 }}>
+                    <div className={styles.permSection}>Empresas com Acesso</div>
+                    {empresasAtivas.map((empresa) => (
+                      <div key={empresa.id} className={styles.permRow}>
+                        <div className={styles.permLabel}>{empresa.nome}</div>
+                        <button
+                          className={`${styles.toggle} ${(selected.empresas || []).some((e) => e.id === empresa.id) ? styles.toggleOn : ''}`}
+                          onClick={() => toggleEmpresaVinculo(selected.id, empresa.id)}
+                          aria-pressed={(selected.empresas || []).some((e) => e.id === empresa.id)}
+                          aria-label={empresa.nome}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -327,6 +374,30 @@ export default function Usuarios() {
               onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
             />
           </Field>
+
+          {empresasAtivas.length >= 2 && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <Field label="Empresas com Acesso">
+                <div className={styles.empresasCheckList}>
+                  {empresasAtivas.map((empresa) => (
+                    <label key={empresa.id} className={styles.empresaCheck}>
+                      <input
+                        type="checkbox"
+                        checked={form.empresas_ids.includes(empresa.id)}
+                        onChange={(e) => setForm((f) => ({
+                          ...f,
+                          empresas_ids: e.target.checked
+                            ? [...f.empresas_ids, empresa.id]
+                            : f.empresas_ids.filter((id) => id !== empresa.id),
+                        }))}
+                      />
+                      {empresa.nome}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            </div>
+          )}
         </div>
       </Modal>
 

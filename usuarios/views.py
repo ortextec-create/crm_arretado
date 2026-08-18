@@ -4,12 +4,45 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from empresas.models import Empresa
+from empresas.serializers import EmpresaResumoSerializer
+
 from .authentication import TokenAuthentication
 from .models import Usuario, gerar_token
 from .serializers import UsuarioSerializer, RedefinirSenhaSerializer
 
 from auditoria.models import LogAuditoria
 from auditoria.utils import registrar
+
+
+def _empresas_efetivas(usuario):
+    """
+    Empresas que o usuário pode enxergar/alternar. role=admin vê todas as
+    empresas ativas (mesma exceção de definir-empresa-ativa/). Demais
+    usuários veem só as vinculadas — sem nenhuma (usuário legado, ou cuja
+    única empresa virou ativo=False), cai na empresa padrão — login nunca
+    fica bloqueado por falta de vínculo (ver MULTIEMPRESA.md, Fase 2).
+    """
+    if usuario.role == 'admin':
+        return list(Empresa.objects.filter(ativo=True))
+    vinculadas = list(usuario.empresas.filter(ativo=True))
+    return vinculadas or [Empresa.get_padrao()]
+
+
+def _empresa_ativa_efetiva(usuario, efetivas):
+    if usuario.empresa_ativa_id and usuario.empresa_ativa in efetivas:
+        return usuario.empresa_ativa
+    return efetivas[0]
+
+
+def _payload_empresas(usuario):
+    efetivas = _empresas_efetivas(usuario)
+    ativa = _empresa_ativa_efetiva(usuario, efetivas)
+    return {
+        'empresas': EmpresaResumoSerializer(efetivas, many=True).data,
+        'empresa_ativa': EmpresaResumoSerializer(ativa).data,
+        'preferencia_tema': usuario.preferencia_tema,
+    }
 
 
 class CsrfExemptMixin:
@@ -106,6 +139,10 @@ class UsuarioViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
         data = UsuarioSerializer(usuario).data
         data['token'] = usuario.auth_token
+        # Sobrescreve 'empresas'/'empresa_ativa'/'preferencia_tema' do serializer
+        # (estado bruto do banco) pela versão "efetiva" — com fallback pra
+        # empresa padrão quando o usuário não tem nenhum vínculo (ver acima).
+        data.update(_payload_empresas(usuario))
         return Response(data, status=status.HTTP_200_OK)
 
     # ── Logout ────────────────────────────────────────────────────────────────
@@ -117,6 +154,62 @@ class UsuarioViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         usuario.auth_token = None
         usuario.save(update_fields=['auth_token'])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # ── Multi-Empresa — empresa ativa / preferência de tema (Fase 2) ──────────
+
+    @action(detail=False, methods=['post'], url_path='definir-empresa-ativa')
+    def definir_empresa_ativa(self, request):
+        """
+        POST /api/v1/usuarios/definir-empresa-ativa/
+        Body: { "empresa": <id> }
+        Exige que a empresa esteja entre as vinculadas do usuário — exceto
+        role=admin, que pode ativar qualquer empresa ativa=True (decisão
+        fechada do spec). Audita ACAO_EMPRESA_ALTERNADA (afeta o que o
+        usuário enxerga de dados financeiros).
+        """
+        empresa_id = request.data.get('empresa')
+        if not empresa_id:
+            return Response({'detail': 'Informe a empresa.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            empresa = Empresa.objects.get(pk=empresa_id, ativo=True)
+        except (Empresa.DoesNotExist, ValueError, TypeError):
+            return Response({'detail': 'Empresa não encontrada ou inativa.'}, status=status.HTTP_404_NOT_FOUND)
+
+        usuario = request.user
+        if usuario.role != 'admin' and not usuario.empresas.filter(pk=empresa.pk).exists():
+            return Response(
+                {'detail': 'Você não tem acesso a esta empresa.'}, status=status.HTTP_403_FORBIDDEN,
+            )
+
+        empresa_antes = usuario.empresa_ativa
+        usuario.empresa_ativa = empresa
+        usuario.save(update_fields=['empresa_ativa'])
+
+        registrar(
+            usuario, LogAuditoria.ACAO_EMPRESA_ALTERNADA,
+            detalhes={'de': empresa_antes.nome if empresa_antes else None, 'para': empresa.nome},
+            request=request,
+        )
+
+        return Response(_payload_empresas(usuario))
+
+    @action(detail=False, methods=['post'], url_path='preferencia-tema')
+    def preferencia_tema(self, request):
+        """
+        POST /api/v1/usuarios/preferencia-tema/
+        Body: { "tema": "empresa"|"neutro_claro"|"neutro_escuro" }
+        Cosmético — não audita (ver MULTIEMPRESA.md).
+        """
+        tema = request.data.get('tema')
+        validos = dict(Usuario._meta.get_field('preferencia_tema').choices)
+        if tema not in validos:
+            return Response({'detail': 'Tema inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        usuario = request.user
+        usuario.preferencia_tema = tema
+        usuario.save(update_fields=['preferencia_tema'])
+        return Response({'preferencia_tema': usuario.preferencia_tema})
 
     # ── Create/Update instrumentados ─────────────────────────────────────────
 

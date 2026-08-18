@@ -78,3 +78,11 @@
 }
 .toggleOn { background: var(--caramelo); }
 .toggleOn::after { left: 21px; }
+
+/* Multi-Empresa — Fase 2 (ver MULTIEMPRESA.md) */
+.empresasCheckList { display: flex; flex-direction: column; gap: 8px; }
+.empresaCheck {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--texto);
+}
+.empresaCheck input { accent-color: var(--caramelo); }

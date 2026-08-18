@@ -41,6 +41,7 @@ class LogAuditoria(models.Model):
     ACAO_CONTA_PAGAR_GERADA_NOTA = 'conta_pagar_gerada_nota'
     ACAO_MOVIMENTO_MANUAL = 'movimento_manual'
     ACAO_CONFIG_BACKUP_ALTERADA = 'config_backup_alterada'
+    ACAO_EMPRESA_ALTERNADA = 'empresa_alternada'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -85,6 +86,7 @@ class LogAuditoria(models.Model):
         (ACAO_CONTA_PAGAR_GERADA_NOTA, 'Conta a pagar gerada a partir de nota fiscal'),
         (ACAO_MOVIMENTO_MANUAL, 'Movimento financeiro manual registrado'),
         (ACAO_CONFIG_BACKUP_ALTERADA, 'Configuração de backup alterada'),
+        (ACAO_EMPRESA_ALTERNADA, 'Empresa ativa alternada'),
     ]
 
     usuario = models.ForeignKey(

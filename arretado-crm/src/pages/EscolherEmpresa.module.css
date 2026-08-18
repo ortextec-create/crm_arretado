@@ -1,0 +1,78 @@
+.page {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+
+.page::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 70% 15%, rgba(184,115,10,0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 40% at 20% 85%, rgba(74,124,89,0.05) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.box {
+  position: relative;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  padding: 44px 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.title { font-size: 22px; font-weight: 700; color: var(--texto); text-align: center; }
+.subtitle { font-size: 13px; color: var(--texto-muted); text-align: center; margin-top: 8px; margin-bottom: 32px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 24px 16px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.card:hover:not(:disabled) {
+  border-color: var(--cor-empresa, var(--caramelo));
+  box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+  transform: translateY(-2px);
+}
+.card:disabled { cursor: not-allowed; opacity: 0.7; }
+
+.logo { width: 56px; height: 56px; object-fit: contain; border-radius: var(--radius-sm); }
+
+.logoFallback {
+  width: 56px; height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cor-empresa, var(--caramelo)) 14%, transparent);
+  color: var(--cor-empresa, var(--caramelo));
+  font-size: 24px;
+}
+
+.nome { font-size: 14px; font-weight: 600; color: var(--texto); text-align: center; }
+.subtitulo { font-size: 11px; color: var(--texto-muted); text-align: center; margin-top: -4px; }
+
+.loading { position: absolute; top: 10px; right: 10px; font-size: 14px; color: var(--cor-empresa, var(--caramelo)); }
+
+.error {
+  display: flex; align-items: center; gap: 7px; justify-content: center;
+  font-size: 12px; color: var(--danger);
+  background: var(--danger-pale); border: 1px solid rgba(192,57,43,0.15);
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  margin-top: 20px;
+}

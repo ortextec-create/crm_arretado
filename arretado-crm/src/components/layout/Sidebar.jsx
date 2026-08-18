@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { sistemaApi } from '../../api/services'
 import { Avatar } from '../ui'
+import EmpresaSwitcher from './EmpresaSwitcher'
 import styles from './Sidebar.module.css'
 
 const NAV = [
@@ -118,6 +119,7 @@ export default function Sidebar() {
       </nav>
 
       <div className={styles.footer}>
+        <EmpresaSwitcher />
         <button className={styles.userPill} onClick={handleLogout} title="Sair do sistema">
           <Avatar name={user?.name || 'U S'} size="sm" />
           <div className={styles.userInfo}>

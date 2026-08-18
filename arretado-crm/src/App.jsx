@@ -27,6 +27,7 @@ import Auditoria from './pages/Auditoria'
 import Estoque from './pages/Estoque'
 import Financeiro from './pages/Financeiro'
 import Empresas from './pages/Empresas'
+import EscolherEmpresa from './pages/EscolherEmpresa'
 
 
 
@@ -50,6 +51,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/escolher-empresa" element={<ProtectedRoute><EscolherEmpresa /></ProtectedRoute>} />
           <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="clientes" element={<Clientes />} />
