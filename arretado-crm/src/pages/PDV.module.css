@@ -340,7 +340,7 @@
 .acaoConfirmar { background: #3B82F6; color: #fff; }
 .acaoPreparo   { background: #F59E0B; color: #fff; }
 .acaoPronto    { background: #10B981; color: #fff; }
-.acaoConcluir  { background: var(--caramelo); color: #fff; }
+.acaoConcluir  { background: var(--caramelo); color: var(--caramelo-texto); }
 
 .cardStatus {
   font-size: 12px;
@@ -565,7 +565,7 @@
   transition: all 0.12s;
 }
 .catTab:hover    { border-color: var(--caramelo); color: var(--caramelo); }
-.catTabActive    { background: var(--caramelo); border-color: var(--caramelo); color: #fff; }
+.catTabActive    { background: var(--caramelo); border-color: var(--caramelo); color: var(--caramelo-texto); }
 
 .prodGrid {
   flex: 1;
@@ -864,7 +864,7 @@
   transition: all 0.12s;
 }
 .toggleBtn:hover     { border-color: var(--caramelo); color: var(--caramelo); }
-.toggleBtnActive     { background: var(--caramelo); border-color: var(--caramelo); color: #fff; }
+.toggleBtnActive     { background: var(--caramelo); border-color: var(--caramelo); color: var(--caramelo-texto); }
 
 .clienteExtra {
   background: var(--fundo);
@@ -1019,7 +1019,7 @@
 .btnConfirmar { background: #3B82F6; color: #fff; }
 .btnPreparo   { background: #F59E0B; color: #fff; }
 .btnPronto    { background: #10B981; color: #fff; }
-.btnConcluir  { background: var(--caramelo); color: #fff; }
+.btnConcluir  { background: var(--caramelo); color: var(--caramelo-texto); }
 .btnCancelar  { background: #EF444422; color: #EF4444; border: 1px solid #EF444444; }
 
 /* ── Spin ────────────────────────────────────────────────────────────────── */

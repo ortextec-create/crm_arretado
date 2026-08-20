@@ -41,7 +41,7 @@
 }
 
 .chip:hover { border-color: var(--caramelo); color: var(--caramelo); }
-.chipActive { background: var(--caramelo); border-color: var(--caramelo); color: #fff; }
+.chipActive { background: var(--caramelo); border-color: var(--caramelo); color: var(--caramelo-texto); }
 
 .selectCategoria {
   padding: 9px 12px;
@@ -152,9 +152,9 @@
   border: 1px solid transparent;
 }
 
-.tipoFabricado { background: var(--caramelo-pale); color: var(--caramelo); border-color: rgba(184,115,10,.25); }
-.tipoRevenda   { background: var(--verde-pale);    color: var(--verde);    border-color: rgba(74,124,89,.25); }
-.tipoKit       { background: var(--marrom-pale, var(--bg-alt)); color: var(--marrom); border-color: rgba(107,58,42,.22); }
+.tipoFabricado { background: var(--caramelo-pale); color: var(--caramelo); border-color: rgba(var(--caramelo-rgb),.25); }
+.tipoRevenda   { background: var(--verde-pale);    color: var(--verde);    border-color: rgba(var(--verde-rgb),.25); }
+.tipoKit       { background: var(--marrom-pale, var(--bg-alt)); color: var(--marrom); border-color: rgba(var(--marrom-rgb),.22); }
 
 .btnEditarCard {
   position: absolute;

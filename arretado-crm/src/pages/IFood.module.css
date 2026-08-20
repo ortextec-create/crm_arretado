@@ -9,7 +9,7 @@
 .pollingBadge    {
   display: flex; align-items: center; gap: 7px; font-size: 12px;
   color: var(--verde); padding: 6px 14px;
-  background: var(--verde-pale); border: 1px solid rgba(74,124,89,0.22);
+  background: var(--verde-pale); border: 1px solid rgba(var(--verde-rgb),0.22);
   border-radius: 20px; font-weight: 500;
 }
 .pollingBadgeOff {

@@ -144,8 +144,8 @@
 .tdNome   { font-weight: 500; }
 .tdMuted  { color: var(--texto-muted); font-size: 12px; }
 .tdDestaque { font-weight: 600; }
-.tdVerde  { color: #059669; font-weight: 600; }
-.tdVermelho { color: #dc2626; font-weight: 600; }
+.tdVerde  { color: var(--status-ok-fg); font-weight: 600; }
+.tdVermelho { color: var(--status-critico-fg); font-weight: 600; }
 
 .rowEditado td { background: #fef9c3 !important; }
 
@@ -285,9 +285,9 @@
   display: inline-block;
 }
 
-.semaforoVerde    { background: #059669; }
-.semaforoAmarelo  { background: #d97706; }
-.semaforoVermelho { background: #dc2626; }
+.semaforoVerde    { background: var(--status-ok-fg); }
+.semaforoAmarelo  { background: var(--status-alerta-fg); }
+.semaforoVermelho { background: var(--status-critico-fg); }
 .semaforoNeutro   { background: #9ca3af; }
 
 .badge {
@@ -298,9 +298,9 @@
   font-weight: 600;
 }
 
-.badge.semaforoVerde    { background: #d1fae5; color: #059669; }
-.badge.semaforoAmarelo  { background: #fef3c7; color: #d97706; }
-.badge.semaforoVermelho { background: #fee2e2; color: #dc2626; }
+.badge.semaforoVerde    { background: var(--status-ok-bg); color: var(--status-ok-fg); }
+.badge.semaforoAmarelo  { background: var(--status-alerta-bg); color: var(--status-alerta-fg); }
+.badge.semaforoVermelho { background: var(--status-critico-bg); color: var(--status-critico-fg); }
 .badge.semaforoNeutro   { background: #f3f4f6; color: #6b7280; }
 
 /* Semáforo layout */
@@ -465,10 +465,10 @@
 }
 
 .chip:hover { background: var(--surface-hover); color: var(--texto); }
-.chipActive  { background: var(--caramelo) !important; border-color: var(--caramelo) !important; color: #fff !important; }
+.chipActive  { background: var(--caramelo) !important; border-color: var(--caramelo) !important; color: var(--caramelo-texto) !important; }
 
-.chipDanger:hover { background: #fee2e2; color: #dc2626; }
-.chipDangerActive { background: #dc2626 !important; border-color: #dc2626 !important; color: #fff !important; }
+.chipDanger:hover { background: var(--status-critico-bg); color: var(--status-critico-fg); }
+.chipDangerActive { background: var(--status-critico-fg) !important; border-color: var(--status-critico-fg) !important; color: #fff !important; }
 
 .valorRow {
   display: flex;
@@ -660,6 +660,6 @@
   line-height: 1.5;
 }
 
-.markupNote i { color: #d97706; font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.markupNote i { color: var(--status-alerta-fg); font-size: 15px; flex-shrink: 0; margin-top: 1px; }
 
 .paramActions { display: flex; justify-content: flex-end; }

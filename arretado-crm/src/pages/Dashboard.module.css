@@ -81,7 +81,7 @@
   border-radius: 3px 3px 0 0; transition: background 0.2s;
 }
 .bar:hover { background: var(--caramelo-dim2); }
-.barActive { background: rgba(184,115,10,0.35) !important; border-color: var(--caramelo) !important; }
+.barActive { background: rgba(var(--caramelo-rgb),0.35) !important; border-color: var(--caramelo) !important; }
 .barLabel  { font-size: 9px; color: var(--texto-muted); }
 
 /* Status bars */
@@ -107,9 +107,9 @@
 .canalValue { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; line-height: 1; margin-bottom: 6px; }
 .canalSub   { font-size: 11px; opacity: 0.75; }
 
-.canalIfood   { background: #FAECE7; color: #D85A30; }
-.canalPdv     { background: #E1F5EE; color: #1D9E75; }
-.canalEventos { background: #EEEDFE; color: #7F77DD; }
+.canalIfood   { background: var(--canal-ifood-bg); color: var(--canal-ifood-fg); }
+.canalPdv     { background: var(--canal-pdv-bg); color: var(--canal-pdv-fg); }
+.canalEventos { background: var(--canal-eventos-bg); color: var(--canal-eventos-fg); }
 .canalEmBreve { background: var(--bg-alt); color: var(--texto-muted); }
 .canalEmBreve .canalValue { color: var(--texto-faint); }
 

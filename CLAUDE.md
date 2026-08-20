@@ -286,16 +286,28 @@ arretado-crm/                    ← raiz React
     │                               brandingLogin — ver "Multi-Empresa" abaixo),
     │                               sistemaApi (versao — ver "Versão do Sistema" abaixo)
     ├── utils/
-    │   └── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — extraído de Auditoria.jsx,
-    │                               reusado também pela aba/seção "Histórico" no modal de Orçamento/Evento
+    │   ├── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — extraído de Auditoria.jsx,
+    │   │                           reusado também pela aba/seção "Histórico" no modal de Orçamento/Evento
+    │   └── tema.js              ← Multi-Empresa Fase 3 (temas, ver MULTIEMPRESA.md): `aplicarCoresEmpresa(empresa)`
+    │                               (mapeia os 12 campos de cor de `Empresa` pros tokens CSS reais de `index.css`,
+    │                               sempre via `setProperty`/`removeProperty` — nunca só pular campo vazio, é o
+    │                               que garante reset correto ao trocar de empresa/tema/logout),
+    │                               `aplicarModoNeutro(modo)` (seta/limpa `data-theme` na raiz) e `aplicarTema()`
+    │                               (helper único que decide entre os dois, usado por `useAuth.jsx` e `Login.jsx`)
     ├── hooks/
     │   └── useAuth.jsx          ← AuthProvider/useAuth — user (cache em localStorage, exceção já existente,
     │                               ver Padrões Obrigatórios) + login/logout + Multi-Empresa Fase 2:
     │                               `empresas`/`empresaAtiva` (derivados de `user.empresas`/`user.empresa_ativa`,
     │                               vindos do payload de login) + `trocarEmpresa(id)`/`definirPreferenciaTema(tema)`
-    │                               (chamam a API, depois espelham a resposta em `authApi.atualizarCache()`)
+    │                               (chamam a API, depois espelham a resposta em `authApi.atualizarCache()`) +
+    │                               Fase 3: `useEffect` que chama `aplicarTema()` (utils/tema.js) toda vez que
+    │                               `user` muda (login/logout/troca de empresa/troca de tema) e mantém
+    │                               `document.title`/favicon sincronizados com a empresa ativa
     ├── pages/
-    │   ├── Login.jsx
+    │   ├── Login.jsx            ← Multi-Empresa Fase 3: busca `empresasApi.brandingLogin()` no mount e aplica
+    │   │                           via `aplicarCoresEmpresa()` (tela pré-login sempre no tema "Empresa" da
+    │   │                           `padrao=True`, sem seletor ali) — logo/nome/subtítulo dinâmicos com fallback
+    │   │                           pro SVG + texto "Arretado Doces" atual quando a empresa não tem logo
     │   ├── EscolherEmpresa.jsx  ← Multi-Empresa Fase 2: tela pós-login com 2+ empresas vinculadas (rota
     │   │                          própria /escolher-empresa, fora do AppLayout — sem sidebar) — cards por
     │   │                          empresa (logo/cor/nome), escolha chama trocarEmpresa() e navega pro app
@@ -340,13 +352,24 @@ arretado-crm/                    ← raiz React
     │   │   ├── Sidebar.jsx
     │   │   ├── Topbar.jsx       ← topbar por página (título + busca/ações) — não é um header global; o
     │   │   │                      projeto não tem chrome compartilhado além da Sidebar (ver Multi-Empresa Fase 2)
-    │   │   └── EmpresaSwitcher.jsx  ← Multi-Empresa Fase 2: pill no rodapé da Sidebar (acima do userPill),
-    │   │                              só renderiza com 2+ empresas no contexto (`useAuth().empresas`) — spec
-    │   │                              original previa "switcher no header", mas este projeto não tem header
-    │   │                              global, só Sidebar; troca chama `trocarEmpresa()` de useAuth.jsx
+    │   │   ├── EmpresaSwitcher.jsx  ← Multi-Empresa Fase 2: pill no rodapé da Sidebar (acima do userPill),
+    │   │   │                          só renderiza com 2+ empresas no contexto (`useAuth().empresas`) — spec
+    │   │   │                          original previa "switcher no header", mas este projeto não tem header
+    │   │   │                          global, só Sidebar; troca chama `trocarEmpresa()` de useAuth.jsx
+    │   │   └── SeletorTema.jsx      ← Multi-Empresa Fase 3: segmented control de 3 ícones (empresa/claro/escuro)
+    │   │                              no rodapé da Sidebar, acima do `EmpresaSwitcher` — mesmo desvio "sem
+    │   │                              header global" já documentado na Fase 2 — sempre visível (não depende
+    │   │                              de 2+ empresas), chama `definirPreferenciaTema()` de useAuth.jsx
     │   └── ui/                  ← Btn, Modal, Spinner, Avatar, etc. · PresencaAtiva.jsx (badge "Fulano também
     │                               está vendo isso agora", heartbeat a cada 15s via presencaApi — usado no
     │                               modal de detalhe de Orçamento e Evento)
+    ├── index.css                ← tokens do design system (`:root`) — ver Padrões Obrigatórios; Multi-Empresa
+    │                               Fase 3 acrescentou tokens novos (companheiros `--*-rgb`, trio de status
+    │                               compartilhado, badges de canal/marca externa, tokens de sidebar/tipografia)
+    │                               sem alterar nenhum valor existente
+    ├── temas.css                 ← Multi-Empresa Fase 3 (novo): blocos `:root[data-theme="neutro-claro"]` e
+    │                               `:root[data-theme="neutro-escuro"]` — identidade do produto Ortex (não de
+    │                               cliente), por isso vive em CSS e não no banco como as cores de empresa
     └── App.jsx                  ← rotas do frontend — inclui /escolher-empresa (ProtectedRoute, fora do AppLayout)
 ```
 
@@ -457,16 +480,41 @@ arretado-crm/                    ← raiz React
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão — refatorar para cookie/JWT no futuro)*
 - **CSS Modules** — cada página tem seu `.module.css`
-- **Variáveis CSS do design system:**
-  - `--caramelo` → cor primária da marca
-  - `--fundo` → background da página
-  - `--surface` → background de cards/tabelas
-  - `--border` → bordas gerais
-  - `--texto` → texto principal
-  - `--muted` → texto secundário/placeholder
-  - `--hover` → hover em linhas
-  - `--verde` → indicadores positivos
-- **Tipografia:** `'Playfair Display', serif` em títulos · `'Inter', sans-serif` em corpo
+- **Variáveis CSS do design system** (`src/index.css`, nomes reais — corrigido nesta sessão, a lista
+  anterior citava nomes conceituais que nunca existiram no CSS, ex. `--fundo`/`--muted`/`--hover`):
+  - `--caramelo`/`--caramelo-light`/`--caramelo-pale` → cor primária da marca (+ `--caramelo-rgb` pra
+    opacidade via `rgba(var(--caramelo-rgb), X)`, `--caramelo-texto` → cor do texto sobre botão primário)
+  - `--bg`/`--bg-alt` → background da página · `--surface`/`--surface-raised`/`--surface-hover` → cards/tabelas
+  - `--border`/`--border-strong`/`--border-accent` → bordas
+  - `--texto`/`--texto-sec`/`--texto-muted`/`--texto-faint` → hierarquia de texto
+  - `--verde` → indicadores positivos · `--danger`/`--warning` → estado (+ `--verde-rgb`/`--danger-rgb`)
+  - **Multi-Empresa Fase 3** (temas, ver MULTIEMPRESA.md) acrescentou, sem alterar nenhum valor
+    existente: trio de status compartilhado `--status-{ok,alerta,critico}-{bg,fg}` (substituiu hex cru
+    repetido em Estoque/FichasTecnicas/Financeiro/CentralPrecos/Configuracoes), badges de canal
+    `--canal-{ifood,pdv,eventos}-{bg,fg}` (Dashboard), badges de marca externa `--badge-{ifood,anotaai}-{bg,fg}`
+    e `--whatsapp`/`--whatsapp-rgb`/`--whatsapp-hover` (**nunca** seguem tema de empresa nem tema neutro —
+    identidade de terceiro, sempre fixos), tokens de sidebar `--sidebar-{bg,border,texto,texto-mut,ativo,ativo-bg}`
+    (sidebar tem esquema de cor independente do conteúdo — necessário pra uma empresa poder ter sidebar
+    escura sobre conteúdo claro, como o mockup da MANGAIO) e `--font-display`/`--font-body`
+  - **Nunca perseguir 100% dos hex hardcoded que ainda restam** nos CSS Modules (ex. a família `#EF4444`/
+    `#3B82F6`/`#F59E0B`/`#10B981`/`#6B7280` de status de ação do PDV, semáforo neutro do CentralPrecos,
+    badges verde/vermelho de texto do Configuracoes) — decisão consciente da Fase 3: só converter
+    duplicatas exatas de token já existente e os trios semânticos mais repetidos; o resto é cor
+    decorativa local de baixo risco, sem tema de empresa nem alto ganho de DRY, revisitar só se algo
+    ficar de fato ilegível no tema escuro
+- **Sistema de Temas** (Multi-Empresa Fase 3, `src/temas.css` + `src/utils/tema.js` — ver MULTIEMPRESA.md)
+  — três modos, persistidos em `Usuario.preferencia_tema` (nunca `localStorage`): **Empresa** (default)
+  aplica as 12 cores de `empresaAtiva` como overrides inline via `aplicarCoresEmpresa()` (campo vazio ⇒
+  `removeProperty` ⇒ cai no valor default do token, nunca só "pula" o campo — é o que garante reset
+  correto ao trocar de empresa/tema/logout); **Claro**/**Escuro** (`neutro_claro`/`neutro_escuro`) aplicam
+  `data-theme` na raiz e limpam qualquer override de cor de empresa — são paletas estáticas do produto
+  (Inter, não Playfair/DM Sans), identidade Ortex, não de cliente, por isso vivem em `temas.css` e não no
+  banco. `useAuth.jsx` reaplica o tema (+ `document.title` + favicon) num `useEffect` sempre que `user`
+  muda; `Login.jsx` aplica o branding da empresa `padrao=True` incondicionalmente (tela pré-login não tem
+  seletor). Seletor de tema: `SeletorTema.jsx`, rodapé da Sidebar (mesmo desvio "sem header global" já
+  documentado no `EmpresaSwitcher` da Fase 2).
+- **Tipografia:** tema de empresa → `'Playfair Display', serif` em títulos (`.serif`, via `--font-display`)
+  · `'DM Sans', sans-serif` no corpo (via `--font-body`); temas neutros trocam os dois pra `'Inter', sans-serif`
 - **Ícones:** Tabler Icons (`ti ti-*`)
 - **`services.js`:** um objeto de API por canal — `clientesApi`, `ifoodApi`, `pdvApi`, `notificacoesApi`, `orcamentosApi`, `fichasApi`
 - **Novo canal** = novo objeto no `services.js` seguindo o mesmo padrão
@@ -511,7 +559,7 @@ arretado-crm/                    ← raiz React
 | Resumo de Cozinha (Evento) | PDF operacional (A4 página cheia, ReportLab Platypus, sem timbre) com itens do Evento agrupados por categoria, pra a equipe de cozinha montar a produção — sem preços. Botão em `Eventos.jsx` (card de detalhe + linha da lista) | ✅ Concluída (só A4 página cheia — meia-folha/térmica fora de escopo por ora) |
 | Módulo Financeiro — Fases 0-7 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo, `DespesaRecorrente` + crons, `ContaReceber` + signals PDV/iFood/PagamentoEvento, integração Estoque → nota fiscal vira `ContaPagar`, fluxo de caixa + conferência de saldo + lançamento manual, frontend `Financeiro.jsx`) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`) + action `movimentos/manual/`, `ContaPagar`/`ContaReceber` (obrigação projetada, `valor_pago`/`valor_recebido`/`status` derivados), `DespesaRecorrente` + `AlertaFinanceiroEnviado` + crons `gerar_contas_recorrentes`/`alertar_vencimentos`, signals de venda (PDV/iFood/PagamentoEvento) batendo automaticamente no ledger com estorno em cancelamento, `estoque.ImportacaoNotaFiscal.fornecedor_cnpj` + geração automática de `ContaPagar` na confirmação da nota, `SaldoConferido` (conferências/) + `fluxo-caixa/` (agregador realizado x projetado + saldos por conta) + `Financeiro.jsx` (5 abas, `financeiroApi` em `services.js`, rota `/financeiro` + item de menu) | 🔄 Em andamento (fases 0-7 de 8 — falta só a Fase 8, testes finais + revisão do CLAUDE.md canônico) |
 | Sistema de Backup (Banco + Mídia) | App `manutencao/` (spec completa em `backup.md`) — `ConfiguracaoBackup`/`TelefoneAlertaBackup`, cron `fazer_backup` (pg_dump + tarfile de media/ + rotação local + envio pro Backblaze B2 via rclone + rotação remota) e `verificar_backup` (alerta WhatsApp sem dedup se backup ausente/velho/corrompido) | ✅ Concluída (fases 1-5 — envio externo configurado com Backblaze B2 em 30/jul/2026; restauração é sempre manual, ver Padrões Obrigatórios) |
-| Multi-Empresa + Temas — Fases 0-2 (app `empresas/` + model `Empresa`; iFood multi-empresa; Usuários × Empresas + empresa ativa) | Spec completa em `MULTIEMPRESA.md` (6 fases, 0-5). Fase 0: app `empresas/`: model `Empresa` (multi-tenant por linha, branding em 12 campos de cor + 3 logos + timbre preparatório, `padrao` único via constraint condicional), `EmpresaViewSet` (CRUD sem DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (rota `/empresas`, menu Administração, `role=admin`). Fase 1: FK `empresa` (`PROTECT`) em `ifood.ConfiguracaoIFood`/`ifood.PedidoIFood` e `pedidos.PedidoUnificado` (`null=True`); credencial de ação de pedido sempre resolvida pela empresa do pedido (nunca `.objects.first()`); `IFood.jsx` com seletor de empresa (só visível com 2+ empresas ativas). Fase 2: `usuarios.Usuario` ganhou `empresas` (M2M) + `empresa_ativa` (FK) + `preferencia_tema`; login devolve empresas/empresa_ativa/tema "efetivos" (fallback pra empresa padrão, nunca bloqueia); `POST /usuarios/definir-empresa-ativa/` (audita `empresa_alternada`, admin pode ativar qualquer empresa) + `POST /usuarios/preferencia-tema/` (não audita); `useAuth.jsx` (`trocarEmpresa`/`definirPreferenciaTema`), `EscolherEmpresa.jsx` (rota pós-login com 2+ empresas), `EmpresaSwitcher.jsx` (pill na Sidebar — projeto não tem header global), checkbox de vínculo em `Usuarios.jsx` | 🔄 Em andamento (fases 0-2 de 6 — matriz criada via data migration, MANGAIO ainda não cadastrada; Temas, Financeiro, Dashboard/Relatórios multi-empresa são as próximas 3 fases) |
+| Multi-Empresa + Temas — Fases 0-3 (app `empresas/` + model `Empresa`; iFood multi-empresa; Usuários × Empresas + empresa ativa; sistema de temas) | Spec completa em `MULTIEMPRESA.md` (6 fases, 0-5). Fase 0: app `empresas/`: model `Empresa` (multi-tenant por linha, branding em 12 campos de cor + 3 logos + timbre preparatório, `padrao` único via constraint condicional), `EmpresaViewSet` (CRUD sem DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (rota `/empresas`, menu Administração, `role=admin`). Fase 1: FK `empresa` (`PROTECT`) em `ifood.ConfiguracaoIFood`/`ifood.PedidoIFood` e `pedidos.PedidoUnificado` (`null=True`); credencial de ação de pedido sempre resolvida pela empresa do pedido (nunca `.objects.first()`); `IFood.jsx` com seletor de empresa (só visível com 2+ empresas ativas). Fase 2: `usuarios.Usuario` ganhou `empresas` (M2M) + `empresa_ativa` (FK) + `preferencia_tema`; login devolve empresas/empresa_ativa/tema "efetivos" (fallback pra empresa padrão, nunca bloqueia); `POST /usuarios/definir-empresa-ativa/` (audita `empresa_alternada`, admin pode ativar qualquer empresa) + `POST /usuarios/preferencia-tema/` (não audita); `useAuth.jsx` (`trocarEmpresa`/`definirPreferenciaTema`), `EscolherEmpresa.jsx` (rota pós-login com 2+ empresas), `EmpresaSwitcher.jsx` (pill na Sidebar — projeto não tem header global), checkbox de vínculo em `Usuarios.jsx`. Fase 3 (100% frontend, sem migration): tokens novos em `index.css` (rgb companheiros, trio de status compartilhado, badges de canal/marca externa, tokens de sidebar, `--font-display`/`--font-body`) + conversão mecânica de ~150 ocorrências de hex/rgb cru pra `var()` em 20 CSS Modules + `ui.module.css` (auditoria feita por agente, valores idênticos — zero mudança visual); `temas.css` (novo, paletas `neutro-claro`/`neutro-escuro`); `utils/tema.js` (`aplicarCoresEmpresa`/`aplicarModoNeutro`/`aplicarTema`); `useAuth.jsx` aplica o tema (+ título + favicon) num `useEffect`; `Login.jsx` consome `brandingLogin()` (órfão desde a Fase 0); `Sidebar.jsx` mostra logo/subtítulo dinâmicos da empresa ativa; `SeletorTema.jsx` novo (rodapé da Sidebar). Validado visualmente via Playwright headless (usuário de teste `TESTE Fase3 Temas`, criado e removido na mesma sessão) nos 3 modos, em Login/Dashboard/Financeiro/Estoque — matriz byte-idêntica confirmada, troca de tema instantânea sem reload | 🔄 Em andamento (fases 0-3 de 6 — matriz criada via data migration, MANGAIO ainda não cadastrada; Financeiro e Dashboard/Relatórios multi-empresa são as próximas 2 fases) |
 
 ---
 
@@ -943,7 +991,11 @@ Infra já configurada em produção (não precisa recriar):
 - Não auditar `preferencia-tema/` (cosmético) — auditar sempre `definir-empresa-ativa/` (`empresa_alternada`, afeta dado financeiro que o usuário enxerga nas próximas fases)
 - Não deixar `empresa_ativa`/`preferencia_tema` editáveis por `PATCH /usuarios/{id}/` direto (nem por admin editando outro usuário) — só mudam via os dois endpoints dedicados (`UsuarioSerializer` mantém os dois como `read_only`)
 - Não usar `localStorage` como fonte da verdade de empresa ativa/tema — o padrão é sempre gravar no backend primeiro (`usuariosApi.definirEmpresaAtiva`/`preferenciaTema`) e só depois espelhar a resposta via `authApi.atualizarCache()` (mantém o mesmo objeto `auth_user` já cacheado coerente após F5 — não é uma fonte de verdade nova, é o mesmo padrão já existente do cache de sessão)
-- Não aplicar tema de fato (troca de tokens CSS) nesta fase — `preferencia_tema` já existe no banco/API, mas a aplicação visual é Fase 3 do `MULTIEMPRESA.md`
+- Não confundir os 12 campos de cor de `Empresa` com os nomes de token do `MULTIEMPRESA.md` (tabela conceitual da Fase 0) — os tokens **reais** em `index.css` têm nomes diferentes (`--bg` não `--fundo`, `--caramelo` não `--primaria`, etc.); o mapeamento de fato vive em `src/utils/tema.js::aplicarCoresEmpresa()`, único lugar que faz essa tradução
+- Não setar cor de empresa/tema neutro direto via `document.documentElement.style`/`dataset` em nenhum componente novo — sempre pelas funções de `utils/tema.js` (`aplicarCoresEmpresa`/`aplicarModoNeutro`/`aplicarTema`), chamadas só em `useAuth.jsx` (autenticado) e `Login.jsx` (pré-login) — nenhum outro lugar
+- Ao adicionar um campo de cor `#fff`/token novo pensando em tema de empresa, sempre usar o valor hex **atual** como default em `:root` — nunca um valor novo "mais bonito" — e sempre em par `--x-bg`/`--x-fg` (nunca hex único embutido), pra que `temas.css` consiga redefinir a dupla sem reescrever estrutura
+- Não redefinir `--badge-{ifood,anotaai}-*`/`--whatsapp*` dentro de `temas.css` — são identidade de marca de terceiro, sempre fixos nos dois temas neutros (só o `:root` base os define)
+- Não perseguir 100% dos hex hardcoded restantes nos CSS Modules como um objetivo desta fase — famílias como `#EF4444`/`#3B82F6`/`#F59E0B`/`#10B981`/`#6B7280` (ações do PDV), semáforo neutro do CentralPrecos e badges de texto do Configuracoes ficaram de propósito fora (decisão consciente, ver Padrões Obrigatórios) — só revisitar se ficarem de fato ilegíveis no tema escuro
 - Não resolver credencial de ação de pedido iFood (confirmar/cancelar/despachar/pronto-retirada/negociação) via `ConfiguracaoIFood.objects.first()` — sempre `ConfiguracaoIFood.objects.filter(empresa=pedido.empresa)` (ver `ifood/views.py::PedidoIFoodViewSet._get_client()`); com dois merchants ativos (matriz + MANGAIO), `.first()` mistura credencial de uma empresa com pedido de outra
 - Não materializar `pdv.PedidoPDV`/`eventos.Evento` com empresa diferente da padrão — PDV e Eventos são mono-empresa por decisão de escopo do `MULTIEMPRESA.md` (Fases 3-ext-A e 4 do produto, não do multi-empresa), sempre gravam `Empresa.get_padrao()` no `PedidoUnificado`, nunca a empresa "ativa" de um usuário (esse conceito só existe a partir da Fase 2 do multi-empresa)
 - Não hardcodar a versão do sistema em nenhum arquivo/settings/variável — `obter_versao()` sempre deriva de `git describe --tags`; criar uma release é sempre `git tag -a` + push da tag + entrada no `CHANGELOG.md`, nunca editar um número em código

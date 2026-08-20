@@ -347,7 +347,7 @@
   transition: all 0.12s;
 }
 .ativoTab:hover     { color: var(--texto); }
-.ativoTabActive     { background: var(--caramelo); color: #fff; font-weight: 600; }
+.ativoTabActive     { background: var(--caramelo); color: var(--caramelo-texto); font-weight: 600; }
 
 /* ── Grid de produtos ────────────────────────────────────────────────────── */
 .prodGrid {
@@ -454,7 +454,7 @@
 }
 
 .modalProduto {
-  background: var(--surface, #fff);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
   width: 100%; max-width: 480px;
@@ -503,7 +503,7 @@
 
 /* ── Modal confirmação ───────────────────────────────────────────────────── */
 .modalConfirm {
-  background: var(--surface, #fff);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 28px 24px;

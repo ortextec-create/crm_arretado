@@ -232,8 +232,8 @@
   border-radius: 999px;
 }
 
-.badgeGreen { background: #d1fae5; color: #065f46; }
-.badgeRed   { background: #fee2e2; color: #991b1b; }
+.badgeGreen { background: var(--status-ok-bg); color: #065f46; }
+.badgeRed   { background: var(--status-critico-bg); color: #991b1b; }
 .badgeGray  { background: var(--border); color: var(--muted); }
 
 /* ── Toast ──────────────────────────────────────────────── */

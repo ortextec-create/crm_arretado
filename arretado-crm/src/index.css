@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Inter:wght@400;500;600;700&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,13 +17,18 @@
   --caramelo-pale:  #FDF3E3;
   --caramelo-dim:   rgba(184,115,10,0.10);
   --caramelo-dim2:  rgba(184,115,10,0.16);
+  --caramelo-rgb:   184,115,10;
+  --caramelo-texto: #FFFFFF;
+  --acento:         var(--caramelo-light);
 
   --marrom:         #6B3A2A;
   --marrom-light:   #8A4D38;
+  --marrom-rgb:     107,58,42;
 
   --verde:          #4A7C59;
   --verde-pale:     #EAF2EC;
   --verde-dim:      rgba(74,124,89,0.12);
+  --verde-rgb:      74,124,89;
 
   /* ── Texto ── */
   --texto:          #1C1410;
@@ -40,9 +45,58 @@
   --danger:         #C0392B;
   --danger-pale:    #FDECEA;
   --danger-dim:     rgba(192,57,43,0.10);
+  --danger-rgb:     192,57,43;
 
   --warning:        #D4890F;
   --warning-pale:   #FEF3DC;
+
+  /* ── Status semântico compartilhado (ok/alerta/crítico) — usado em
+     Estoque/FichasTecnicas/Financeiro/CentralPrecos/Configuracoes, antes
+     repetido como hex cru em cada arquivo. Valores = os hex já usados hoje. ── */
+  --status-ok-bg:       #D1FAE5;
+  --status-ok-fg:       #059669;
+  --status-ok-rgb:      5,150,105;
+  --status-alerta-bg:   #FEF3C7;
+  --status-alerta-fg:   #D97706;
+  --status-alerta-rgb:  217,119,6;
+  --status-critico-bg:  #FEE2E2;
+  --status-critico-fg:  #DC2626;
+  --status-critico-rgb: 220,38,38;
+
+  /* ── Badges de canal (Dashboard) — decorativos, valores atuais ── */
+  --canal-ifood-bg:    #FAECE7;
+  --canal-ifood-fg:    #D85A30;
+  --canal-pdv-bg:      #E1F5EE;
+  --canal-pdv-fg:      #1D9E75;
+  --canal-eventos-bg:  #EEEDFE;
+  --canal-eventos-fg:  #7F77DD;
+
+  /* ── Badges de marca externa (integração/WhatsApp) — nunca seguem tema
+     de empresa nem tema neutro, são identidade de terceiro ── */
+  --badge-ifood-bg:    #FEF0E6;
+  --badge-ifood-fg:    #C25B0A;
+  --badge-anotaai-bg:  #F3EEFF;
+  --badge-anotaai-fg:  #7C3AED;
+  --whatsapp:          #25D366;
+  --whatsapp-rgb:      37,211,102;
+  --whatsapp-hover:    #1EBE5D;
+
+  /* ── Sidebar (independente do conteúdo — permite empresa com esquema
+     próprio, ex: sidebar escura sobre conteúdo claro) ── */
+  --sidebar-bg:         var(--surface);
+  --sidebar-border:     var(--border);
+  --sidebar-texto:      var(--texto-sec);
+  --sidebar-texto-mut:  var(--texto-muted);
+  --sidebar-ativo:      var(--caramelo);
+  --sidebar-ativo-bg:   var(--caramelo-pale);
+
+  /* ── Overlays ── */
+  --overlay-light: rgba(255,255,255,0.9);
+  --scrim:         rgba(28,20,16,0.40);
+
+  /* ── Tipografia (temas neutros trocam pra Inter) ── */
+  --font-display: 'Playfair Display', serif;
+  --font-body:    'DM Sans', sans-serif;
 
   /* ── Misc ── */
   --radius-sm:      6px;
@@ -57,7 +111,7 @@ html, body, #root {
   height: 100%;
   background: var(--bg);
   color: var(--texto);
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -74,7 +128,7 @@ input, select, textarea { font-family: inherit; }
 ::-webkit-scrollbar-thumb:hover { background: var(--caramelo); }
 
 /* Utils */
-.serif   { font-family: 'Playfair Display', serif; }
+.serif   { font-family: var(--font-display); }
 .muted   { color: var(--texto-muted); }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

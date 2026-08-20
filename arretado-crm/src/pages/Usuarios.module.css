@@ -34,7 +34,7 @@
   color: var(--texto-faint); border-radius: var(--radius-sm);
   font-size: 13px; cursor: pointer; transition: all 0.15s; font-family: inherit; flex-shrink: 0;
 }
-.iconBtnDanger:hover { color: var(--danger); border-color: rgba(192,57,43,0.3); background: var(--danger-pale); }
+.iconBtnDanger:hover { color: var(--danger); border-color: rgba(var(--danger-rgb),0.3); background: var(--danger-pale); }
 
 /* Permissions panel */
 .permHeader {

@@ -146,9 +146,9 @@
   white-space: nowrap;
 }
 
-.statusVerde    { color: #059669; background: #d1fae5; }
-.statusAmarelo  { color: #d97706; background: #fef3c7; }
-.statusVermelho { color: #dc2626; background: #fee2e2; }
+.statusVerde    { color: var(--status-ok-fg); background: var(--status-ok-bg); }
+.statusAmarelo  { color: var(--status-alerta-fg); background: var(--status-alerta-bg); }
+.statusVermelho { color: var(--status-critico-fg); background: var(--status-critico-bg); }
 
 .detMeta {
   display: flex;
@@ -199,7 +199,7 @@
   font-size: 14px;
 }
 
-.btnRemove:hover { color: #dc2626; background: #fee2e2; }
+.btnRemove:hover { color: var(--status-critico-fg); background: var(--status-critico-bg); }
 
 /* Totais */
 .totaisBox {

@@ -11,8 +11,8 @@
   content: '';
   position: absolute; inset: 0;
   background:
-    radial-gradient(ellipse 60% 50% at 70% 15%, rgba(184,115,10,0.06) 0%, transparent 55%),
-    radial-gradient(ellipse 40% 40% at 20% 85%, rgba(74,124,89,0.05) 0%, transparent 50%);
+    radial-gradient(ellipse 60% 50% at 70% 15%, rgba(var(--caramelo-rgb),0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 40% at 20% 85%, rgba(var(--verde-rgb),0.05) 0%, transparent 50%);
   pointer-events: none;
 }
 
@@ -28,7 +28,8 @@
 
 .logo          { text-align: center; margin-bottom: 36px; }
 .logo svg      { display: block; margin: 0 auto 14px; }
-.logo h1       { font-size: 26px; font-weight: 700; color: var(--texto); }
+.logo h1       { font-size: 26px; font-weight: 700; color: var(--texto); font-family: var(--font-display); }
+.logoImg       { display: block; max-width: 220px; max-height: 64px; margin: 0 auto 14px; object-fit: contain; }
 .logoSub       { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--texto-muted); margin-top: 5px; }
 
 .subtitle      { font-size: 13px; color: var(--texto-muted); text-align: center; margin-bottom: 28px; }
@@ -56,24 +57,24 @@
 .error {
   display: flex; align-items: center; gap: 7px;
   font-size: 12px; color: var(--danger);
-  background: var(--danger-pale); border: 1px solid rgba(192,57,43,0.15);
+  background: var(--danger-pale); border: 1px solid rgba(var(--danger-rgb),0.15);
   padding: 9px 12px; border-radius: var(--radius-sm);
   margin-bottom: 14px;
 }
 
 .btnLogin {
-  width: 100%; background: var(--caramelo); color: #fff;
+  width: 100%; background: var(--caramelo); color: var(--caramelo-texto);
   border: none; padding: 13px;
   font-size: 13px; font-weight: 600; letter-spacing: 0.5px;
   cursor: pointer; border-radius: var(--radius-sm);
   transition: all 0.15s;
   display: flex; align-items: center; justify-content: center; gap: 8px;
   margin-top: 8px;
-  box-shadow: 0 2px 8px rgba(184,115,10,0.25);
+  box-shadow: 0 2px 8px rgba(var(--caramelo-rgb),0.25);
 }
 .btnLogin:hover:not(:disabled) {
   background: var(--caramelo-light);
-  box-shadow: 0 4px 14px rgba(184,115,10,0.35);
+  box-shadow: 0 4px 14px rgba(var(--caramelo-rgb),0.35);
   transform: translateY(-1px);
 }
 .btnLogin:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }

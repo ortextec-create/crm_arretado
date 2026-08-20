@@ -258,7 +258,7 @@
   background: #fef2f2;
   border: 1px solid #fecaca;
   border-radius: 7px;
-  color: #dc2626;
+  color: var(--status-critico-fg);
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -402,7 +402,7 @@
 }
 
 .cancel {
-  color: #dc2626 !important;
+  color: var(--status-critico-fg) !important;
   font-weight: 600;
 }
 

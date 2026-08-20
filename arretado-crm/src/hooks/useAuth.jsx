@@ -1,10 +1,23 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { authApi, usuariosApi } from '../api/services'
+import { aplicarTema } from '../utils/tema'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => authApi.me())
+
+  // Fase 3 (temas, ver MULTIEMPRESA.md) — reage a login/logout/troca de
+  // empresa/troca de preferência de tema, sempre a partir do mesmo `user`
+  // já cacheado (nenhuma chamada de API extra aqui).
+  useEffect(() => {
+    aplicarTema({ empresa: user?.empresa_ativa || null, preferenciaTema: user?.preferencia_tema })
+    document.title = `${user?.empresa_ativa?.nome || 'Arretado Doces'} — CRM`
+    const favicon = document.querySelector('link[rel="icon"]')
+    if (favicon && user?.empresa_ativa?.logo_simbolo) {
+      favicon.href = user.empresa_ativa.logo_simbolo
+    }
+  }, [user])
 
   const login = useCallback(async (email, password) => {
     const u = await authApi.login(email, password)

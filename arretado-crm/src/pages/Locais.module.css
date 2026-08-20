@@ -38,4 +38,4 @@
   font-size: 13px; cursor: pointer; transition: all 0.15s; font-family: inherit;
 }
 .iconBtn:hover       { color: var(--caramelo); border-color: var(--caramelo); }
-.iconBtnDanger:hover { color: #c0392b !important; border-color: rgba(192,57,43,0.3) !important; }
+.iconBtnDanger:hover { color: var(--danger) !important; border-color: rgba(var(--danger-rgb),0.3) !important; }

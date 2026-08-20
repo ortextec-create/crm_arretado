@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { sistemaApi } from '../../api/services'
 import { Avatar } from '../ui'
 import EmpresaSwitcher from './EmpresaSwitcher'
+import SeletorTema from './SeletorTema'
 import styles from './Sidebar.module.css'
 
 const NAV = [
@@ -65,7 +66,7 @@ const NAV = [
 const ROLE_LABEL = { admin: 'Administrador', gerente: 'Gerente', atendente: 'Atendente' }
 
 export default function Sidebar() {
-  const { user, logout } = useAuth()
+  const { user, logout, empresaAtiva } = useAuth()
   const navigate = useNavigate()
   const [versao, setVersao] = useState(null)
 
@@ -81,9 +82,18 @@ export default function Sidebar() {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <h2 className="serif">
-          Arretado <span style={{ color: 'var(--caramelo)' }}>Doces</span>
-        </h2>
+        {empresaAtiva?.logo_horizontal || empresaAtiva?.logo_negativo ? (
+          <img
+            src={(empresaAtiva.cor_sidebar && empresaAtiva.logo_negativo) || empresaAtiva.logo_horizontal || empresaAtiva.logo_negativo}
+            alt={empresaAtiva.nome}
+            className={styles.brandLogo}
+          />
+        ) : (
+          <h2 className="serif">
+            Arretado <span style={{ color: 'var(--caramelo)' }}>Doces</span>
+          </h2>
+        )}
+        {empresaAtiva?.subtitulo && <p className={styles.brandSubtitulo}>{empresaAtiva.subtitulo}</p>}
         <p
           className={styles.brandSub}
           title={versao ? `Commit ${versao.commit} · ${versao.commit_data?.slice(0, 10) || ''}` : ''}
@@ -119,6 +129,7 @@ export default function Sidebar() {
       </nav>
 
       <div className={styles.footer}>
+        <SeletorTema />
         <EmpresaSwitcher />
         <button className={styles.userPill} onClick={handleLogout} title="Sair do sistema">
           <Avatar name={user?.name || 'U S'} size="sm" />
@@ -126,7 +137,7 @@ export default function Sidebar() {
             <p>{user?.name || 'Usuário'}</p>
             <span>{ROLE_LABEL[user?.role] || 'Usuário'}</span>
           </div>
-          <i className="ti ti-logout" style={{ fontSize: 14, color: 'var(--muted)', marginLeft: 'auto' }} />
+          <i className="ti ti-logout" style={{ fontSize: 14, color: 'var(--texto-muted)', marginLeft: 'auto' }} />
         </button>
       </div>
     </aside>

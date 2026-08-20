@@ -147,15 +147,15 @@
   gap: 4px;
   padding: 3px 8px;
   border-radius: 6px;
-  border: 1px solid #25D36655;
+  border: 1px solid rgba(var(--whatsapp-rgb),0.33);
   background: transparent;
-  color: #25D366;
+  color: var(--whatsapp);
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.linkContrato:hover { background: #25D36618; }
+.linkContrato:hover { background: rgba(var(--whatsapp-rgb),0.09); }
 
 .acoesCol {
   display: flex;
@@ -309,7 +309,7 @@
   line-height: 1;
 }
 
-.clienteSelecionado button:hover { color: #dc2626; background: #fee2e2; }
+.clienteSelecionado button:hover { color: var(--status-critico-fg); background: var(--status-critico-bg); }
 
 /* Itens */
 .itensSection {
@@ -413,7 +413,7 @@
   font-size: 15px;
 }
 
-.btnRemove:hover { color: #dc2626; background: #fee2e2; }
+.btnRemove:hover { color: var(--status-critico-fg); background: var(--status-critico-bg); }
 
 .semItens { font-size: 12px; color: var(--muted); margin: 8px 0; }
 
@@ -578,7 +578,7 @@
   line-height: 1;
 }
 
-.imagemRemoverBtn:hover { background: #dc2626; }
+.imagemRemoverBtn:hover { background: var(--status-critico-fg); }
 
 .uploadImagemBtn {
   display: inline-flex;
@@ -607,7 +607,7 @@
   margin-top: 4px;
 }
 
-.desconto { color: #dc2626; }
+.desconto { color: var(--status-critico-fg); }
 .totalFinal { color: var(--texto); font-size: 14px; }
 
 /* Detalhe */
@@ -676,35 +676,35 @@
 }
 
 .erro {
-  color: #dc2626;
+  color: var(--status-critico-fg);
   font-size: 12px;
   margin: 6px 0;
 }
 
 /* WhatsApp */
 .btnWpp {
-  color: #25D366 !important;
-  border-color: #25D366 !important;
+  color: var(--whatsapp) !important;
+  border-color: var(--whatsapp) !important;
 }
 .btnWpp:hover {
-  background: color-mix(in srgb, #25D366 10%, var(--surface)) !important;
+  background: color-mix(in srgb, var(--whatsapp) 10%, var(--surface)) !important;
 }
 
 .btnWppSend {
-  background: #25D366 !important;
-  border-color: #25D366 !important;
+  background: var(--whatsapp) !important;
+  border-color: var(--whatsapp) !important;
   color: #fff !important;
 }
-.btnWppSend:hover { background: #1ebe5d !important; }
+.btnWppSend:hover { background: var(--whatsapp-hover) !important; }
 
 .wppDestinatarioCard {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border: 1px solid #25D36640;
+  border: 1px solid rgba(var(--whatsapp-rgb),0.25);
   border-radius: 10px;
-  background: color-mix(in srgb, #25D366 7%, var(--surface));
+  background: color-mix(in srgb, var(--whatsapp) 7%, var(--surface));
   margin-bottom: 10px;
 }
 
@@ -758,6 +758,6 @@
   transition: all 0.14s;
 }
 .radioCard:hover       { border-color: var(--caramelo); }
-.radioCardActive       { border-color: var(--caramelo); background: rgba(184,115,10,0.04); }
+.radioCardActive       { border-color: var(--caramelo); background: rgba(var(--caramelo-rgb),0.04); }
 .radioCard input       { display: none; }
 .radioCard i           { font-size: 18px; color: var(--caramelo); flex-shrink: 0; }

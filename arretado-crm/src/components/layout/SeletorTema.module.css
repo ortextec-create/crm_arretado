@@ -1,0 +1,16 @@
+.wrap {
+  display: flex; gap: 3px;
+  background: var(--bg-alt); border: 1px solid var(--sidebar-border);
+  border-radius: var(--radius-sm);
+  padding: 3px; margin-bottom: 8px;
+}
+
+.opcao {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 5px;
+  padding: 6px 0; font-size: 13px; color: var(--sidebar-texto-mut);
+  transition: all 0.14s;
+}
+.opcao:hover { color: var(--sidebar-texto); background: var(--surface-hover); }
+.opcao.ativo { color: var(--sidebar-ativo); background: var(--sidebar-ativo-bg); }

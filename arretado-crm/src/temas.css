@@ -1,0 +1,161 @@
+/* Temas neutros do produto (Fase 3 do multi-empresa, ver MULTIEMPRESA.md).
+   Identidade do produto Ortex — não de cliente — por isso as paletas vivem
+   aqui em CSS, diferente das cores de empresa (que só existem no banco).
+   Aplicado via atributo data-theme na raiz (ver src/utils/tema.js). Cada
+   bloco redefine TODOS os tokens de :root — nunca os badges de marca
+   externa (badges de iFood/Anota Aí, WhatsApp), que são identidade de
+   terceiro e ficam fixos nos dois temas. */
+
+:root[data-theme="neutro-claro"] {
+  --font-display: 'Inter', sans-serif;
+  --font-body:    'Inter', sans-serif;
+
+  --bg:             #F6F7FB;
+  --bg-alt:         #EEF0F7;
+  --surface:        #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-hover:  #F3F4F9;
+
+  --caramelo:       #4F46E5;
+  --caramelo-light: #6D64EA;
+  --caramelo-pale:  #EEEDFB;
+  --caramelo-dim:   rgba(79,70,229,0.10);
+  --caramelo-dim2:  rgba(79,70,229,0.16);
+  --caramelo-rgb:   79,70,229;
+  --caramelo-texto: #FFFFFF;
+  --acento:         var(--caramelo-light);
+
+  --marrom:         #475569;
+  --marrom-light:   #64748B;
+  --marrom-rgb:     71,85,105;
+
+  --verde:          #16A34A;
+  --verde-pale:     #DCFCE7;
+  --verde-dim:      rgba(22,163,74,0.12);
+  --verde-rgb:      22,163,74;
+
+  --texto:          #0F172A;
+  --texto-sec:      #334155;
+  --texto-muted:    #64748B;
+  --texto-faint:    #94A3B8;
+
+  --border:         #E2E8F0;
+  --border-strong:  #CBD5E1;
+  --border-accent:  rgba(79,70,229,0.25);
+
+  --danger:         #DC2626;
+  --danger-pale:    #FEE2E2;
+  --danger-dim:     rgba(220,38,38,0.10);
+  --danger-rgb:     220,38,38;
+
+  --warning:        #D97706;
+  --warning-pale:   #FEF3C7;
+
+  --status-ok-bg:       #DCFCE7;
+  --status-ok-fg:       #16A34A;
+  --status-ok-rgb:      22,163,74;
+  --status-alerta-bg:   #FEF3C7;
+  --status-alerta-fg:   #D97706;
+  --status-alerta-rgb:  217,119,6;
+  --status-critico-bg:  #FEE2E2;
+  --status-critico-fg:  #DC2626;
+  --status-critico-rgb: 220,38,38;
+
+  --canal-ifood-bg:    #FDEDE7;
+  --canal-ifood-fg:    #C2410C;
+  --canal-pdv-bg:      #DCFCE7;
+  --canal-pdv-fg:      #15803D;
+  --canal-eventos-bg:  #EDE9FE;
+  --canal-eventos-fg:  #6D28D9;
+
+  --sidebar-bg:         #FFFFFF;
+  --sidebar-border:     #E2E8F0;
+  --sidebar-texto:      #334155;
+  --sidebar-texto-mut:  #64748B;
+  --sidebar-ativo:      #4F46E5;
+  --sidebar-ativo-bg:   #EEEDFB;
+
+  --overlay-light: rgba(255,255,255,0.9);
+  --scrim:         rgba(15,23,42,0.45);
+
+  --shadow-sm: 0 1px 3px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.06);
+  --shadow-md: 0 4px 16px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.07);
+  --shadow-lg: 0 12px 40px rgba(15,23,42,0.13), 0 4px 12px rgba(15,23,42,0.08);
+}
+
+:root[data-theme="neutro-escuro"] {
+  --font-display: 'Inter', sans-serif;
+  --font-body:    'Inter', sans-serif;
+
+  --bg:             #0B1120;
+  --bg-alt:         #0F172A;
+  --surface:        #131C31;
+  --surface-raised: #17213A;
+  --surface-hover:  #1A2540;
+
+  --caramelo:       #818CF8;
+  --caramelo-light: #A5B4FC;
+  --caramelo-pale:  rgba(129,140,248,0.16);
+  --caramelo-dim:   rgba(129,140,248,0.14);
+  --caramelo-dim2:  rgba(129,140,248,0.22);
+  --caramelo-rgb:   129,140,248;
+  --caramelo-texto: #10162B;
+  --acento:         var(--caramelo-light);
+
+  --marrom:         #94A3B8;
+  --marrom-light:   #B6C2D9;
+  --marrom-rgb:     148,163,184;
+
+  --verde:          #34D399;
+  --verde-pale:     rgba(52,211,153,0.16);
+  --verde-dim:      rgba(52,211,153,0.14);
+  --verde-rgb:      52,211,153;
+
+  --texto:          #E7ECF5;
+  --texto-sec:      #B6C2D9;
+  --texto-muted:    #8593AD;
+  --texto-faint:    #5B6B87;
+
+  --border:         #223049;
+  --border-strong:  #2E3E5C;
+  --border-accent:  rgba(129,140,248,0.30);
+
+  --danger:         #F87171;
+  --danger-pale:    rgba(248,113,113,0.16);
+  --danger-dim:     rgba(248,113,113,0.14);
+  --danger-rgb:     248,113,113;
+
+  --warning:        #FBBF24;
+  --warning-pale:   rgba(251,191,36,0.16);
+
+  --status-ok-bg:       rgba(52,211,153,0.16);
+  --status-ok-fg:       #34D399;
+  --status-ok-rgb:      52,211,153;
+  --status-alerta-bg:   rgba(251,191,36,0.16);
+  --status-alerta-fg:   #FBBF24;
+  --status-alerta-rgb:  251,191,36;
+  --status-critico-bg:  rgba(248,113,113,0.16);
+  --status-critico-fg:  #F87171;
+  --status-critico-rgb: 248,113,113;
+
+  --canal-ifood-bg:    rgba(216,90,48,0.18);
+  --canal-ifood-fg:    #F0916B;
+  --canal-pdv-bg:      rgba(29,158,117,0.18);
+  --canal-pdv-fg:      #4FD8A8;
+  --canal-eventos-bg:  rgba(127,119,221,0.20);
+  --canal-eventos-fg:  #ADA5F5;
+
+  --sidebar-bg:         #0E1526;
+  --sidebar-border:     #223049;
+  --sidebar-texto:      #B6C2D9;
+  --sidebar-texto-mut:  #8593AD;
+  --sidebar-ativo:      #A5B4FC;
+  --sidebar-ativo-bg:   rgba(129,140,248,0.16);
+
+  --overlay-light: rgba(23,33,58,0.9);
+  --scrim:         rgba(0,0,0,0.6);
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.35);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.40);
+}
