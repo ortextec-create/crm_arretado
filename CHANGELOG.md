@@ -5,6 +5,28 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.4.0] - 2026-08-20
+
+### Adicionado
+- **Multi-Empresa — Fase 3** (Sistema de Temas, spec completa em `MULTIEMPRESA.md`): fecha o
+  ciclo visual do multi-empresa — 100% frontend, sem nenhuma migration. As 12 cores + 3 logos
+  cadastrados em `Empresa` (desde a Fase 0) agora são de fato aplicados na interface
+  (`src/utils/tema.js::aplicarCoresEmpresa()`), com reset correto ao trocar de empresa/tema/
+  logout (campo vazio sempre limpa o override, nunca só pula). Dois temas neutros novos do
+  produto — Claro e Escuro (`src/temas.css`, tipografia Inter) — selecionáveis por um controle
+  novo no rodapé da Sidebar (`SeletorTema.jsx`), persistidos em `Usuario.preferencia_tema`
+  (já existente desde a Fase 2). `Login.jsx` passou a consumir `GET /empresas/branding-login/`
+  (endpoint órfão desde a Fase 0) — a tela de login agora reflete nome/logo/cores da empresa
+  matriz. `Sidebar.jsx` mostra logo e subtítulo dinâmicos quando a empresa ativa tiver. Como
+  pré-requisito do spec, ~150 ocorrências de cor hardcoded em 20 CSS Modules foram convertidas
+  para tokens de design system (mesmos valores — mudança invisível para quem nunca trocar de
+  tema), incluindo um trio de tokens de status compartilhado (ok/alerta/crítico) que elimina
+  duplicação entre Estoque/Financeiro/Central de Preços/Fichas Técnicas/Configurações. Validado
+  visualmente nos 3 modos em Login, Dashboard, Financeiro e Estoque — a aparência da Arretado
+  (tema "Empresa" sem nenhuma cor cadastrada) permanece pixel-a-pixel idêntica à anterior a esta
+  entrega. Faltam as 2 últimas fases do multi-empresa: Financeiro e Dashboard/Relatórios por
+  empresa.
+
 ## [v1.3.0] - 2026-08-18
 
 ### Adicionado
