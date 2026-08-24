@@ -346,3 +346,31 @@ class BrindesPermutasPDVTests(AuditoriaPDVTestCase):
         natureza_por_nome = {i.nome: i.natureza for i in pedido.itens.all()}
         self.assertEqual(natureza_por_nome['Bolo Vendido'], 'venda')
         self.assertEqual(natureza_por_nome['Cookie de Brinde'], 'brinde')
+
+    def test_pedido_avulso_100_por_cento_brinde_sem_pagamento_sincroniza_pedido_unificado(self):
+        # Fase 5 do BRINDES_PERMUTAS.md ("PDV Avulso"): saída de brinde/permuta sem
+        # Orçamento/Evento reaproveita o PedidoPDV comum — sem pagamento informado (campo
+        # já é blank=True) e com total=0, ganha de graça numeração sequencial e
+        # sincronização com PedidoUnificado, sem precisar de tela/registro dedicado.
+        from pedidos.models import PedidoUnificado
+
+        view = PedidoPDVViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/pdv/pedidos/',
+            {
+                'itens': [
+                    {'nome': 'Bolo Cortesia', 'preco_unit': '60.00', 'quantidade': 1, 'natureza': 'brinde'},
+                ],
+            },
+            format='json',
+        )
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        pedido = PedidoPDV.objects.latest('id')
+        self.assertEqual(pedido.pagamento, '')
+        self.assertEqual(pedido.total, Decimal('0.00'))
+        self.assertTrue(pedido.numero)  # numeração sequencial normal, nada especial
+
+        espelho = PedidoUnificado.objects.get(canal='pdv', origem_id=pedido.id)
+        self.assertEqual(espelho.total, 0)
