@@ -70,6 +70,40 @@ class ProdutosMaisVendidosTests(TestCase):
         resp = self._get()
         self.assertEqual(resp.data['produtos'], [])
 
+    def test_pdv_exclui_item_brinde_e_permuta(self):
+        # Fase 2 do BRINDES_PERMUTAS.md: natureza != 'venda' não conta no ranking.
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), status='concluido')
+        ItemPedidoPDV.objects.create(
+            pedido=pedido, nome='Brigadeiro', quantidade=10, preco_unit=Decimal('3'), natureza='brinde',
+        )
+        ItemPedidoPDV.objects.create(
+            pedido=pedido, nome='Docinho', quantidade=5, preco_unit=Decimal('2'), natureza='permuta',
+        )
+        resp = self._get()
+        self.assertEqual(resp.data['produtos'], [])
+
+    def test_eventos_exclui_item_brinde_e_permuta(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), tipo_evento='aniversario',
+            data_evento=date.today(), status='entregue',
+        )
+        ItemEvento.objects.create(
+            evento=evento, nome='Bolo de Brinde', quantidade=1, preco_unit=Decimal('100'), natureza='brinde',
+        )
+        resp = self._get()
+        self.assertEqual(resp.data['produtos'], [])
+
+    def test_item_venda_conta_normalmente_junto_com_brinde_no_mesmo_pedido(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), status='concluido')
+        ItemPedidoPDV.objects.create(pedido=pedido, nome='Bolo Vendido', quantidade=1, preco_unit=Decimal('50'))
+        ItemPedidoPDV.objects.create(
+            pedido=pedido, nome='Brinde Junto', quantidade=1, preco_unit=Decimal('20'), natureza='brinde',
+        )
+        resp = self._get()
+        produtos = resp.data['produtos']
+        self.assertEqual(len(produtos), 1)
+        self.assertEqual(produtos[0]['nome'], 'Bolo Vendido')
+
     def test_eventos_so_conta_status_entregue(self):
         confirmado = Evento.objects.create(
             numero=Evento.proximo_numero(), tipo_evento='aniversario',

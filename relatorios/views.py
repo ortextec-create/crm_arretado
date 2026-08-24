@@ -410,7 +410,10 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
     Só considera pedido/evento que representa venda de fato concretizada:
     iFood status=CONCLUDED, PDV status confirmado/em_preparo/pronto/concluido
     (exclui aberto/cancelado), Evento status=entregue. Orçamentos ficam de
-    fora de propósito — são cotação, não venda fechada.
+    fora de propósito — são cotação, não venda fechada. Itens de PDV/Eventos
+    com natureza='brinde'/'permuta' (ver BRINDES_PERMUTAS.md, Fase 2) também
+    ficam de fora — não são venda; iFood não tem esse conceito (campo não
+    existe em ItemPedidoIFood), então não há o que filtrar ali.
 
     Fase 5 do multi-empresa: aceita ?empresa=<id>/?empresa=todas (mesmo default
     dos demais endpoints Fase 5). iFood filtra por `pedido__empresa`; PDV/Eventos
@@ -509,6 +512,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
                 pedido__status__in=['confirmado', 'em_preparo', 'pronto', 'concluido'],
                 pedido__criado_em__date__gte=data_inicio,
                 pedido__criado_em__date__lte=data_fim,
+                natureza='venda',
             )
             .values('nome')
             .annotate(quantidade=Sum('quantidade'), valor=Sum('preco_total'))
@@ -521,6 +525,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
                 evento__status='entregue',
                 evento__data_evento__gte=data_inicio,
                 evento__data_evento__lte=data_fim,
+                natureza='venda',
             )
             .values('nome')
             .annotate(quantidade=Sum('quantidade'), valor=Sum('preco_total'))

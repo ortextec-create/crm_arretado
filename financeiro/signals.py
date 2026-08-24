@@ -60,6 +60,8 @@ def _registrar_venda_pdv(pedido):
     from empresas.models import Empresa
 
     from .models import MovimentoFinanceiro
+    if pedido.total <= 0:
+        return  # pedido 100% brinde/permuta (ver BRINDES_PERMUTAS.md) — sem entrada fantasma de R$0,00
     if MovimentoFinanceiro.objects.filter(origem_tipo='pdv', origem_id=pedido.id).exists():
         return  # já registrado — idempotência
     conta = _conta_padrao_ou_none(Empresa.get_padrao())
@@ -174,6 +176,8 @@ def _registrar_pagamento_evento(pagamento):
     from empresas.models import Empresa
 
     from .models import MovimentoFinanceiro
+    if pagamento.valor <= 0:
+        return  # defensivo — mesma guarda de _registrar_venda_pdv, ver BRINDES_PERMUTAS.md
     if MovimentoFinanceiro.objects.filter(origem_tipo='evento_pagamento', origem_id=pagamento.id).exists():
         return
     conta = _conta_padrao_ou_none(Empresa.get_padrao())

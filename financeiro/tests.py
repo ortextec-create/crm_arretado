@@ -453,6 +453,14 @@ class PdvSignalTests(TestCase):
         pedido.save()
         self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='manual').exists())
 
+    def test_confirmar_pedido_100_por_cento_brinde_nao_gera_movimento(self):
+        # Fase 2 do BRINDES_PERMUTAS.md: pedido com total=0 (só itens de brinde/permuta)
+        # não deve virar uma entrada fantasma de R$0,00 no ledger.
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('0.00'))
+        pedido.status = 'confirmado'
+        pedido.save()
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='pdv').exists())
+
 
 class IfoodSignalTests(TestCase):
     def setUp(self):
@@ -558,6 +566,11 @@ class PagamentoEventoSignalTests(TestCase):
         pagamento = PagamentoEvento.objects.create(evento=self.evento, valor=Decimal('200.00'), status='pendente')
         pagamento.delete()
         self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='manual').exists())
+
+    def test_pagamento_pago_de_valor_zero_nao_gera_movimento(self):
+        # Fase 2 do BRINDES_PERMUTAS.md: guarda defensiva simétrica à do PDV.
+        PagamentoEvento.objects.create(evento=self.evento, valor=Decimal('0.00'), status='pago')
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='evento_pagamento').exists())
 
 
 class ContaReceberViewSetTests(TestCase):
