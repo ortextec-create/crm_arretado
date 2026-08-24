@@ -1,5 +1,6 @@
 import datetime
 from decimal import Decimal
+from io import BytesIO
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -151,6 +152,28 @@ class GerarContratoTests(TestCase):
         pdf_bytes = gerar_pdf_contrato(contrato)
         reader = PdfReader(BytesIO(pdf_bytes))
         return '\n'.join(page.extract_text() or '' for page in reader.pages)
+
+    def test_pdf_mostra_rotulo_e_valor_riscado_do_brinde(self):
+        # Fase 3 do BRINDES_PERMUTAS.md: mesma transparência do pdf_orcamento.py —
+        # rótulo ao lado do nome + preço de tabela riscado (<strike> nativo do Paragraph).
+        ItemOrcamento.objects.create(
+            orcamento=self.orc, nome='Bolo de Brinde', preco_unit=Decimal('50.00'), quantidade=1, natureza='brinde',
+        )
+        self.orc.recalcular_totais()
+        payload = {
+            'cpf': '123.456.789-00', 'rg': '1234567', 'nacionalidade': 'brasileira',
+            'profissao': 'Professora', 'estado_civil': 'solteiro',
+            'endereco_avulso': 'Rua das Flores, 100 - Centro, Teresina/PI',
+        }
+        resp = self._post(payload)
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        contrato = Contrato.objects.get(orcamento=self.orc)
+        texto = self._texto_pdf(contrato)
+        self.assertIn('Bolo de Brinde', texto)
+        self.assertIn('Brinde', texto)
+        self.assertIn('R$ 50,00', texto)
 
     def test_sem_entrada_informada_pdf_mostra_estado_vazio(self):
         # Contrato sem Evento (orçamento ainda não convertido), sem entrada
@@ -1530,3 +1553,27 @@ class BrindesPermutasTests(TestCase):
         # o item convertido não passa pelo save() de novo com dado velho — o total do
         # evento já reflete só a parte vendida, sem precisar de recalcular_totais() extra
         self.assertEqual(evento.valor_total, Decimal('100.00'))
+
+    def test_pdf_orcamento_mostra_rotulo_e_valor_riscado_do_brinde(self):
+        # Fase 3 do BRINDES_PERMUTAS.md: item de brinde/permuta aparece no PDF com
+        # transparência — rótulo ao lado do nome + preço de tabela riscado.
+        from .pdf_orcamento import gerar_pdf_orcamento
+
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+        )
+        ItemOrcamento.objects.create(orcamento=orc, nome='Bolo Vendido', preco_unit=Decimal('100.00'), quantidade=1)
+        ItemOrcamento.objects.create(
+            orcamento=orc, nome='Bolo de Brinde', preco_unit=Decimal('80.00'), quantidade=1, natureza='brinde',
+        )
+        orc.recalcular_totais()
+
+        pdf_bytes = gerar_pdf_orcamento(orc)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+
+        from pypdf import PdfReader
+        texto = '\n'.join(page.extract_text() or '' for page in PdfReader(BytesIO(pdf_bytes)).pages)
+        self.assertIn('Bolo de Brinde', texto)
+        self.assertIn('Brinde', texto)
+        self.assertIn('R$ 80,00', texto)  # preço de tabela riscado ainda aparece impresso
+        self.assertIn('R$ 100,00', texto)  # TOTAL final não conta o brinde

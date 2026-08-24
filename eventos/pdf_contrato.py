@@ -10,7 +10,7 @@ from functools import partial
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable,
@@ -29,6 +29,12 @@ W, H = A4
 ML   = 48.0
 MR   = W - 48.0
 MW   = MR - ML
+
+# Brindes e Permutas (ver BRINDES_PERMUTAS.md, Fase 3) — preco_unit riscado quando
+# natureza != 'venda'; <strike> é nativo do Paragraph do ReportLab.
+ESTILO_PRECO_RISCADO = ParagraphStyle(
+    'preco_riscado', fontName='Helvetica', fontSize=8.3, textColor=colors.black, alignment=TA_RIGHT,
+)
 
 MESES = [
     '', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
@@ -495,9 +501,15 @@ def _gerar_conteudo(contrato) -> bytes:
     table_data = [['Descrição', 'Qtd', 'Preço Unit.', 'Total']]
     for item in itens:
         nome = item.nome
+        if item.natureza != 'venda':
+            nome += f' — {item.get_natureza_display()}'
         if item.observacao:
             nome += f'  ({item.observacao})'
-        table_data.append([nome, str(item.quantidade), _brl(item.preco_unit), _brl(item.preco_total)])
+        preco_unit_cell = (
+            Paragraph(f'<strike>{_brl(item.preco_unit)}</strike>', ESTILO_PRECO_RISCADO)
+            if item.natureza != 'venda' else _brl(item.preco_unit)
+        )
+        table_data.append([nome, str(item.quantidade), preco_unit_cell, _brl(item.preco_total)])
 
     table_data.append(['', '', 'Subtotal', _brl(fonte.subtotal)])
     n_sub = len(table_data) - 1

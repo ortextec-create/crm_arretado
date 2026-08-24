@@ -5,8 +5,10 @@ from io import BytesIO
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_RIGHT
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfgen import canvas
-from reportlab.platypus import Table, TableStyle
+from reportlab.platypus import Paragraph, Table, TableStyle
 
 # ── Paleta de cores ────────────────────────────────────────────────────────────
 
@@ -21,6 +23,12 @@ W, H = A4
 ML   = 48.0   # margem esquerda
 MR   = W - 48.0
 MW   = MR - ML
+
+# Brindes e Permutas (ver BRINDES_PERMUTAS.md, Fase 3) — preco_unit riscado quando
+# natureza != 'venda'; <strike> é nativo do Paragraph do ReportLab.
+ESTILO_PRECO_RISCADO = ParagraphStyle(
+    'preco_riscado', fontName='Helvetica', fontSize=8.5, textColor=colors.black, alignment=TA_RIGHT,
+)
 
 
 def gerar_pdf_orcamento(orc) -> bytes:
@@ -157,9 +165,15 @@ def _gerar_conteudo(orc) -> bytes:
     table_data = [['Descrição', 'Qtd', 'Preço Unit.', 'Total']]
     for item in itens:
         nome = item.nome
+        if item.natureza != 'venda':
+            nome += f' — {item.get_natureza_display()}'
         if item.observacao:
             nome += f'  ({item.observacao})'
-        table_data.append([nome, str(item.quantidade), _brl(item.preco_unit), _brl(item.preco_total)])
+        preco_unit_cell = (
+            Paragraph(f'<strike>{_brl(item.preco_unit)}</strike>', ESTILO_PRECO_RISCADO)
+            if item.natureza != 'venda' else _brl(item.preco_unit)
+        )
+        table_data.append([nome, str(item.quantidade), preco_unit_cell, _brl(item.preco_total)])
 
     # Linhas de totais
     table_data.append(['', '', 'Subtotal', _brl(orc.subtotal)])
