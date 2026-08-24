@@ -5,6 +5,32 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.5.0] - 2026-08-24
+
+### Adicionado
+- **Multi-Empresa — Fase 4** (Financeiro por empresa, spec completa em `MULTIEMPRESA.md`):
+  `financeiro.ContaBancaria`/`ContaPagar`/`ContaReceber`/`DespesaRecorrente` ganham FK
+  `empresa` (`PROTECT`); `ConfiguracaoFinanceira` deixa de ser singleton global e vira 1 linha
+  por empresa (`get(empresa)`); `MovimentoFinanceiro` continua sem FK própria — a empresa é
+  sempre a da `ContaBancaria` (property). Signals de venda resolvem a config pela empresa
+  certa: iFood pela empresa do próprio pedido (permite a MANGAIO em modo `repasse` e a matriz
+  em `no_ato` simultaneamente), PDV/Eventos sempre a matriz (mono-empresa por escopo). Todos
+  os endpoints do módulo aceitam `?empresa=<id>`/`?empresa=todas` (consolidado).
+  `Financeiro.jsx` passa a consumir o contexto global de empresa ativa (`useAuth()`), com
+  badge e chip "Todas as empresas" nas abas de resumo.
+- **Multi-Empresa — Fase 5** (Dashboard e Relatórios por empresa): `GET /dashboard/resumo/`,
+  `GET /relatorios/ifood/` e `GET /relatorios/produtos-mais-vendidos/` aceitam
+  `?empresa=<id>`/`?empresa=todas` (default: empresa ativa do usuário, senão a matriz). PDV,
+  Eventos e Estoque — mono-empresa, sem FK própria — são zerados na visão de uma empresa
+  não-matriz, que ganha em troca o card "Repasse iFood a receber" (soma de `ContaReceber`
+  pendente/parcial da empresa). Campo novo `Empresa.modulos_ocultos` permite esconder, por
+  empresa, os itens de menu que ela não usa (a Sidebar filtra por isso — é só UI, nenhuma
+  rota deixa de existir); editável na tela `/empresas`. `Dashboard.jsx` e `Relatorios.jsx`
+  ganham o mesmo padrão de seletor de empresa já usado no Financeiro.
+
+Com esta entrega, as 6 fases do sistema multi-empresa (`MULTIEMPRESA.md`) estão completas.
+Falta apenas cadastrar a MANGAIO de fato pela tela `/empresas`.
+
 ## [v1.4.0] - 2026-08-20
 
 ### Adicionado
