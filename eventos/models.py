@@ -13,9 +13,20 @@ Ao salvar/atualizar um Evento, um signal espelha os dados
 no PedidoUnificado (app pedidos), mantendo o histórico unificado
 por cliente.
 """
+from decimal import Decimal
+
 from django.db import models
 from django.utils import timezone
 from clientes.models import Cliente
+
+# Brindes e Permutas (ver BRINDES_PERMUTAS.md) — item com natureza != 'venda' não fatura em
+# R$: preco_unit continua o preço de tabela (referência de "valor de mercado"), só preco_total
+# zera. Compartilhado entre ItemOrcamento e ItemEvento (mesmo app, sem motivo de duplicar).
+NATUREZA_ITEM_CHOICES = [
+    ('venda', 'Venda'),
+    ('brinde', 'Brinde'),
+    ('permuta', 'Permuta'),
+]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +188,7 @@ class ItemOrcamento(models.Model):
     quantidade  = models.PositiveIntegerField(default=1)
     preco_total = models.DecimalField(max_digits=10, decimal_places=2)
     observacao  = models.CharField(max_length=300, blank=True, default='')
+    natureza    = models.CharField(max_length=10, choices=NATUREZA_ITEM_CHOICES, default='venda')
 
     class Meta:
         verbose_name = 'Item de Orçamento'
@@ -186,7 +198,7 @@ class ItemOrcamento(models.Model):
         return f'{self.quantidade}x {self.nome} — {self.orcamento.numero}'
 
     def save(self, *args, **kwargs):
-        self.preco_total = self.preco_unit * self.quantidade
+        self.preco_total = (self.preco_unit * self.quantidade) if self.natureza == 'venda' else Decimal('0.00')
         super().save(*args, **kwargs)
 
 
@@ -411,6 +423,7 @@ class ItemEvento(models.Model):
     quantidade = models.PositiveIntegerField(default=1)
     preco_total = models.DecimalField(max_digits=10, decimal_places=2)
     observacao = models.CharField(max_length=300, blank=True, default='')
+    natureza   = models.CharField(max_length=10, choices=NATUREZA_ITEM_CHOICES, default='venda')
 
     class Meta:
         verbose_name        = 'Item de Evento'
@@ -421,7 +434,7 @@ class ItemEvento(models.Model):
         return f'{self.quantidade}x {self.nome} — {self.evento.numero}'
 
     def save(self, *args, **kwargs):
-        self.preco_total = self.preco_unit * self.quantidade
+        self.preco_total = (self.preco_unit * self.quantidade) if self.natureza == 'venda' else Decimal('0.00')
         super().save(*args, **kwargs)
 
 

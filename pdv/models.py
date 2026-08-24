@@ -395,13 +395,20 @@ class ItemPedidoPDV(models.Model):
     quantidade  = models.PositiveSmallIntegerField(default=1)
     preco_total = models.DecimalField(max_digits=10, decimal_places=2)
     observacao  = models.TextField(blank=True, default='')
+    # Brindes e Permutas (ver BRINDES_PERMUTAS.md) — item com natureza != 'venda' não fatura
+    # em R$: preco_unit continua o preço de tabela (referência), só preco_total zera.
+    natureza    = models.CharField(
+        max_length=10,
+        choices=[('venda', 'Venda'), ('brinde', 'Brinde'), ('permuta', 'Permuta')],
+        default='venda',
+    )
 
     class Meta:
         verbose_name = 'Item do Pedido PDV'
         ordering     = ['id']
 
     def save(self, *args, **kwargs):
-        self.preco_total = self.preco_unit * self.quantidade
+        self.preco_total = (self.preco_unit * self.quantidade) if self.natureza == 'venda' else Decimal('0.00')
         super().save(*args, **kwargs)
 
     def __str__(self):

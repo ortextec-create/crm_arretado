@@ -844,6 +844,7 @@ class OrcamentoViewSet(
                 quantidade=item.quantidade,
                 preco_total=item.preco_total,
                 observacao=item.observacao,
+                natureza=item.natureza,
             )
 
         orc.evento = evento
@@ -938,7 +939,7 @@ class OrcamentoViewSet(
             return Response({'detail': 'Item não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
         serializer = ItemOrcamentoCreateSerializer(item, data=request.data)
         if serializer.is_valid():
-            campos_auditados = ('nome', 'preco_unit', 'quantidade', 'observacao')
+            campos_auditados = ('nome', 'preco_unit', 'quantidade', 'observacao', 'natureza')
             antes = {c: str(getattr(item, c, None)) for c in campos_auditados}
 
             data  = serializer.validated_data

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
@@ -285,3 +287,62 @@ class ValorTotalItemPDVTests(AuditoriaPDVTestCase):
 
         pedido.refresh_from_db()
         self.assertEqual(str(pedido.total), '0.00')
+
+
+class BrindesPermutasPDVTests(AuditoriaPDVTestCase):
+    """
+    Fase 1 do BRINDES_PERMUTAS.md: item com natureza != 'venda' não fatura em R$ —
+    preco_unit continua o preço de tabela (referência), só preco_total zera.
+    """
+
+    def test_item_brinde_zera_preco_total_mantem_preco_unit(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero())
+        item = ItemPedidoPDV.objects.create(
+            pedido=pedido, nome='Brigadeiro de Brinde', preco_unit=Decimal('5.00'), quantidade=10, natureza='brinde',
+        )
+        self.assertEqual(item.preco_total, Decimal('0.00'))
+        self.assertEqual(item.preco_unit, Decimal('5.00'))
+
+    def test_item_permuta_zera_preco_total(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero())
+        item = ItemPedidoPDV.objects.create(
+            pedido=pedido, nome='Docinhos Permuta', preco_unit=Decimal('3.00'), quantidade=20, natureza='permuta',
+        )
+        self.assertEqual(item.preco_total, Decimal('0.00'))
+
+    def test_default_natureza_venda_nao_muda_comportamento_atual(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero())
+        item = ItemPedidoPDV.objects.create(pedido=pedido, nome='Bolo', preco_unit=Decimal('50.00'), quantidade=2)
+        self.assertEqual(item.natureza, 'venda')
+        self.assertEqual(item.preco_total, Decimal('100.00'))
+
+    def test_recalcular_totais_soma_so_itens_de_venda(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero())
+        ItemPedidoPDV.objects.create(pedido=pedido, nome='Bolo Vendido', preco_unit=Decimal('100.00'), quantidade=1)
+        ItemPedidoPDV.objects.create(
+            pedido=pedido, nome='Cookie de Brinde', preco_unit=Decimal('8.00'), quantidade=3, natureza='brinde',
+        )
+        pedido.recalcular_totais()
+        self.assertEqual(pedido.subtotal, Decimal('100.00'))
+        self.assertEqual(pedido.total, Decimal('100.00'))
+
+    def test_criar_pedido_com_itens_mistos_via_api_soma_so_venda(self):
+        view = PedidoPDVViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/pdv/pedidos/',
+            {
+                'itens': [
+                    {'nome': 'Bolo Vendido', 'preco_unit': '100.00', 'quantidade': 1},
+                    {'nome': 'Cookie de Brinde', 'preco_unit': '8.00', 'quantidade': 3, 'natureza': 'brinde'},
+                ],
+            },
+            format='json',
+        )
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        pedido = PedidoPDV.objects.latest('id')
+        self.assertEqual(pedido.subtotal, Decimal('100.00'))
+        self.assertEqual(pedido.total, Decimal('100.00'))
+        natureza_por_nome = {i.nome: i.natureza for i in pedido.itens.all()}
+        self.assertEqual(natureza_por_nome['Bolo Vendido'], 'venda')
+        self.assertEqual(natureza_por_nome['Cookie de Brinde'], 'brinde')

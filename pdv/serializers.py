@@ -142,7 +142,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
 class ItemPedidoPDVSerializer(serializers.ModelSerializer):
     class Meta:
         model  = ItemPedidoPDV
-        fields = ['id', 'produto', 'nome', 'preco_unit', 'quantidade', 'preco_total', 'observacao']
+        fields = ['id', 'produto', 'nome', 'preco_unit', 'quantidade', 'preco_total', 'observacao', 'natureza']
         read_only_fields = ['preco_total']
 
 
@@ -151,7 +151,7 @@ class ItemPedidoPDVCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = ItemPedidoPDV
-        fields = ['produto', 'nome', 'preco_unit', 'quantidade', 'observacao']
+        fields = ['produto', 'nome', 'preco_unit', 'quantidade', 'observacao', 'natureza']
 
     def validate(self, data):
         produto = data.get('produto')

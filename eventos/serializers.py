@@ -26,7 +26,7 @@ class ItemEventoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = ItemEvento
         fields = ['id', 'produto', 'nome', 'preco_unit', 'quantidade',
-                  'preco_total', 'observacao']
+                  'preco_total', 'observacao', 'natureza']
         read_only_fields = ['preco_total']
 
 
@@ -35,7 +35,7 @@ class ItemEventoCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = ItemEvento
-        fields = ['produto', 'nome', 'preco_unit', 'quantidade', 'observacao']
+        fields = ['produto', 'nome', 'preco_unit', 'quantidade', 'observacao', 'natureza']
 
     def validate(self, data):
         produto = data.get('produto')
@@ -246,14 +246,14 @@ class ItemOrcamentoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = ItemOrcamento
         fields = ['id', 'produto', 'nome', 'preco_unit', 'quantidade',
-                  'preco_total', 'observacao']
+                  'preco_total', 'observacao', 'natureza']
         read_only_fields = ['preco_total']
 
 
 class ItemOrcamentoCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model  = ItemOrcamento
-        fields = ['produto', 'nome', 'preco_unit', 'quantidade', 'observacao']
+        fields = ['produto', 'nome', 'preco_unit', 'quantidade', 'observacao', 'natureza']
 
     def validate(self, data):
         produto = data.get('produto')

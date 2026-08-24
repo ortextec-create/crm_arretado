@@ -1437,3 +1437,96 @@ class DashboardReceitaEventosNaoDuplicaTests(TestCase):
         from dashboard.views import DashboardResumoView
         fila = DashboardResumoView._fila_operacional()
         self.assertGreaterEqual(fila['pendente'], 1)
+
+
+class BrindesPermutasTests(TestCase):
+    """
+    Fase 1 do BRINDES_PERMUTAS.md: item com natureza != 'venda' não fatura em R$ —
+    preco_unit continua o preço de tabela (referência), só preco_total zera. O
+    recalcular_totais() do Orçamento/Evento soma preco_total sem filtro, então o
+    efeito cascateia sozinho, sem precisar tocar nesses métodos.
+    """
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(nome='Cliente Brinde', telefone_principal='86999995555')
+
+    def test_item_orcamento_brinde_zera_preco_total_mantem_preco_unit(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+        )
+        item = ItemOrcamento.objects.create(
+            orcamento=orc, nome='Bolo de Brinde', preco_unit=Decimal('80.00'), quantidade=2, natureza='brinde',
+        )
+        self.assertEqual(item.preco_total, Decimal('0.00'))
+        self.assertEqual(item.preco_unit, Decimal('80.00'))
+
+    def test_item_orcamento_permuta_zera_preco_total(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+        )
+        item = ItemOrcamento.objects.create(
+            orcamento=orc, nome='Docinhos Permuta', preco_unit=Decimal('50.00'), quantidade=3, natureza='permuta',
+        )
+        self.assertEqual(item.preco_total, Decimal('0.00'))
+
+    def test_item_orcamento_default_natureza_venda_nao_muda_comportamento_atual(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+        )
+        item = ItemOrcamento.objects.create(orcamento=orc, nome='Bolo', preco_unit=Decimal('100.00'), quantidade=1)
+        self.assertEqual(item.natureza, 'venda')
+        self.assertEqual(item.preco_total, Decimal('100.00'))
+
+    def test_orcamento_recalcular_totais_soma_so_itens_de_venda(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+        )
+        ItemOrcamento.objects.create(orcamento=orc, nome='Bolo Vendido', preco_unit=Decimal('100.00'), quantidade=1)
+        ItemOrcamento.objects.create(
+            orcamento=orc, nome='Bolo de Brinde', preco_unit=Decimal('80.00'), quantidade=1, natureza='brinde',
+        )
+        orc.recalcular_totais()
+        self.assertEqual(orc.subtotal, Decimal('100.00'))
+        self.assertEqual(orc.valor_total, Decimal('100.00'))
+
+    def test_item_evento_brinde_zera_preco_total_e_recalcular_totais_bate(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10),
+        )
+        ItemEvento.objects.create(evento=evento, nome='Bolo Vendido', preco_unit=Decimal('150.00'), quantidade=1)
+        item_brinde = ItemEvento.objects.create(
+            evento=evento, nome='Salgados de Brinde', preco_unit=Decimal('40.00'), quantidade=5, natureza='brinde',
+        )
+        self.assertEqual(item_brinde.preco_total, Decimal('0.00'))
+        evento.recalcular_totais()
+        self.assertEqual(evento.subtotal, Decimal('150.00'))
+        self.assertEqual(evento.valor_total, Decimal('150.00'))
+
+    def test_conversao_orcamento_propaga_natureza_dos_itens(self):
+        orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=20), status='aprovado',
+        )
+        ItemOrcamento.objects.create(orcamento=orc, nome='Bolo Vendido', preco_unit=Decimal('100.00'), quantidade=1)
+        ItemOrcamento.objects.create(
+            orcamento=orc, nome='Bolo de Brinde', preco_unit=Decimal('80.00'), quantidade=1, natureza='brinde',
+        )
+        orc.recalcular_totais()
+
+        view = OrcamentoViewSet.as_view({'post': 'converter_em_evento'})
+        req = APIRequestFactory().post(
+            f'/api/v1/eventos/orcamentos/{orc.id}/converter-em-evento/', {}, format='json',
+        )
+        resp = view(req, pk=orc.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        evento = Evento.objects.get(pk=resp.data['evento']['id'])
+        itens_por_nome = {i.nome: i for i in evento.itens.all()}
+        self.assertEqual(itens_por_nome['Bolo Vendido'].natureza, 'venda')
+        self.assertEqual(itens_por_nome['Bolo Vendido'].preco_total, Decimal('100.00'))
+        self.assertEqual(itens_por_nome['Bolo de Brinde'].natureza, 'brinde')
+        self.assertEqual(itens_por_nome['Bolo de Brinde'].preco_total, Decimal('0.00'))
+        # o item convertido não passa pelo save() de novo com dado velho — o total do
+        # evento já reflete só a parte vendida, sem precisar de recalcular_totais() extra
+        self.assertEqual(evento.valor_total, Decimal('100.00'))
