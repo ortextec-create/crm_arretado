@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { orcamentosApi, contratosApi, clientesApi, pdvApi, locaisEventoApi, taxasEntregaApi, configEntregaApi } from '../api/services'
-import { Btn, Modal, Spinner, Toast, Empty } from '../components/ui'
+import { Btn, Modal, Spinner, Toast, Empty, NaturezaBadge, SeletorNatureza } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
 import AtorAcao from '../components/ui/AtorAcao'
 import { ACAO_LABEL, ACAO_COR, dataFmt, resumo } from '../utils/auditoriaResumo'
@@ -428,7 +428,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
   const [buscandoCliente, setBuscandoCliente] = useState(false)
 
   // Item em edição
-  const EMPTY_ITEM = { produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' }
+  const EMPTY_ITEM = { produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '', natureza: 'venda' }
   const [novoItem, setNovoItem] = useState(EMPTY_ITEM)
 
   useEffect(() => {
@@ -505,9 +505,10 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
     if (!novoItem.nome || !novoItem.preco_unit) return
     const qty   = parseInt(novoItem.quantidade) || 1
     const price = parseFloat(novoItem.preco_unit) || 0
+    const total = novoItem.natureza === 'venda' ? price * qty : 0
     setForm(f => ({
       ...f,
-      itens: [...f.itens, { ...novoItem, quantidade: qty, preco_unit: price, preco_total: price * qty }],
+      itens: [...f.itens, { ...novoItem, quantidade: qty, preco_unit: price, preco_total: total }],
     }))
     setNovoItem(EMPTY_ITEM)
   }
@@ -545,6 +546,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
           preco_unit: i.preco_unit,
           quantidade: i.quantidade,
           observacao: i.observacao,
+          natureza:   i.natureza || 'venda',
         })),
       }
       const res = await orcamentosApi.create(payload)
@@ -709,6 +711,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
               min="0" step="0.01"
               value={novoItem.preco_unit}
               onChange={e => setNovoItem(i => ({ ...i, preco_unit: e.target.value }))}
+              disabled={novoItem.natureza !== 'venda'}
               className={styles.inputPreco}
             />
             <input
@@ -717,6 +720,10 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
               value={novoItem.quantidade}
               onChange={e => setNovoItem(i => ({ ...i, quantidade: e.target.value }))}
               className={styles.inputQtd}
+            />
+            <SeletorNatureza
+              value={novoItem.natureza}
+              onChange={v => setNovoItem(i => ({ ...i, natureza: v }))}
             />
             <Btn variant="secondary" onClick={addItem}>
               <i className="ti ti-plus" /> Adicionar
@@ -738,9 +745,11 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
             <tbody>
               {form.itens.map((item, idx) => (
                 <tr key={idx}>
-                  <td>{item.nome}</td>
+                  <td>{item.nome} <NaturezaBadge natureza={item.natureza} /></td>
                   <td className={styles.tdCenter}>{item.quantidade}</td>
-                  <td className={styles.tdRight}>{fmt(item.preco_unit)}</td>
+                  <td className={styles.tdRight} style={item.natureza !== 'venda' ? { textDecoration: 'line-through', color: 'var(--texto-muted)' } : undefined}>
+                    {fmt(item.preco_unit)}
+                  </td>
                   <td className={`${styles.tdRight} ${styles.tdTotal}`}>{fmt(item.preco_total)}</td>
                   <td><button className={styles.btnRemove} onClick={() => removeItem(idx)}><i className="ti ti-trash" /></button></td>
                 </tr>
@@ -772,12 +781,12 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
 function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRemoverItem, onItemAdicionado, onConverter, onEmitirContrato, onReenviarContrato, onEditar }) {
   const sc = STATUS_CONFIG[orc.status] || {}
   const [produtos,  setProdutos]  = useState([])
-  const [novoItem,  setNovoItem]  = useState({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' })
+  const [novoItem,  setNovoItem]  = useState({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '', natureza: 'venda' })
   const [addingItem, setAddingItem] = useState(false)
   const [uploadingImagens, setUploadingImagens] = useState(false)
   const [lightboxImg, setLightboxImg] = useState(null)
   const [editingItemId, setEditingItemId] = useState(null)
-  const [editItemForm,  setEditItemForm]  = useState({ preco_unit: '', quantidade: '1' })
+  const [editItemForm,  setEditItemForm]  = useState({ preco_unit: '', quantidade: '1', natureza: 'venda' })
   const [savingItem,    setSavingItem]    = useState(false)
 
   // Histórico (seção colapsável — este modal não usa abas)
@@ -818,15 +827,16 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
         preco_unit: parseFloat(novoItem.preco_unit),
         quantidade: parseInt(novoItem.quantidade) || 1,
         observacao: novoItem.observacao,
+        natureza:   novoItem.natureza,
       })
       onItemAdicionado(res.data)
-      setNovoItem({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '' })
+      setNovoItem({ produto: '', nome: '', preco_unit: '', quantidade: '1', observacao: '', natureza: 'venda' })
     } catch { /* silencioso */ } finally { setAddingItem(false) }
   }
 
   function handleEditItemStart(item) {
     setEditingItemId(item.id)
-    setEditItemForm({ preco_unit: String(item.preco_unit), quantidade: String(item.quantidade) })
+    setEditItemForm({ preco_unit: String(item.preco_unit), quantidade: String(item.quantidade), natureza: item.natureza })
   }
 
   function handleEditItemCancel() {
@@ -842,6 +852,7 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
         preco_unit: parseFloat(editItemForm.preco_unit) || 0,
         quantidade: parseInt(editItemForm.quantidade) || 1,
         observacao: item.observacao,
+        natureza:   editItemForm.natureza,
       })
       onItemAdicionado(res.data)
       setEditingItemId(null)
@@ -921,9 +932,18 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
                 if (editando) {
                   const qty   = parseInt(editItemForm.quantidade) || 0
                   const price = parseFloat(editItemForm.preco_unit) || 0
+                  const totalEdit = editItemForm.natureza === 'venda' ? qty * price : 0
                   return (
                     <tr key={item.id}>
-                      <td>{item.nome}</td>
+                      <td>
+                        {item.nome}
+                        <div style={{ marginTop: 4 }}>
+                          <SeletorNatureza
+                            value={editItemForm.natureza}
+                            onChange={v => setEditItemForm(f => ({ ...f, natureza: v }))}
+                          />
+                        </div>
+                      </td>
                       <td className={styles.tdCenter}>
                         <input
                           type="number" min="1"
@@ -937,10 +957,11 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
                           type="number" min="0" step="0.01"
                           value={editItemForm.preco_unit}
                           onChange={e => setEditItemForm(f => ({ ...f, preco_unit: e.target.value }))}
+                          disabled={editItemForm.natureza !== 'venda'}
                           className={styles.inputPreco}
                         />
                       </td>
-                      <td className={`${styles.tdRight} ${styles.tdTotal}`}>{fmt(qty * price)}</td>
+                      <td className={`${styles.tdRight} ${styles.tdTotal}`}>{fmt(totalEdit)}</td>
                       <td style={{ display: 'flex', gap: 4 }}>
                         <button className={styles.btnRemove} onClick={() => handleEditItemSalvar(item)} disabled={savingItem} title="Salvar">
                           <i className="ti ti-check" />
@@ -954,9 +975,11 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
                 }
                 return (
                   <tr key={item.id}>
-                    <td>{item.nome}</td>
+                    <td>{item.nome} <NaturezaBadge natureza={item.natureza} /></td>
                     <td className={styles.tdCenter}>{item.quantidade}</td>
-                    <td className={styles.tdRight}>{fmt(item.preco_unit)}</td>
+                    <td className={styles.tdRight} style={item.natureza !== 'venda' ? { textDecoration: 'line-through', color: 'var(--texto-muted)' } : undefined}>
+                      {fmt(item.preco_unit)}
+                    </td>
                     <td className={`${styles.tdRight} ${styles.tdTotal}`}>{fmt(item.preco_total)}</td>
                     {podeEditar && (
                       <td style={{ display: 'flex', gap: 4 }}>
@@ -997,6 +1020,7 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
                 min="0" step="0.01"
                 value={novoItem.preco_unit}
                 onChange={e => setNovoItem(i => ({ ...i, preco_unit: e.target.value }))}
+                disabled={novoItem.natureza !== 'venda'}
                 className={styles.inputPreco}
               />
               <input
@@ -1005,6 +1029,10 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
                 value={novoItem.quantidade}
                 onChange={e => setNovoItem(i => ({ ...i, quantidade: e.target.value }))}
                 className={styles.inputQtd}
+              />
+              <SeletorNatureza
+                value={novoItem.natureza}
+                onChange={v => setNovoItem(i => ({ ...i, natureza: v }))}
               />
               <Btn variant="secondary" onClick={handleAddItem} loading={addingItem}>
                 <i className="ti ti-plus" /> Adicionar

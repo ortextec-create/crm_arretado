@@ -27,6 +27,31 @@ export function IntBadge({ type }) {
   return <span className={`${styles.badge} ${styles[type]}`}>{type === 'ifood' ? 'iFood' : 'Anota AI'}</span>
 }
 
+// ─── NATUREZA (Brindes e Permutas — ver BRINDES_PERMUTAS.md Fase 4) ───────────
+export const NATUREZA_LABEL = { venda: 'Venda', brinde: 'Brinde', permuta: 'Permuta' }
+
+// Badge só aparece quando o item não é venda normal — mesmo tratamento do PDF (rótulo).
+export function NaturezaBadge({ natureza }) {
+  if (!natureza || natureza === 'venda') return null
+  return <span className={`${styles.badge} ${styles[natureza]}`}>{NATUREZA_LABEL[natureza]}</span>
+}
+
+// Seletor pequeno reusado nos 3 forms de item (Orçamento/Evento/PDV).
+export function SeletorNatureza({ value, onChange, className, ...props }) {
+  return (
+    <select
+      className={`${styles.select} ${styles.selNatureza} ${className || ''}`}
+      value={value || 'venda'}
+      onChange={(e) => onChange(e.target.value)}
+      {...props}
+    >
+      <option value="venda">Venda</option>
+      <option value="brinde">Brinde</option>
+      <option value="permuta">Permuta</option>
+    </select>
+  )
+}
+
 // ─── AVATAR ─────────────────────────────────────────────────────────────────
 const COLORS = ['caramelo', 'verde', 'marrom', 'roxo']
 function colorFor(name = '') {

@@ -171,12 +171,14 @@ class EventoCreateSerializer(serializers.ModelSerializer):
             qty   = item_data.get('quantidade', 1)
             price = item_data['preco_unit']
             total = price * qty
-            ItemEvento.objects.create(
+            item = ItemEvento.objects.create(
                 evento=evento,
                 preco_total=total,
                 **item_data,
             )
-            subtotal += total
+            # item.preco_total (não a variável `total` acima) é a fonte da verdade —
+            # o save() do model zera pra brinde/permuta (ver BRINDES_PERMUTAS.md)
+            subtotal += item.preco_total
 
         evento.subtotal    = subtotal
         evento.valor_total = max(subtotal - evento.desconto, 0) + evento.taxa_entrega
@@ -369,12 +371,14 @@ class OrcamentoCreateSerializer(serializers.ModelSerializer):
             qty   = item_data.get('quantidade', 1)
             price = item_data['preco_unit']
             total = price * qty
-            ItemOrcamento.objects.create(
+            item = ItemOrcamento.objects.create(
                 orcamento=orcamento,
                 preco_total=total,
                 **item_data,
             )
-            subtotal += total
+            # item.preco_total (não a variável `total` acima) é a fonte da verdade —
+            # o save() do model zera pra brinde/permuta (ver BRINDES_PERMUTAS.md)
+            subtotal += item.preco_total
 
         orcamento.subtotal    = subtotal
         orcamento.valor_total = max(subtotal - orcamento.desconto, 0) + orcamento.taxa_entrega

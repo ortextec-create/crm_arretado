@@ -1472,6 +1472,16 @@ class BrindesPermutasTests(TestCase):
 
     def setUp(self):
         self.cliente = Cliente.objects.create(nome='Cliente Brinde', telefone_principal='86999995555')
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Brinde', email='admin-brinde@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin-brinde@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
 
     def test_item_orcamento_brinde_zera_preco_total_mantem_preco_unit(self):
         orc = Orcamento.objects.create(
@@ -1577,3 +1587,49 @@ class BrindesPermutasTests(TestCase):
         self.assertIn('Brinde', texto)
         self.assertIn('R$ 80,00', texto)  # preço de tabela riscado ainda aparece impresso
         self.assertIn('R$ 100,00', texto)  # TOTAL final não conta o brinde
+
+    def test_criar_orcamento_com_itens_mistos_via_api_subtotal_ignora_brinde(self):
+        # Bug real encontrado nesta sessão: OrcamentoCreateSerializer.create() somava a
+        # variável local `total` (preco_unit*quantidade, sem olhar natureza) em vez de
+        # item.preco_total (o valor de fato persistido pelo save() do model) — o
+        # subtotal/valor_total do Orçamento saía inflado quando havia item de brinde.
+        view = OrcamentoViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/eventos/orcamentos/',
+            {
+                'cliente_nome': 'Cliente Brinde', 'tipo_evento': 'aniversario',
+                'itens': [
+                    {'nome': 'Bolo Vendido', 'preco_unit': '100.00', 'quantidade': 1},
+                    {'nome': 'Bolo de Brinde', 'preco_unit': '80.00', 'quantidade': 1, 'natureza': 'brinde'},
+                ],
+            },
+            format='json', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        orc = Orcamento.objects.get(pk=resp.data['id'])
+        self.assertEqual(orc.subtotal, Decimal('100.00'))
+        self.assertEqual(orc.valor_total, Decimal('100.00'))
+
+    def test_criar_evento_com_itens_mistos_via_api_subtotal_ignora_brinde(self):
+        # Mesmo bug do teste acima, na criação direta de Evento (EventoCreateSerializer.create()).
+        view = EventoViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/eventos/',
+            {
+                'cliente_nome': 'Cliente Brinde', 'tipo_evento': 'aniversario',
+                'data_evento': str(datetime.date.today() + datetime.timedelta(days=15)),
+                'itens': [
+                    {'nome': 'Bolo Vendido', 'preco_unit': '100.00', 'quantidade': 1},
+                    {'nome': 'Bolo de Brinde', 'preco_unit': '80.00', 'quantidade': 1, 'natureza': 'brinde'},
+                ],
+            },
+            format='json', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        evento = Evento.objects.latest('id')
+        self.assertEqual(evento.subtotal, Decimal('100.00'))
+        self.assertEqual(evento.valor_total, Decimal('100.00'))

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styles from './PDV.module.css'
 import { pdvApi, clientesApi, taxasEntregaApi, configEntregaApi } from '../api/services'
+import { NaturezaBadge, SeletorNatureza } from '../components/ui'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -182,9 +183,15 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
         novo[idx] = { ...novo[idx], quantidade: novo[idx].quantidade + 1 }
         return novo
       }
-      return [...prev, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1 }]
+      return [...prev, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, natureza: 'venda' }]
     })
   }
+
+  const setNaturezaItem = (idx, natureza) => setItens(prev => {
+    const novo = [...prev]
+    novo[idx] = { ...novo[idx], natureza }
+    return novo
+  })
 
   useEffect(() => {
     taxasEntregaApi.list({ ativo: true })
@@ -223,7 +230,7 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
     return novo
   })
 
-  const subtotal = itens.reduce((s, i) => s + Number(i.preco_unit) * i.quantidade, 0)
+  const subtotal = itens.reduce((s, i) => s + (i.natureza !== 'venda' ? 0 : Number(i.preco_unit) * i.quantidade), 0)
   const total    = subtotal - Number(form.desconto || 0) + Number(form.taxa_entrega || 0)
 
   const limparCliente = () => {
@@ -250,6 +257,7 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
           nome:       i.nome,
           preco_unit: i.preco_unit,
           quantidade: i.quantidade,
+          natureza:   i.natureza || 'venda',
         })),
       }
       await pdvApi.criarPedido(payload)
@@ -337,13 +345,22 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
               ) : (
                 itens.map((item, idx) => (
                   <div key={idx} className={styles.itemRow}>
-                    <div className={styles.itemNome}>{item.nome}</div>
+                    <div className={styles.itemNome}>{item.nome} <NaturezaBadge natureza={item.natureza} /></div>
                     <div className={styles.itemCtrl}>
                       <button onClick={() => alterarQtd(idx, -1)}><i className="ti ti-minus" /></button>
                       <span>{item.quantidade}</span>
                       <button onClick={() => alterarQtd(idx, +1)}><i className="ti ti-plus" /></button>
                     </div>
-                    <div className={styles.itemPreco}>{fmtMoeda(Number(item.preco_unit) * item.quantidade)}</div>
+                    <SeletorNatureza
+                      value={item.natureza}
+                      onChange={v => setNaturezaItem(idx, v)}
+                    />
+                    <div
+                      className={styles.itemPreco}
+                      style={item.natureza !== 'venda' ? { textDecoration: 'line-through', color: 'var(--texto-muted)' } : undefined}
+                    >
+                      {fmtMoeda(Number(item.preco_unit) * item.quantidade)}
+                    </div>
                     <button className={styles.itemDel} onClick={() => removerItem(idx)}>
                       <i className="ti ti-trash" />
                     </button>

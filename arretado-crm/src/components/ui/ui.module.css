@@ -49,6 +49,10 @@
 .bloqueado { background: var(--danger-pale); color: var(--danger); border: 1px solid rgba(var(--danger-rgb),0.18); }
 .ifood     { background: var(--badge-ifood-bg); color: var(--badge-ifood-fg); border: 1px solid rgba(194,91,10,0.2); }
 .anotaai   { background: var(--badge-anotaai-bg); color: var(--badge-anotaai-fg); border: 1px solid rgba(124,58,237,0.18); }
+.brinde    { background: var(--status-alerta-bg); color: var(--status-alerta-fg); border: 1px solid rgba(var(--status-alerta-rgb),0.2); }
+.permuta   { background: var(--caramelo-pale); color: var(--caramelo); border: 1px solid rgba(var(--caramelo-rgb),0.2); }
+
+.selNatureza { padding: 8px 10px; font-size: 12px; min-width: 92px; }
 
 /* ─── AVATAR ──────────────────────────────────────────────────────────────── */
 .avatar {

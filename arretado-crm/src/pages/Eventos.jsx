@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { eventosApi, locaisEventoApi, clientesApi, contratosApi } from '../api/services'
 import { pdvApi, taxasEntregaApi } from '../api/services'
-import { Btn, Modal, Spinner, Toast, Empty } from '../components/ui'
+import { Btn, Modal, Spinner, Toast, Empty, NaturezaBadge, SeletorNatureza } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
 import AtorAcao from '../components/ui/AtorAcao'
 import { ACAO_LABEL, ACAO_COR, dataFmt, resumo } from '../utils/auditoriaResumo'
@@ -656,7 +656,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
       if (idx >= 0) {
         const n = [...c]; n[idx] = { ...n[idx], quantidade: n[idx].quantidade + 1 }; return n
       }
-      return [...c, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '' }]
+      return [...c, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '', natureza: 'venda' }]
     })
   }
   const setQty = (prodId, qty) => {
@@ -666,8 +666,11 @@ function ModalNovoEvento({ onClose, onSaved }) {
   const setObs = (prodId, obs) => {
     setCarrinho(c => c.map(i => i.produto === prodId ? { ...i, observacao: obs } : i))
   }
+  const setNatureza = (prodId, natureza) => {
+    setCarrinho(c => c.map(i => i.produto === prodId ? { ...i, natureza } : i))
+  }
 
-  const subtotal = carrinho.reduce((s, i) => s + Number(i.preco_unit) * i.quantidade, 0)
+  const subtotal = carrinho.reduce((s, i) => s + (i.natureza !== 'venda' ? 0 : Number(i.preco_unit) * i.quantidade), 0)
   const total    = Math.max(subtotal - Number(desconto || 0), 0) +
                    (tipoEntrega === 'entrega_local' ? Number(taxaEntrega || 0) : 0)
 
@@ -698,6 +701,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
           preco_unit: i.preco_unit,
           quantidade: i.quantidade,
           observacao: i.observacao,
+          natureza:   i.natureza || 'venda',
         })),
       })
       onSaved()
@@ -910,16 +914,22 @@ function ModalNovoEvento({ onClose, onSaved }) {
                 ) : carrinho.map(item => (
                   <div key={item.produto} className={styles.carrinhoItem}>
                     <div className={styles.carrinhoItemTop}>
-                      <span>{item.nome}</span>
+                      <span>{item.nome} <NaturezaBadge natureza={item.natureza} /></span>
                       <button onClick={() => setQty(item.produto, 0)}><i className="ti ti-x" /></button>
                     </div>
-                    <div className={styles.carrinhoItemBot}>
+                    <div className={styles.carrinhoItemBottom}>
                       <div className={styles.qtyControl}>
                         <button onClick={() => setQty(item.produto, item.quantidade - 1)}>−</button>
                         <span>{item.quantidade}</span>
                         <button onClick={() => setQty(item.produto, item.quantidade + 1)}>+</button>
                       </div>
-                      <span>{fmt(Number(item.preco_unit) * item.quantidade)}</span>
+                      <SeletorNatureza
+                        value={item.natureza}
+                        onChange={v => setNatureza(item.produto, v)}
+                      />
+                      <span style={item.natureza !== 'venda' ? { textDecoration: 'line-through', color: 'var(--texto-muted)' } : undefined}>
+                        {fmt(Number(item.preco_unit) * item.quantidade)}
+                      </span>
                     </div>
                     <input
                       className={styles.obsInput}
@@ -1078,12 +1088,15 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
     setCarrinho(c => {
       const idx = c.findIndex(i => i.produto === prod.id)
       if (idx >= 0) { const n = [...c]; n[idx] = { ...n[idx], quantidade: n[idx].quantidade + 1 }; return n }
-      return [...c, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '' }]
+      return [...c, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '', natureza: 'venda' }]
     })
   }
   const setQty = (id, qty) => {
     if (qty <= 0) { setCarrinho(c => c.filter(i => i.produto !== id)); return }
     setCarrinho(c => c.map(i => i.produto === id ? { ...i, quantidade: qty } : i))
+  }
+  const setNatureza = (id, natureza) => {
+    setCarrinho(c => c.map(i => i.produto === id ? { ...i, natureza } : i))
   }
 
   const salvarItens = async () => {
@@ -1096,6 +1109,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
           preco_unit: item.preco_unit,
           quantidade: item.quantidade,
           observacao: item.observacao,
+          natureza:   item.natureza || 'venda',
         })
       }
       setCarrinho([])
@@ -1325,12 +1339,17 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
                   {evento.itens.map(item => (
                     <div key={item.id} className={styles.itemRow}>
                       <div className={styles.itemInfo}>
-                        <span className={styles.itemNome}>{item.nome}</span>
+                        <span className={styles.itemNome}>{item.nome}</span> <NaturezaBadge natureza={item.natureza} />
                         {item.observacao && <span className={styles.itemObs}>{item.observacao}</span>}
                       </div>
                       <div className={styles.itemNums}>
                         <span className={styles.itemQty}>{item.quantidade}×</span>
-                        <span className={styles.itemPreco}>{fmt(item.preco_unit)}</span>
+                        <span
+                          className={styles.itemPreco}
+                          style={item.natureza !== 'venda' ? { textDecoration: 'line-through', color: 'var(--texto-muted)' } : undefined}
+                        >
+                          {fmt(item.preco_unit)}
+                        </span>
                         <span className={styles.itemTotal}>{fmt(item.preco_total)}</span>
                         {podeEditarItens && (
                           <button className={styles.removeItem} onClick={() => removerItem(item.id)}>
@@ -1358,14 +1377,20 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
                       const noCarrinho = carrinho.find(i => i.produto === p.id)
                       return (
                         <div key={p.id} className={styles.produtoCardSm}>
-                          <span>{p.nome}</span>
+                          <span>{p.nome} <NaturezaBadge natureza={noCarrinho?.natureza} /></span>
                           <span className={styles.produtoPreco}>{fmt(p.preco)}</span>
                           {noCarrinho ? (
-                            <div className={styles.qtyControl}>
-                              <button onClick={() => setQty(p.id, noCarrinho.quantidade - 1)}>−</button>
-                              <span>{noCarrinho.quantidade}</span>
-                              <button onClick={() => setQty(p.id, noCarrinho.quantidade + 1)}>+</button>
-                            </div>
+                            <>
+                              <div className={styles.qtyControl}>
+                                <button onClick={() => setQty(p.id, noCarrinho.quantidade - 1)}>−</button>
+                                <span>{noCarrinho.quantidade}</span>
+                                <button onClick={() => setQty(p.id, noCarrinho.quantidade + 1)}>+</button>
+                              </div>
+                              <SeletorNatureza
+                                value={noCarrinho.natureza}
+                                onChange={v => setNatureza(p.id, v)}
+                              />
+                            </>
                           ) : (
                             <button className={styles.addBtn} onClick={() => addCarrinho(p)}>+</button>
                           )}
