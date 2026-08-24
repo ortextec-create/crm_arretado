@@ -32,6 +32,13 @@ class Empresa(models.Model):
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
+    # Fase 5 do multi-empresa (MULTIEMPRESA.md) — slugs de rota (ver Sidebar.jsx) que
+    # a Sidebar esconde pra esta empresa. Nunca hardcodar nome de empresa aqui — é a
+    # empresa quem lista, pelo painel, os módulos que não usa. Matriz nasce [] (menu
+    # atual completo, UI preservada); é só filtro de UI, não é permissão (App.jsx
+    # mantém todas as rotas registradas).
+    modulos_ocultos = models.JSONField(default=list, blank=True)
+
     # Branding — cada campo corresponde a um token CSS (ver tabela em MULTIEMPRESA.md)
     cor_fundo = _campo_cor()
     cor_surface = _campo_cor()

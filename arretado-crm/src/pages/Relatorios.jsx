@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { relatoriosApi } from '../api/services'
+import { useAuth } from '../hooks/useAuth'
 import styles from './Relatorios.module.css'
 
 const hoje = () => new Date().toISOString().slice(0, 10)
@@ -49,6 +50,11 @@ export default function Relatorios() {
 // ── Aba: Por Canal (iFood) — relatório original ──────────────────────────────
 
 function RelatorioCanal() {
+  const { empresaAtiva, empresas } = useAuth()
+  const multiEmpresa = (empresas?.length || 0) > 1
+  const [todas, setTodas] = useState(false)
+  const empresaParam = todas ? 'todas' : empresaAtiva?.id
+
   const [dataInicio, setDataInicio]   = useState(mesPasado)
   const [dataFim, setDataFim]         = useState(hoje)
   const [agrupamento, setAgrupamento] = useState('dia')
@@ -60,17 +66,18 @@ function RelatorioCanal() {
     setLoading(true)
     setErro(null)
     try {
-      const res = await relatoriosApi.ifood({ data_inicio: dataInicio, data_fim: dataFim, agrupamento })
+      const res = await relatoriosApi.ifood({ data_inicio: dataInicio, data_fim: dataFim, agrupamento, empresa: empresaParam })
       setDados(res.data)
     } catch (e) {
       setErro('Falha ao carregar relatório.')
     } finally {
       setLoading(false)
     }
-  }, [dataInicio, dataFim, agrupamento])
+  }, [dataInicio, dataFim, agrupamento, empresaParam])
 
   const exportar = (formato) => {
     const p = new URLSearchParams({ formato, data_inicio: dataInicio, data_fim: dataFim, agrupamento })
+    if (empresaParam) p.set('empresa', empresaParam)
     window.open(`/api/v1/relatorios/ifood/?${p}`, '_blank')
   }
 
@@ -106,6 +113,26 @@ function RelatorioCanal() {
             <i className="ti ti-brand-firebase" /> iFood
           </div>
         </div>
+
+        {multiEmpresa && (
+          <div className={styles.filtroGrupo}>
+            <label>Empresa</label>
+            <div className={styles.segControl}>
+              <button
+                className={`${styles.segBtn} ${!todas ? styles.segBtnActive : ''}`}
+                onClick={() => setTodas(false)}
+              >
+                {empresaAtiva?.nome || 'Empresa ativa'}
+              </button>
+              <button
+                className={`${styles.segBtn} ${todas ? styles.segBtnActive : ''}`}
+                onClick={() => setTodas(true)}
+              >
+                Todas
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className={styles.filtroGrupo}>
           <label>Período</label>
@@ -291,6 +318,11 @@ function RelatorioCanal() {
 // ── Aba: Produtos Mais Vendidos ───────────────────────────────────────────────
 
 function RelatorioProdutos() {
+  const { empresaAtiva, empresas } = useAuth()
+  const multiEmpresa = (empresas?.length || 0) > 1
+  const [todas, setTodas] = useState(false)
+  const empresaParam = todas ? 'todas' : empresaAtiva?.id
+
   const [dataInicio, setDataInicio] = useState(mesPasado)
   const [dataFim, setDataFim]       = useState(hoje)
   const [canais, setCanais]         = useState(['ifood', 'pdv', 'eventos'])
@@ -313,6 +345,7 @@ function RelatorioProdutos() {
     try {
       const params = new URLSearchParams({ data_inicio: dataInicio, data_fim: dataFim, ordenar })
       canais.forEach(c => params.append('canal', c))
+      if (empresaParam) params.set('empresa', empresaParam)
       const res = await relatoriosApi.produtosMaisVendidos(params)
       setDados(res.data)
     } catch (e) {
@@ -320,7 +353,7 @@ function RelatorioProdutos() {
     } finally {
       setLoading(false)
     }
-  }, [dataInicio, dataFim, canais, ordenar])
+  }, [dataInicio, dataFim, canais, ordenar, empresaParam])
 
   const produtos = dados?.produtos || []
   const canaisAtivos = dados?.canais || []
@@ -344,6 +377,26 @@ function RelatorioProdutos() {
             ))}
           </div>
         </div>
+
+        {multiEmpresa && (
+          <div className={styles.filtroGrupo}>
+            <label>Empresa</label>
+            <div className={styles.segControl}>
+              <button
+                className={`${styles.segBtn} ${!todas ? styles.segBtnActive : ''}`}
+                onClick={() => setTodas(false)}
+              >
+                {empresaAtiva?.nome || 'Empresa ativa'}
+              </button>
+              <button
+                className={`${styles.segBtn} ${todas ? styles.segBtnActive : ''}`}
+                onClick={() => setTodas(true)}
+              >
+                Todas
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className={styles.filtroGrupo}>
           <label>Período</label>

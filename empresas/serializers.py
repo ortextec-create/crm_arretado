@@ -12,6 +12,7 @@ class EmpresaSerializer(serializers.ModelSerializer):
             'cor_primaria', 'cor_primaria_texto', 'cor_acento',
             'cor_sidebar', 'cor_sidebar_texto', 'cor_sidebar_ativo',
             'logo_horizontal', 'logo_negativo', 'logo_simbolo', 'timbre',
+            'modulos_ocultos',
         ]
         read_only_fields = ['id', 'criado_em']
 
@@ -63,4 +64,5 @@ class EmpresaResumoSerializer(serializers.ModelSerializer):
             'cor_primaria', 'cor_primaria_texto', 'cor_acento',
             'cor_sidebar', 'cor_sidebar_texto', 'cor_sidebar_ativo',
             'logo_horizontal', 'logo_negativo', 'logo_simbolo',
+            'modulos_ocultos',
         ]

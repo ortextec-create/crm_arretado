@@ -5,18 +5,37 @@ from datetime import date, timedelta
 from django.db.models import Sum, Count, Q
 from django.db.models.functions import TruncDate, TruncMonth
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import views
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from empresas.models import Empresa
 from ifood.models import PedidoIFood, ItemPedidoIFood
 from pdv.models import ItemPedidoPDV
 from eventos.models import ItemEvento
+from usuarios.authentication import TokenAuthentication
 
 
 class CsrfExemptMixin:
     authentication_classes = []
+
+
+def _resolver_empresa(request):
+    """
+    Fase 5 do multi-empresa: mesmo contrato de dashboard/views.py::_resolver_empresa
+    (duplicado a propósito — ver CLAUDE.md, "não importa função privada de outro app").
+    """
+    param = request.query_params.get('empresa')
+    if param == 'todas':
+        return None
+    if param:
+        return get_object_or_404(Empresa, pk=param)
+    user = request.user
+    if getattr(user, 'is_authenticated', False) and getattr(user, 'empresa_ativa_id', None):
+        return user.empresa_ativa
+    return Empresa.get_padrao()
 
 
 def _normalizar_nome(nome):
@@ -28,12 +47,19 @@ def _normalizar_nome(nome):
 
 
 class RelatorioIFoodView(CsrfExemptMixin, views.APIView):
+    """
+    Fase 5 do multi-empresa: aceita ?empresa=<id>/?empresa=todas (default:
+    empresa_ativa do usuário autenticado, senão Empresa.get_padrao()) — mesmo
+    padrão de dashboard/resumo/.
+    """
+    authentication_classes = [TokenAuthentication]
     permission_classes = [AllowAny]
 
     def get(self, request):
         params = request.query_params
         formato = params.get('formato', 'json')
         agrupamento = params.get('agrupamento', 'dia')
+        empresa = _resolver_empresa(request)
 
         hoje = timezone.localtime(timezone.now()).date()
         try:
@@ -52,6 +78,8 @@ class RelatorioIFoodView(CsrfExemptMixin, views.APIView):
             ifood_criado_em__date__gte=data_inicio,
             ifood_criado_em__date__lte=data_fim,
         )
+        if empresa is not None:
+            qs = qs.filter(empresa=empresa)
 
         resumo = self._calc_resumo(qs)
         agrupado = self._calc_agrupado(qs, agrupamento)
@@ -383,7 +411,13 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
     iFood status=CONCLUDED, PDV status confirmado/em_preparo/pronto/concluido
     (exclui aberto/cancelado), Evento status=entregue. Orçamentos ficam de
     fora de propósito — são cotação, não venda fechada.
+
+    Fase 5 do multi-empresa: aceita ?empresa=<id>/?empresa=todas (mesmo default
+    dos demais endpoints Fase 5). iFood filtra por `pedido__empresa`; PDV/Eventos
+    são mono-empresa (sem FK própria) e só entram na soma quando a empresa
+    resolvida é a matriz ou 'todas'.
     """
+    authentication_classes = [TokenAuthentication]
     permission_classes = [AllowAny]
 
     def get(self, request):
@@ -412,12 +446,15 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
             limit = 30
         limit = max(1, min(limit, 200))
 
+        empresa = _resolver_empresa(request)
+        mono_empresa_habilitado = empresa is None or empresa.padrao
+
         agregados = {}
         if 'ifood' in canais:
-            self._somar(agregados, 'ifood', self._qs_ifood(data_inicio, data_fim))
-        if 'pdv' in canais:
+            self._somar(agregados, 'ifood', self._qs_ifood(data_inicio, data_fim, empresa))
+        if 'pdv' in canais and mono_empresa_habilitado:
             self._somar(agregados, 'pdv', self._qs_pdv(data_inicio, data_fim))
-        if 'eventos' in canais:
+        if 'eventos' in canais and mono_empresa_habilitado:
             self._somar(agregados, 'eventos', self._qs_eventos(data_inicio, data_fim))
 
         produtos = []
@@ -455,17 +492,15 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
 
     # ── Querysets por canal ──────────────────────────────────────────────
 
-    def _qs_ifood(self, data_inicio, data_fim):
-        return (
-            ItemPedidoIFood.objects
-            .filter(
-                pedido__status='CONCLUDED',
-                pedido__ifood_criado_em__date__gte=data_inicio,
-                pedido__ifood_criado_em__date__lte=data_fim,
-            )
-            .values('nome')
-            .annotate(quantidade=Sum('quantidade'), valor=Sum('preco_total'))
+    def _qs_ifood(self, data_inicio, data_fim, empresa=None):
+        qs = ItemPedidoIFood.objects.filter(
+            pedido__status='CONCLUDED',
+            pedido__ifood_criado_em__date__gte=data_inicio,
+            pedido__ifood_criado_em__date__lte=data_fim,
         )
+        if empresa is not None:
+            qs = qs.filter(pedido__empresa=empresa)
+        return qs.values('nome').annotate(quantidade=Sum('quantidade'), valor=Sum('preco_total'))
 
     def _qs_pdv(self, data_inicio, data_fim):
         return (

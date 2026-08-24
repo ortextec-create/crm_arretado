@@ -9,7 +9,26 @@ const EMPTY = {
   cor_fundo: '', cor_surface: '', cor_surface_alt: '', cor_borda: '', cor_texto: '', cor_muted: '',
   cor_primaria: '', cor_primaria_texto: '', cor_acento: '',
   cor_sidebar: '', cor_sidebar_texto: '', cor_sidebar_ativo: '',
+  modulos_ocultos: [],
 }
+
+// Fase 5 do multi-empresa (MULTIEMPRESA.md): slugs de rota (Sidebar.jsx) que fazem sentido
+// esconder pra uma empresa que não usa o módulo (ex: MANGAIO — canal exclusivamente iFood).
+// Dashboard/Financeiro/Relatórios/Clientes/WhatsApp/Configurações nunca entram aqui — são
+// os módulos compartilhados/multi-empresa por escopo do spec.
+const MODULOS_OCULTAVEIS = [
+  { slug: 'eventos', label: 'Eventos' },
+  { slug: 'orcamentos', label: 'Orçamentos' },
+  { slug: 'locais-evento', label: 'Locais de Evento' },
+  { slug: 'catalogo', label: 'Catálogo' },
+  { slug: 'fichas-tecnicas', label: 'Fichas Técnicas' },
+  { slug: 'central-precos', label: 'Central de Preços' },
+  { slug: 'estoque', label: 'Estoque' },
+  { slug: 'integracoes/pdv', label: 'PDV Próprio' },
+  { slug: 'integracoes/pdv/catalogo', label: 'Catálogo PDV' },
+  { slug: 'integracoes/anotaai', label: 'Anota AI' },
+  { slug: 'taxas-entrega', label: 'Taxas de Entrega' },
+]
 
 const COLOR_GROUPS = [
   {
@@ -131,6 +150,7 @@ export default function Empresas() {
       cor_texto: e.cor_texto, cor_muted: e.cor_muted,
       cor_primaria: e.cor_primaria, cor_primaria_texto: e.cor_primaria_texto, cor_acento: e.cor_acento,
       cor_sidebar: e.cor_sidebar, cor_sidebar_texto: e.cor_sidebar_texto, cor_sidebar_ativo: e.cor_sidebar_ativo,
+      modulos_ocultos: e.modulos_ocultos || [],
     } : EMPTY)
     setShowForm(true)
   }
@@ -158,6 +178,15 @@ export default function Empresas() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const toggleModulo = (slug) => {
+    setForm((f) => ({
+      ...f,
+      modulos_ocultos: f.modulos_ocultos.includes(slug)
+        ? f.modulos_ocultos.filter((s) => s !== slug)
+        : [...f.modulos_ocultos, slug],
+    }))
   }
 
   const toggleAtivo = async (e) => {
@@ -304,6 +333,26 @@ export default function Empresas() {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className={styles.formSection}>
+            <span className={styles.sectionTitle}>Módulos visíveis no menu</span>
+            <span className={styles.hint} style={{ marginBottom: 8 }}>
+              Marque os módulos que esta empresa <strong>não</strong> usa — eles somem da Sidebar
+              quando ela estiver ativa. É só um filtro de menu, os dados continuam intactos.
+            </span>
+            <div className={styles.corGrid}>
+              {MODULOS_OCULTAVEIS.map(({ slug, label }) => (
+                <label key={slug} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--texto)' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.modulos_ocultos.includes(slug)}
+                    onChange={() => toggleModulo(slug)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
           </div>
 
           {editEmpresa ? (

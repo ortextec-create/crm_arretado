@@ -2,6 +2,15 @@
 .content { flex: 1; padding: 26px; overflow-y: auto; background: var(--bg); }
 .center  { display: flex; align-items: center; justify-content: center; height: 200px; }
 
+/* Fase 5 do multi-empresa — badge/chip de empresa no Topbar (mesmo padrão de Financeiro.jsx) */
+.empresaBadge { color: var(--caramelo); font-weight: 600; font-size: 13px; align-self: center; margin-right: 4px; }
+.chip {
+  padding: 6px 13px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--texto-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .12s; white-space: nowrap;
+}
+.chip:hover { border-color: var(--caramelo); color: var(--texto); }
+.chipActive { background: var(--caramelo); border-color: var(--caramelo); color: var(--caramelo-texto); }
+
 .statsGrid {
   display: grid; grid-template-columns: repeat(4, 1fr);
   gap: 14px; margin-bottom: 26px;

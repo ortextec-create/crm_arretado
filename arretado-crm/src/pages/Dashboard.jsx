@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clientesApi, dashboardApi } from '../api/services'
+import { useAuth } from '../hooks/useAuth'
 import Topbar from '../components/layout/Topbar'
 import { Btn, Avatar, StatusBadge, IntBadge, Spinner } from '../components/ui'
 import styles from './Dashboard.module.css'
@@ -19,13 +20,19 @@ const CANAL_COR = {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { empresaAtiva, empresas } = useAuth()
+  const multiEmpresa = (empresas?.length || 0) > 1
+  const [todas, setTodas] = useState(false)
   const [resumo, setResumo] = useState(null)
   const [recentes, setRecentes] = useState([])
   const [loading, setLoading] = useState(true)
 
+  const empresaParam = todas ? 'todas' : empresaAtiva?.id
+
   useEffect(() => {
+    setLoading(true)
     Promise.all([
-      dashboardApi.resumo(),
+      dashboardApi.resumo({ empresa: empresaParam }),
       clientesApi.list({ ordering: '-criado_em', page: 1 }),
     ])
       .then(([r, c]) => {
@@ -37,7 +44,7 @@ export default function Dashboard() {
         setRecentes([])
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [empresaParam])
 
   if (loading) {
     return (
@@ -51,10 +58,16 @@ export default function Dashboard() {
     )
   }
 
+  // Fase 5 do multi-empresa: resumo.empresa vem null quando ?empresa=todas (consolidado);
+  // matrizView cobre matriz e consolidado — só uma empresa não-matriz (ex: MANGAIO) zera
+  // PDV/Eventos/Estoque e ganha o card de repasse iFood (ver dashboard/views.py).
+  const matrizView = !resumo?.empresa || resumo.empresa.padrao
+
   const canais = resumo?.canais ?? { ifood: null, pdv: null, eventos: null, anotaai: null }
   const grafico = resumo?.grafico_7dias ?? []
   const maxTotalDia = Math.max(1, ...grafico.map((d) => d.ifood + d.pdv + d.eventos))
   const aReceber = resumo?.a_receber ?? { total: 0, eventos: [] }
+  const repasseIfood = resumo?.repasse_ifood_a_receber ?? 0
   const fila = resumo?.fila_operacional ?? { pendente: 0, em_preparo: 0, pronto: 0 }
   const proximosEventos = resumo?.proximos_eventos ?? []
   const alertas = resumo?.alertas ?? []
@@ -66,7 +79,19 @@ export default function Dashboard() {
     <div className={styles.page}>
       <Topbar
         title="Dashboard"
-        actions={<Btn icon="plus" onClick={() => navigate('/clientes?novo=1')}>Novo Cliente</Btn>}
+        actions={
+          <>
+            {multiEmpresa && (
+              <>
+                {resumo?.empresa && <span className={styles.empresaBadge}>{resumo.empresa.nome}</span>}
+                <button className={`${styles.chip} ${todas ? styles.chipActive : ''}`} onClick={() => setTodas((v) => !v)}>
+                  Todas as empresas
+                </button>
+              </>
+            )}
+            <Btn icon="plus" onClick={() => navigate('/clientes?novo=1')}>Novo Cliente</Btn>
+          </>
+        }
       />
 
       <div className={styles.content}>
@@ -79,28 +104,39 @@ export default function Dashboard() {
             <div className={styles.canalSub}>{canais.ifood?.pedidos_hoje ?? 0} pedidos hoje</div>
           </div>
 
-          <div className={`${styles.canalCard} ${styles.canalPdv}`}>
-            <i className="ti ti-building-store" aria-hidden="true" />
-            <div className={styles.canalLabel}>PDV Próprio</div>
-            <div className={styles.canalValue}>{brl(canais.pdv?.total_hoje)}</div>
-            <div className={styles.canalSub}>{canais.pdv?.pedidos_hoje ?? 0} pedidos hoje</div>
-          </div>
+          {matrizView ? (
+            <>
+              <div className={`${styles.canalCard} ${styles.canalPdv}`}>
+                <i className="ti ti-building-store" aria-hidden="true" />
+                <div className={styles.canalLabel}>PDV Próprio</div>
+                <div className={styles.canalValue}>{brl(canais.pdv?.total_hoje)}</div>
+                <div className={styles.canalSub}>{canais.pdv?.pedidos_hoje ?? 0} pedidos hoje</div>
+              </div>
 
-          <div className={`${styles.canalCard} ${styles.canalEventos}`}>
-            <i className="ti ti-calendar-event" aria-hidden="true" />
-            <div className={styles.canalLabel}>Eventos</div>
-            <div className={styles.canalValue}>{brl(canais.eventos?.recebido_hoje)}</div>
-            <div className={styles.canalSub}>
-              {canais.eventos?.criados_hoje ?? 0} criados · {canais.eventos?.entregues_hoje ?? 0} entregues hoje
+              <div className={`${styles.canalCard} ${styles.canalEventos}`}>
+                <i className="ti ti-calendar-event" aria-hidden="true" />
+                <div className={styles.canalLabel}>Eventos</div>
+                <div className={styles.canalValue}>{brl(canais.eventos?.recebido_hoje)}</div>
+                <div className={styles.canalSub}>
+                  {canais.eventos?.criados_hoje ?? 0} criados · {canais.eventos?.entregues_hoje ?? 0} entregues hoje
+                </div>
+              </div>
+
+              <div className={`${styles.canalCard} ${styles.canalEmBreve}`}>
+                <i className="ti ti-device-mobile" aria-hidden="true" />
+                <div className={styles.canalLabel}>Anota AI</div>
+                <div className={styles.canalValue}>—</div>
+                <div className={styles.canalSub}>Em breve</div>
+              </div>
+            </>
+          ) : (
+            <div className={`${styles.canalCard} ${styles.canalEventos}`}>
+              <i className="ti ti-wallet" aria-hidden="true" />
+              <div className={styles.canalLabel}>Repasse iFood a receber</div>
+              <div className={styles.canalValue}>{brl(repasseIfood)}</div>
+              <div className={styles.canalSub}>Pendente ou parcial</div>
             </div>
-          </div>
-
-          <div className={`${styles.canalCard} ${styles.canalEmBreve}`}>
-            <i className="ti ti-device-mobile" aria-hidden="true" />
-            <div className={styles.canalLabel}>Anota AI</div>
-            <div className={styles.canalValue}>—</div>
-            <div className={styles.canalSub}>Em breve</div>
-          </div>
+          )}
         </div>
 
         {/* ALERTAS (pagamento pendente / entrega próxima) */}
@@ -174,20 +210,28 @@ export default function Dashboard() {
           </div>
 
           <div className={styles.stackedPanels}>
-            <div className={styles.panel}>
-              <div className={styles.sectionLabel}>A receber (eventos)</div>
-              <div className={styles.aReceberTotal}>{brl(aReceber.total)}</div>
-              {aReceber.eventos.length === 0 && <div className={styles.emptySmall}>Nenhum saldo pendente.</div>}
-              {aReceber.eventos.map((e) => (
-                <div key={e.id} className={styles.aReceberRow} onClick={() => navigate('/eventos')}>
-                  <div>
-                    <div className={styles.aReceberCliente}>{e.cliente}</div>
-                    <div className={styles.clientSub}>{e.numero} · {dataCurta(e.data_evento)}</div>
+            {matrizView ? (
+              <div className={styles.panel}>
+                <div className={styles.sectionLabel}>A receber (eventos)</div>
+                <div className={styles.aReceberTotal}>{brl(aReceber.total)}</div>
+                {aReceber.eventos.length === 0 && <div className={styles.emptySmall}>Nenhum saldo pendente.</div>}
+                {aReceber.eventos.map((e) => (
+                  <div key={e.id} className={styles.aReceberRow} onClick={() => navigate('/eventos')}>
+                    <div>
+                      <div className={styles.aReceberCliente}>{e.cliente}</div>
+                      <div className={styles.clientSub}>{e.numero} · {dataCurta(e.data_evento)}</div>
+                    </div>
+                    <div className={styles.aReceberValor}>{brl(e.saldo_restante)}</div>
                   </div>
-                  <div className={styles.aReceberValor}>{brl(e.saldo_restante)}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.panel}>
+                <div className={styles.sectionLabel}>Repasse iFood a receber</div>
+                <div className={styles.aReceberTotal}>{brl(repasseIfood)}</div>
+                <div className={styles.emptySmall}>Soma das contas a receber do iFood pendentes/parciais.</div>
+              </div>
+            )}
 
             <div className={styles.panel}>
               <div className={styles.sectionLabel}>Fila operacional</div>
@@ -211,32 +255,34 @@ export default function Dashboard() {
 
         {/* LINHA 3 */}
         <div className={styles.row3}>
-          <div>
-            <div className={styles.sectionHeader}>
-              <h3 className="serif">Próximos Eventos</h3>
-              <Btn variant="ghost" size="sm" icon="arrow-right" onClick={() => navigate('/eventos')}>Ver todos</Btn>
-            </div>
-            <div className={styles.panel}>
-              {proximosEventos.length === 0 && (
-                <div className={styles.emptyMsg}>
-                  <i className="ti ti-calendar-event" />
-                  <p>Nenhum evento confirmado nos próximos dias.</p>
-                </div>
-              )}
-              {proximosEventos.map((e) => (
-                <div key={e.id} className={styles.tableRow} style={{ gridTemplateColumns: '1fr 90px 90px' }} onClick={() => navigate('/eventos')}>
-                  <div>
-                    <div className={styles.clientName}>{e.cliente}</div>
-                    <div className={styles.clientSub}>{e.numero} · {e.titulo}</div>
+          {matrizView && (
+            <div>
+              <div className={styles.sectionHeader}>
+                <h3 className="serif">Próximos Eventos</h3>
+                <Btn variant="ghost" size="sm" icon="arrow-right" onClick={() => navigate('/eventos')}>Ver todos</Btn>
+              </div>
+              <div className={styles.panel}>
+                {proximosEventos.length === 0 && (
+                  <div className={styles.emptyMsg}>
+                    <i className="ti ti-calendar-event" />
+                    <p>Nenhum evento confirmado nos próximos dias.</p>
                   </div>
-                  <div className={styles.clientSub}>
-                    {dataCurta(e.data_evento)}{e.hora_evento ? ` ${e.hora_evento}` : ''}
+                )}
+                {proximosEventos.map((e) => (
+                  <div key={e.id} className={styles.tableRow} style={{ gridTemplateColumns: '1fr 90px 90px' }} onClick={() => navigate('/eventos')}>
+                    <div>
+                      <div className={styles.clientName}>{e.cliente}</div>
+                      <div className={styles.clientSub}>{e.numero} · {e.titulo}</div>
+                    </div>
+                    <div className={styles.clientSub}>
+                      {dataCurta(e.data_evento)}{e.hora_evento ? ` ${e.hora_evento}` : ''}
+                    </div>
+                    <div className={styles.aReceberValor}>{brl(e.valor_total)}</div>
                   </div>
-                  <div className={styles.aReceberValor}>{brl(e.valor_total)}</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div>
             <div className={styles.sectionHeader}>
@@ -245,8 +291,10 @@ export default function Dashboard() {
             <div className={styles.panel} style={{ padding: '14px 18px' }}>
               {[
                 { label: 'iFood', value: ticketMedio.ifood, color: CANAL_COR.ifood },
-                { label: 'PDV', value: ticketMedio.pdv, color: CANAL_COR.pdv },
-                { label: 'Eventos', value: ticketMedio.eventos, color: CANAL_COR.eventos },
+                ...(matrizView ? [
+                  { label: 'PDV', value: ticketMedio.pdv, color: CANAL_COR.pdv },
+                  { label: 'Eventos', value: ticketMedio.eventos, color: CANAL_COR.eventos },
+                ] : []),
               ].map(({ label, value, color }) => (
                 <div key={label} className={styles.statusRow} style={{ padding: '10px 0' }}>
                   <div className={styles.statusDot} style={{ background: color }} />

@@ -104,7 +104,13 @@ export default function Sidebar() {
 
       <nav className={styles.nav}>
         {NAV.map(({ section, items }) => {
-          const visiveis = items.filter((item) => !item.adminOnly || user?.role === 'admin')
+          // Fase 5 do multi-empresa: Empresa.modulos_ocultos esconde slugs de rota que a
+          // empresa ativa não usa (ex: MANGAIO não usa PDV/Eventos/Estoque) — é só filtro
+          // de UI, App.jsx mantém todas as rotas registradas (ver MULTIEMPRESA.md).
+          const ocultos = empresaAtiva?.modulos_ocultos || []
+          const visiveis = items.filter(
+            (item) => (!item.adminOnly || user?.role === 'admin') && !ocultos.includes(item.to.replace(/^\//, '')),
+          )
           if (visiveis.length === 0) return null
           return (
             <div key={section} className={styles.navSection}>

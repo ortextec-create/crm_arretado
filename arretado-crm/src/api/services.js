@@ -365,7 +365,7 @@ export const relatoriosApi = {
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 
 export const dashboardApi = {
-  resumo: () => api.get('/dashboard/resumo/'),
+  resumo: (params = {}) => api.get('/dashboard/resumo/', { params }),
 }
 
 // ─── FINANCEIRO ───────────────────────────────────────────────────────────────

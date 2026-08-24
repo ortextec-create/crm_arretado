@@ -10,13 +10,14 @@ from ifood.models import ConfiguracaoIFood, ItemPedidoIFood, PedidoIFood
 from pdv.models import ItemPedidoPDV, PedidoPDV
 
 
-def _pedido_ifood(order_id, status='CONCLUDED', dias_atras=0):
+def _pedido_ifood(order_id, status='CONCLUDED', dias_atras=0, empresa=None):
+    empresa = empresa or Empresa.get_padrao()
     config, _ = ConfiguracaoIFood.objects.get_or_create(
-        merchant_id='merch-1',
-        defaults={'empresa': Empresa.get_padrao(), 'client_id': 'cid', 'client_secret': 'sec'},
+        merchant_id=f'merch-{empresa.id}',
+        defaults={'empresa': empresa, 'client_id': 'cid', 'client_secret': 'sec'},
     )
     return PedidoIFood.objects.create(
-        ifood_order_id=order_id, ifood_merchant_id='merch-1', empresa=config.empresa,
+        ifood_order_id=order_id, ifood_merchant_id=config.merchant_id, empresa=empresa,
         status=status, total_valor=Decimal('10'),
         ifood_criado_em=timezone.now() - timedelta(days=dias_atras),
     )
@@ -125,3 +126,79 @@ class ProdutosMaisVendidosTests(TestCase):
         self.assertEqual(resp.data['resumo']['produtos_distintos'], 2)
         self.assertEqual(resp.data['resumo']['quantidade_total'], 5)
         self.assertEqual(resp.data['resumo']['valor_total'], 35.0)
+
+
+class ProdutosMaisVendidosMultiEmpresaTests(TestCase):
+    """Fase 5 do multi-empresa: iFood filtra por empresa; PDV/Eventos (mono-empresa) só entram na soma pra matriz/'todas'."""
+
+    def setUp(self):
+        self.matriz = Empresa.get_padrao()
+        self.mangaio = Empresa.objects.create(nome='Mangaio')
+
+    def _get(self, **params):
+        return self.client.get('/api/v1/relatorios/produtos-mais-vendidos/', params)
+
+    def test_default_sem_parametro_usa_matriz(self):
+        pedido_matriz = _pedido_ifood('order-matriz', empresa=self.matriz)
+        ItemPedidoIFood.objects.create(pedido=pedido_matriz, nome='Bolo Matriz', quantidade=1, preco_unit=Decimal('10'), preco_total=Decimal('10'))
+        pedido_mangaio = _pedido_ifood('order-mangaio', empresa=self.mangaio)
+        ItemPedidoIFood.objects.create(pedido=pedido_mangaio, nome='Prato Mangaio', quantidade=1, preco_unit=Decimal('20'), preco_total=Decimal('20'))
+
+        resp = self._get()
+        nomes = [p['nome'] for p in resp.data['produtos']]
+        self.assertIn('Bolo Matriz', nomes)
+        self.assertNotIn('Prato Mangaio', nomes)
+
+    def test_empresa_explicita_nao_matriz_exclui_pdv_e_eventos(self):
+        pedido = _pedido_ifood('order-m2', empresa=self.mangaio)
+        ItemPedidoIFood.objects.create(pedido=pedido, nome='Prato Mangaio', quantidade=1, preco_unit=Decimal('20'), preco_total=Decimal('20'))
+        pdv_pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), status='concluido')
+        ItemPedidoPDV.objects.create(pedido=pdv_pedido, nome='Cookie', quantidade=1, preco_unit=Decimal('5'), preco_total=Decimal('5'))
+
+        resp = self._get(empresa=self.mangaio.id)
+        nomes = [p['nome'] for p in resp.data['produtos']]
+        self.assertEqual(nomes, ['Prato Mangaio'])
+
+    def test_empresa_todas_soma_ifood_das_duas_e_pdv_da_matriz(self):
+        pedido_matriz = _pedido_ifood('order-m3', empresa=self.matriz)
+        ItemPedidoIFood.objects.create(pedido=pedido_matriz, nome='Bolo Matriz', quantidade=1, preco_unit=Decimal('10'), preco_total=Decimal('10'))
+        pedido_mangaio = _pedido_ifood('order-m4', empresa=self.mangaio)
+        ItemPedidoIFood.objects.create(pedido=pedido_mangaio, nome='Prato Mangaio', quantidade=1, preco_unit=Decimal('20'), preco_total=Decimal('20'))
+
+        resp = self._get(empresa='todas')
+        nomes = [p['nome'] for p in resp.data['produtos']]
+        self.assertIn('Bolo Matriz', nomes)
+        self.assertIn('Prato Mangaio', nomes)
+
+
+class RelatorioIFoodMultiEmpresaTests(TestCase):
+    """Fase 5 do multi-empresa: relatorios/ifood/ aceita ?empresa=<id>/?empresa=todas."""
+
+    def setUp(self):
+        self.matriz = Empresa.get_padrao()
+        self.mangaio = Empresa.objects.create(nome='Mangaio')
+
+    def _get(self, **params):
+        return self.client.get('/api/v1/relatorios/ifood/', params)
+
+    def test_default_sem_parametro_usa_matriz(self):
+        _pedido_ifood('order-r1', empresa=self.matriz)
+        _pedido_ifood('order-r2', empresa=self.mangaio)
+
+        resp = self._get()
+        self.assertEqual(resp.data['resumo']['total_pedidos'], 1)
+
+    def test_empresa_explicita_filtra(self):
+        _pedido_ifood('order-r3', empresa=self.matriz)
+        _pedido_ifood('order-r4', empresa=self.mangaio)
+        _pedido_ifood('order-r5', empresa=self.mangaio)
+
+        resp = self._get(empresa=self.mangaio.id)
+        self.assertEqual(resp.data['resumo']['total_pedidos'], 2)
+
+    def test_empresa_todas_soma_as_duas(self):
+        _pedido_ifood('order-r6', empresa=self.matriz)
+        _pedido_ifood('order-r7', empresa=self.mangaio)
+
+        resp = self._get(empresa='todas')
+        self.assertEqual(resp.data['resumo']['total_pedidos'], 2)

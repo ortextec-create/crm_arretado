@@ -1404,7 +1404,7 @@ class DashboardReceitaEventosNaoDuplicaTests(TestCase):
         # Nenhum PagamentoEvento foi registrado — receita do dia deve ser zero.
         self.assertEqual(DashboardResumoView._eventos_recebido_dia(hoje), 0.0)
 
-        resp = DashboardResumoView().get(APIRequestFactory().get('/api/v1/dashboard/resumo/'))
+        resp = DashboardResumoView.as_view()(APIRequestFactory().get('/api/v1/dashboard/resumo/'))
         self.assertEqual(resp.data['canais']['eventos']['recebido_hoje'], 0.0)
         self.assertEqual(resp.data['total_recebido_hoje'], 0.0)
 
@@ -1423,7 +1423,7 @@ class DashboardReceitaEventosNaoDuplicaTests(TestCase):
         )
         evento.recalcular_sinal_pago()
 
-        resp = DashboardResumoView().get(APIRequestFactory().get('/api/v1/dashboard/resumo/'))
+        resp = DashboardResumoView.as_view()(APIRequestFactory().get('/api/v1/dashboard/resumo/'))
         self.assertEqual(resp.data['canais']['eventos']['recebido_hoje'], 200.0)
         self.assertEqual(resp.data['total_recebido_hoje'], 200.0)
 
