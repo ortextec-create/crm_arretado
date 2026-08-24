@@ -19,6 +19,8 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
+from empresas.models import Empresa
+
 DUAS_CASAS = Decimal('0.01')
 
 # origem_tipo cuja idempotência é garantida por UniqueConstraint(origem_tipo, origem_id) —
@@ -61,6 +63,10 @@ class ContaBancaria(models.Model):
 
     nome = models.CharField(max_length=60)
     tipo = models.CharField(max_length=10, choices=TIPO_CHOICES)
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.PROTECT, related_name='contas_bancarias',
+        help_text="Fase 4 do multi-empresa.",
+    )
     saldo_atual = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal('0'),
         help_text="Atualizado só por MovimentoFinanceiro.registrar() — nunca gravar direto",
@@ -107,6 +113,10 @@ class ConfiguracaoFinanceira(models.Model):
         ('repasse', 'Repasse (recebido depois)'),
     ]
 
+    empresa = models.OneToOneField(
+        Empresa, on_delete=models.PROTECT, related_name='configuracao_financeira',
+        help_text="Fase 4 do multi-empresa — deixa de ser singleton global, vira 1 linha por empresa.",
+    )
     recebimento_ifood = models.CharField(max_length=10, choices=RECEBIMENTO_IFOOD_CHOICES, default='no_ato')
     dias_repasse_ifood = models.PositiveSmallIntegerField(default=30)
     nota_gera_conta_pagar = models.BooleanField(default=True)
@@ -124,12 +134,13 @@ class ConfiguracaoFinanceira(models.Model):
         verbose_name = 'Configuração Financeira'
 
     @classmethod
-    def get(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
+    def get(cls, empresa):
+        """Uma linha por empresa (Fase 4) — cria on-demand, mesmo espírito do singleton anterior."""
+        obj, _ = cls.objects.get_or_create(empresa=empresa)
         return obj
 
     def __str__(self):
-        return 'Configuração Financeira'
+        return f'Configuração Financeira ({self.empresa.nome})' if self.empresa_id else 'Configuração Financeira'
 
 
 class TelefoneAlertaFinanceiro(models.Model):
@@ -221,6 +232,11 @@ class MovimentoFinanceiro(models.Model):
     def __str__(self):
         return f'{self.get_tipo_display()} — R$ {self.valor} ({self.conta.nome})'
 
+    @property
+    def empresa(self):
+        """Sem campo próprio (Fase 4) — a empresa do movimento é sempre a da ContaBancaria. Não denormalizar."""
+        return self.conta.empresa
+
     def clean(self):
         if self.valor is not None and self.valor <= 0:
             raise ValidationError({'valor': 'Deve ser maior que zero.'})
@@ -289,6 +305,10 @@ class ContaPagar(models.Model):
     ]
 
     numero = models.CharField(max_length=12, unique=True)
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.PROTECT, related_name='contas_pagar',
+        help_text="Fase 4 do multi-empresa.",
+    )
     fornecedor = models.ForeignKey(
         Fornecedor, null=True, blank=True, on_delete=models.PROTECT, related_name='contas_pagar',
     )
@@ -381,6 +401,10 @@ class ContaReceber(models.Model):
     ]
 
     numero = models.CharField(max_length=12, unique=True)
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.PROTECT, related_name='contas_receber',
+        help_text="Fase 4 do multi-empresa.",
+    )
     cliente = models.ForeignKey(
         'clientes.Cliente', null=True, blank=True, on_delete=models.SET_NULL, related_name='contas_receber',
     )
@@ -454,6 +478,10 @@ class DespesaRecorrente(models.Model):
     ]
 
     descricao = models.CharField(max_length=120)
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.PROTECT, related_name='despesas_recorrentes',
+        help_text="Fase 4 do multi-empresa. A ContaPagar gerada pelo cron herda a empresa do molde.",
+    )
     fornecedor = models.ForeignKey(
         Fornecedor, null=True, blank=True, on_delete=models.PROTECT, related_name='despesas_recorrentes',
     )

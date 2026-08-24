@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { financeiroApi } from '../api/services'
+import { useAuth } from '../hooks/useAuth'
 import { Btn, Modal, Spinner, Toast, Field, Input, Select, Empty } from '../components/ui'
 import styles from './Financeiro.module.css'
 
@@ -30,6 +31,10 @@ function StatusBadge({ status, labels, vencida }) {
 }
 
 export default function Financeiro() {
+  const { empresaAtiva, empresas } = useAuth()
+  const empresaId = empresaAtiva?.id
+  const multiEmpresa = (empresas?.length || 0) > 1
+
   const [aba, setAba] = useState(0)
   const [toast, setToast] = useState(null)
   const showToast = (msg, tipo = 'success') => setToast({ msg, tipo })
@@ -39,10 +44,11 @@ export default function Financeiro() {
   const [fornecedores, setFornecedores] = useState([])
 
   const loadListasBase = useCallback(() => {
-    financeiroApi.contasBancarias.list({ page_size: 100 }).then((r) => setContasBancarias(r.data.results ?? r.data)).catch(() => {})
+    if (!empresaId) return
+    financeiroApi.contasBancarias.list({ page_size: 100, empresa: empresaId }).then((r) => setContasBancarias(r.data.results ?? r.data)).catch(() => {})
     financeiroApi.categorias.list({ page_size: 200 }).then((r) => setCategorias(r.data.results ?? r.data)).catch(() => {})
     financeiroApi.fornecedores.list({ page_size: 300 }).then((r) => setFornecedores(r.data.results ?? r.data)).catch(() => {})
-  }, [])
+  }, [empresaId])
 
   useEffect(() => { loadListasBase() }, [loadListasBase])
 
@@ -51,7 +57,10 @@ export default function Financeiro() {
       <div className={styles.header}>
         <div>
           <h1 className={`serif ${styles.title}`}><i className="ti ti-cash" /> Financeiro</h1>
-          <p className={styles.subtitle}>Contas a pagar/receber, fluxo de caixa e configurações financeiras</p>
+          <p className={styles.subtitle}>
+            Contas a pagar/receber, fluxo de caixa e configurações financeiras
+            {multiEmpresa && empresaAtiva && <span className={styles.empresaBadge}> · {empresaAtiva.nome}</span>}
+          </p>
         </div>
       </div>
 
@@ -64,11 +73,11 @@ export default function Financeiro() {
       </div>
 
       <div className={styles.abaContent}>
-        {aba === 0 && <AbaContasPagar categorias={categorias} fornecedores={fornecedores} contasBancarias={contasBancarias} onToast={showToast} />}
-        {aba === 1 && <AbaContasReceber categorias={categorias} contasBancarias={contasBancarias} onToast={showToast} />}
-        {aba === 2 && <AbaFluxoCaixa contasBancarias={contasBancarias} categorias={categorias} onReloadContas={loadListasBase} onToast={showToast} />}
+        {aba === 0 && <AbaContasPagar categorias={categorias} fornecedores={fornecedores} contasBancarias={contasBancarias} empresaId={empresaId} multiEmpresa={multiEmpresa} onToast={showToast} />}
+        {aba === 1 && <AbaContasReceber categorias={categorias} contasBancarias={contasBancarias} empresaId={empresaId} multiEmpresa={multiEmpresa} onToast={showToast} />}
+        {aba === 2 && <AbaFluxoCaixa contasBancarias={contasBancarias} categorias={categorias} empresaId={empresaId} multiEmpresa={multiEmpresa} onReloadContas={loadListasBase} onToast={showToast} />}
         {aba === 3 && <AbaCategorias categorias={categorias} onReload={loadListasBase} onToast={showToast} />}
-        {aba === 4 && <AbaConfiguracoes contasBancarias={contasBancarias} fornecedores={fornecedores} onReload={loadListasBase} onToast={showToast} />}
+        {aba === 4 && <AbaConfiguracoes contasBancarias={contasBancarias} fornecedores={fornecedores} empresaId={empresaId} empresaNome={empresaAtiva?.nome} onReload={loadListasBase} onToast={showToast} />}
       </div>
 
       {toast && <Toast message={toast.msg} type={toast.tipo} onClose={() => setToast(null)} />}
@@ -78,35 +87,38 @@ export default function Financeiro() {
 
 // ─── Aba 1: Contas a Pagar ─────────────────────────────────────────────────────
 
-function AbaContasPagar({ categorias, fornecedores, contasBancarias, onToast }) {
+function AbaContasPagar({ categorias, fornecedores, contasBancarias, empresaId, multiEmpresa, onToast }) {
   const [resumo, setResumo] = useState(null)
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFiltro, setStatusFiltro] = useState('')
   const [search, setSearch] = useState('')
+  const [todas, setTodas] = useState(false)
   const [modalNova, setModalNova] = useState(false)
   const [modalBaixa, setModalBaixa] = useState(null)
   const [recorrentes, setRecorrentes] = useState([])
   const [modalRecorrente, setModalRecorrente] = useState(false)
 
+  const empresaParam = todas ? 'todas' : empresaId
+
   const loadResumo = useCallback(() => {
-    financeiroApi.contasPagar.resumo().then((r) => setResumo(r.data)).catch(() => {})
-  }, [])
+    financeiroApi.contasPagar.resumo({ empresa: empresaParam }).then((r) => setResumo(r.data)).catch(() => {})
+  }, [empresaParam])
 
   const load = useCallback(() => {
     setLoading(true)
-    const params = { page_size: 100 }
+    const params = { page_size: 100, empresa: empresaParam }
     if (statusFiltro) params.status = statusFiltro
     if (search) params.search = search
     financeiroApi.contasPagar.list(params)
       .then((r) => setContas(r.data.results ?? r.data))
       .catch(() => setContas([]))
       .finally(() => setLoading(false))
-  }, [statusFiltro, search])
+  }, [statusFiltro, search, empresaParam])
 
   const loadRecorrentes = useCallback(() => {
-    financeiroApi.recorrentes.list({ page_size: 100 }).then((r) => setRecorrentes(r.data.results ?? r.data)).catch(() => {})
-  }, [])
+    financeiroApi.recorrentes.list({ page_size: 100, empresa: empresaParam }).then((r) => setRecorrentes(r.data.results ?? r.data)).catch(() => {})
+  }, [empresaParam])
 
   useEffect(() => { loadResumo(); loadRecorrentes() }, [loadResumo, loadRecorrentes])
   useEffect(() => { load() }, [load])
@@ -167,6 +179,11 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, onToast }) 
             </button>
           ))}
         </div>
+        {multiEmpresa && (
+          <button className={`${styles.chip} ${todas ? styles.chipActive : ''}`} onClick={() => setTodas((v) => !v)}>
+            Todas as empresas
+          </button>
+        )}
         <div className={styles.spacer} />
         <Btn icon="plus" onClick={() => setModalNova(true)}>Nova Conta a Pagar</Btn>
       </div>
@@ -251,7 +268,7 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, onToast }) 
 
       {modalNova && (
         <ModalNovaContaPagar
-          categorias={categorias} fornecedores={fornecedores}
+          categorias={categorias} fornecedores={fornecedores} empresaId={empresaId}
           onClose={() => setModalNova(false)}
           onSaved={() => { setModalNova(false); load(); loadResumo(); onToast('Conta a pagar criada!') }}
         />
@@ -265,7 +282,7 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, onToast }) 
       )}
       {modalRecorrente && (
         <ModalNovaDespesaRecorrente
-          categorias={categorias} fornecedores={fornecedores}
+          categorias={categorias} fornecedores={fornecedores} empresaId={empresaId}
           onClose={() => setModalRecorrente(false)}
           onSaved={() => { setModalRecorrente(false); loadRecorrentes(); onToast('Despesa recorrente criada!') }}
         />
@@ -276,23 +293,26 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, onToast }) 
 
 // ─── Aba 2: Contas a Receber ───────────────────────────────────────────────────
 
-function AbaContasReceber({ categorias, contasBancarias, onToast }) {
+function AbaContasReceber({ categorias, contasBancarias, empresaId, multiEmpresa, onToast }) {
   const [resumo, setResumo] = useState(null)
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
   const [canalFiltro, setCanalFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
   const [search, setSearch] = useState('')
+  const [todas, setTodas] = useState(false)
   const [modalNova, setModalNova] = useState(false)
   const [modalBaixa, setModalBaixa] = useState(null)
 
+  const empresaParam = todas ? 'todas' : empresaId
+
   const loadResumo = useCallback(() => {
-    financeiroApi.contasReceber.resumo().then((r) => setResumo(r.data)).catch(() => {})
-  }, [])
+    financeiroApi.contasReceber.resumo({ empresa: empresaParam }).then((r) => setResumo(r.data)).catch(() => {})
+  }, [empresaParam])
 
   const load = useCallback(() => {
     setLoading(true)
-    const params = { page_size: 100 }
+    const params = { page_size: 100, empresa: empresaParam }
     if (canalFiltro) params.canal = canalFiltro
     if (statusFiltro) params.status = statusFiltro
     if (search) params.search = search
@@ -300,7 +320,7 @@ function AbaContasReceber({ categorias, contasBancarias, onToast }) {
       .then((r) => setContas(r.data.results ?? r.data))
       .catch(() => setContas([]))
       .finally(() => setLoading(false))
-  }, [canalFiltro, statusFiltro, search])
+  }, [canalFiltro, statusFiltro, search, empresaParam])
 
   useEffect(() => { loadResumo() }, [loadResumo])
   useEffect(() => { load() }, [load])
@@ -342,6 +362,11 @@ function AbaContasReceber({ categorias, contasBancarias, onToast }) {
           <option value="">Todos os status</option>
           {Object.entries(STATUS_RECEBER_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
+        {multiEmpresa && (
+          <button className={`${styles.chip} ${todas ? styles.chipActive : ''}`} onClick={() => setTodas((v) => !v)}>
+            Todas as empresas
+          </button>
+        )}
         <div className={styles.spacer} />
         <Btn icon="plus" onClick={() => setModalNova(true)}>Novo Lançamento Manual</Btn>
       </div>
@@ -395,7 +420,7 @@ function AbaContasReceber({ categorias, contasBancarias, onToast }) {
 
       {modalNova && (
         <ModalNovaContaReceber
-          categorias={categorias}
+          categorias={categorias} empresaId={empresaId}
           onClose={() => setModalNova(false)}
           onSaved={() => { setModalNova(false); load(); loadResumo(); onToast('Lançamento manual criado!') }}
         />
@@ -413,17 +438,20 @@ function AbaContasReceber({ categorias, contasBancarias, onToast }) {
 
 // ─── Aba 3: Fluxo de Caixa ─────────────────────────────────────────────────────
 
-function AbaFluxoCaixa({ contasBancarias, categorias, onReloadContas, onToast }) {
+function AbaFluxoCaixa({ contasBancarias, categorias, empresaId, multiEmpresa, onReloadContas, onToast }) {
   const [dias, setDias] = useState(14)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [modalConferir, setModalConferir] = useState(null)
   const [modalManual, setModalManual] = useState(false)
+  const [todas, setTodas] = useState(false)
+
+  const empresaParam = todas ? 'todas' : empresaId
 
   const load = useCallback(() => {
     setLoading(true)
-    financeiroApi.fluxoCaixa(dias).then((r) => setData(r.data)).catch(() => setData(null)).finally(() => setLoading(false))
-  }, [dias])
+    financeiroApi.fluxoCaixa(dias, empresaParam).then((r) => setData(r.data)).catch(() => setData(null)).finally(() => setLoading(false))
+  }, [dias, empresaParam])
 
   useEffect(() => { load() }, [load])
 
@@ -442,6 +470,11 @@ function AbaFluxoCaixa({ contasBancarias, categorias, onReloadContas, onToast })
             <button key={d} className={`${styles.chip} ${dias === d ? styles.chipActive : ''}`} onClick={() => setDias(d)}>{d} dias</button>
           ))}
         </div>
+        {multiEmpresa && (
+          <button className={`${styles.chip} ${todas ? styles.chipActive : ''}`} onClick={() => setTodas((v) => !v)}>
+            Todas as empresas
+          </button>
+        )}
         <div className={styles.spacer} />
         <Btn variant="ghost" icon="cash-banknote" onClick={() => setModalManual(true)}>Lançamento Manual</Btn>
       </div>
@@ -595,7 +628,7 @@ function AbaCategorias({ categorias, onReload, onToast }) {
 
 // ─── Aba 5: Configurações ──────────────────────────────────────────────────────
 
-function AbaConfiguracoes({ contasBancarias, fornecedores, onReload, onToast }) {
+function AbaConfiguracoes({ contasBancarias, fornecedores, empresaId, empresaNome, onReload, onToast }) {
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [telefones, setTelefones] = useState([])
@@ -607,9 +640,11 @@ function AbaConfiguracoes({ contasBancarias, fornecedores, onReload, onToast }) 
   const [searchFornecedor, setSearchFornecedor] = useState('')
 
   useEffect(() => {
-    financeiroApi.configuracao.get().then((r) => setForm(r.data)).catch(() => {})
+    if (!empresaId) return
+    setForm(null)
+    financeiroApi.configuracao.get(empresaId).then((r) => setForm(r.data)).catch(() => {})
     financeiroApi.telefonesAlerta.list().then((r) => setTelefones(r.data.results ?? r.data)).catch(() => {})
-  }, [])
+  }, [empresaId])
 
   const salvar = async () => {
     setSaving(true)
@@ -622,7 +657,7 @@ function AbaConfiguracoes({ contasBancarias, fornecedores, onReload, onToast }) 
         alerta_repeticao_dias: form.alerta_repeticao_dias,
         horizonte_recorrencia_dias: form.horizonte_recorrencia_dias,
         conta_padrao_vendas: form.conta_padrao_vendas || null,
-      })
+      }, empresaId)
       setForm(data)
       onToast('Configurações financeiras salvas!')
     } catch {
@@ -786,7 +821,7 @@ function AbaConfiguracoes({ contasBancarias, fornecedores, onReload, onToast }) 
 
       {modalConta && (
         <ModalContaBancaria
-          conta={modalConta.id ? modalConta : null}
+          conta={modalConta.id ? modalConta : null} empresaId={empresaId} empresaNome={empresaNome}
           onClose={() => setModalConta(null)}
           onSaved={() => { setModalConta(null); onReload(); onToast('Conta bancária salva!') }}
         />
@@ -804,7 +839,7 @@ function AbaConfiguracoes({ contasBancarias, fornecedores, onReload, onToast }) 
 
 // ─── Modal: Nova Conta a Pagar ─────────────────────────────────────────────────
 
-function ModalNovaContaPagar({ categorias, fornecedores, onClose, onSaved }) {
+function ModalNovaContaPagar({ categorias, fornecedores, empresaId, onClose, onSaved }) {
   const [fornecedor, setFornecedor] = useState('')
   const [descricao, setDescricao] = useState('')
   const [categoria, setCategoria] = useState('')
@@ -824,7 +859,7 @@ function ModalNovaContaPagar({ categorias, fornecedores, onClose, onSaved }) {
       await financeiroApi.contasPagar.create({
         fornecedor: fornecedor || null, descricao, categoria: categoria || null,
         valor, data_emissao: dataEmissao, data_vencimento: dataVencimento, observacao,
-      })
+      }, empresaId)
       onSaved()
     } catch (e) {
       const d = e?.response?.data
@@ -873,7 +908,7 @@ function ModalNovaContaPagar({ categorias, fornecedores, onClose, onSaved }) {
 
 // ─── Modal: Nova Despesa Recorrente ────────────────────────────────────────────
 
-function ModalNovaDespesaRecorrente({ categorias, fornecedores, onClose, onSaved }) {
+function ModalNovaDespesaRecorrente({ categorias, fornecedores, empresaId, onClose, onSaved }) {
   const [descricao, setDescricao] = useState('')
   const [fornecedor, setFornecedor] = useState('')
   const [categoria, setCategoria] = useState('')
@@ -895,7 +930,7 @@ function ModalNovaDespesaRecorrente({ categorias, fornecedores, onClose, onSaved
     try {
       await financeiroApi.recorrentes.create({
         descricao, fornecedor: fornecedor || null, categoria, valor, valor_tipo: valorTipo, dias_vencimento: dias,
-      })
+      }, empresaId)
       onSaved()
     } catch (e) {
       const d = e?.response?.data
@@ -943,7 +978,7 @@ function ModalNovaDespesaRecorrente({ categorias, fornecedores, onClose, onSaved
 
 // ─── Modal: Nova Conta a Receber (manual) ──────────────────────────────────────
 
-function ModalNovaContaReceber({ categorias, onClose, onSaved }) {
+function ModalNovaContaReceber({ categorias, empresaId, onClose, onSaved }) {
   const [clienteNome, setClienteNome] = useState('')
   const [referencia, setReferencia] = useState('')
   const [categoria, setCategoria] = useState('')
@@ -960,7 +995,7 @@ function ModalNovaContaReceber({ categorias, onClose, onSaved }) {
     try {
       await financeiroApi.contasReceber.create({
         cliente_nome: clienteNome, referencia, categoria: categoria || null, valor, data_vencimento: dataVencimento,
-      })
+      }, empresaId)
       onSaved()
     } catch (e) {
       const d = e?.response?.data
@@ -1258,7 +1293,7 @@ function ModalCategoria({ categoria, onClose, onSaved }) {
 
 // ─── Modal: Conta Bancária ──────────────────────────────────────────────────────
 
-function ModalContaBancaria({ conta, onClose, onSaved }) {
+function ModalContaBancaria({ conta, empresaId, empresaNome, onClose, onSaved }) {
   const [nome, setNome] = useState(conta?.nome ?? '')
   const [tipo, setTipo] = useState(conta?.tipo ?? 'banco')
   const [ativo, setAtivo] = useState(conta?.ativo ?? true)
@@ -1270,7 +1305,7 @@ function ModalContaBancaria({ conta, onClose, onSaved }) {
     setSaving(true); setErro('')
     try {
       if (conta) await financeiroApi.contasBancarias.update(conta.id, { nome, tipo, ativo })
-      else await financeiroApi.contasBancarias.create({ nome, tipo })
+      else await financeiroApi.contasBancarias.create({ nome, tipo }, empresaId)
       onSaved()
     } catch (e) {
       const d = e?.response?.data
@@ -1291,7 +1326,7 @@ function ModalContaBancaria({ conta, onClose, onSaved }) {
           <button className={`${styles.radioChip} ${tipo === 'banco' ? styles.radioChipSel : ''}`} onClick={() => setTipo('banco')}>Banco</button>
           <button className={`${styles.radioChip} ${tipo === 'caixa' ? styles.radioChipSel : ''}`} onClick={() => setTipo('caixa')}>Caixa</button>
         </div>
-        {conta && (
+        {conta ? (
           <>
             <p className={styles.hintSmall}>Saldo atual: {fmt(conta.saldo_atual)} (só muda via movimentos do ledger)</p>
             <label className={styles.toggleRow} style={{ borderTop: 'none' }}>
@@ -1299,6 +1334,8 @@ function ModalContaBancaria({ conta, onClose, onSaved }) {
               <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} />
             </label>
           </>
+        ) : empresaNome && (
+          <p className={styles.hintSmall}>Será criada para a empresa <strong>{empresaNome}</strong>.</p>
         )}
         {erro && <p className={styles.erro}>{erro}</p>}
       </div>

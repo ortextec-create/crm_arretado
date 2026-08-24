@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import F, Q, Sum
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, views, viewsets
 from rest_framework.decorators import action
@@ -13,6 +14,7 @@ from rest_framework.response import Response
 from auditoria.mixins import AuditoriaDestroyMixin, AuditoriaStatusMixin, AuditoriaUpdateMixin
 from auditoria.models import LogAuditoria
 from auditoria.utils import ator_ou_none, registrar
+from empresas.models import Empresa
 from usuarios.authentication import TokenAuthentication
 
 from .models import (
@@ -47,6 +49,38 @@ class CsrfExemptMixin:
     authentication_classes = []
 
 
+def _resolver_empresa(request):
+    """
+    Resolve a empresa do request (Fase 4 do multi-empresa): `?empresa=<id>`
+    explícito > `empresa_ativa` do usuário autenticado > `Empresa.get_padrao()`
+    — nunca `.objects.first()`. `?empresa=todas` devolve None, sentinela de
+    "consolidado" (usado nos agregadores/resumos).
+    """
+    param = request.query_params.get('empresa')
+    if param == 'todas':
+        return None
+    if param:
+        return get_object_or_404(Empresa, pk=param)
+    user = request.user
+    if getattr(user, 'is_authenticated', False) and getattr(user, 'empresa_ativa_id', None):
+        return user.empresa_ativa
+    return Empresa.get_padrao()
+
+
+def _empresas_do_usuario(usuario):
+    """Mesma regra de usuarios.views._empresas_efetivas — admin vê todas as ativas, demais só as vinculadas."""
+    if usuario.role == 'admin':
+        return list(Empresa.objects.filter(ativo=True))
+    vinculadas = list(usuario.empresas.filter(ativo=True))
+    return vinculadas or [Empresa.get_padrao()]
+
+
+def _validar_empresa_vinculo(request, empresa):
+    """Actions IsAuthenticated: rejeita ?empresa=<id> fora do vínculo do usuário (exceto admin)."""
+    if empresa not in _empresas_do_usuario(request.user):
+        raise ValidationError({'empresa': 'Empresa fora do vínculo do usuário.'})
+
+
 # ─── Categorias ────────────────────────────────────────────────────────────────
 
 class CategoriaFinanceiraViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewsets.ModelViewSet):
@@ -64,7 +98,7 @@ class CategoriaFinanceiraViewSet(AuditoriaDestroyMixin, CsrfExemptMixin, viewset
 # ─── Contas bancárias ──────────────────────────────────────────────────────────
 
 class ContaBancariaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
-    queryset = ContaBancaria.objects.all()
+    queryset = ContaBancaria.objects.select_related('empresa').all()
     serializer_class = ContaBancariaSerializer
     authentication_classes = [TokenAuthentication]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
@@ -73,6 +107,18 @@ class ContaBancariaViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         if self.action in ('create', 'update', 'partial_update'):
             return [IsAuthenticated()]
         return [AllowAny()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        empresa = _resolver_empresa(self.request)
+        if empresa is not None:
+            qs = qs.filter(empresa=empresa)
+        return qs
+
+    def perform_create(self, serializer):
+        empresa = _resolver_empresa(self.request)
+        _validar_empresa_vinculo(self.request, empresa)
+        serializer.save(empresa=empresa)
 
 
 # ─── Fornecedores ──────────────────────────────────────────────────────────────
@@ -108,7 +154,8 @@ class ConfiguracaoFinanceiraViewSet(CsrfExemptMixin, viewsets.GenericViewSet):
         return [AllowAny()]
 
     def get_object(self):
-        return ConfiguracaoFinanceira.get()
+        empresa = _resolver_empresa(self.request) or Empresa.get_padrao()
+        return ConfiguracaoFinanceira.get(empresa)
 
     def retrieve(self, request, pk=None):
         return Response(self.get_serializer(self.get_object()).data)
@@ -153,7 +200,7 @@ class MovimentoFinanceiroViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet)
     """
     queryset = (
         MovimentoFinanceiro.objects
-        .select_related('conta', 'categoria', 'fornecedor', 'cliente', 'criado_por')
+        .select_related('conta', 'conta__empresa', 'categoria', 'fornecedor', 'cliente', 'criado_por')
         .all()
     )
     serializer_class = MovimentoFinanceiroSerializer
@@ -167,6 +214,9 @@ class MovimentoFinanceiroViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet)
     def get_queryset(self):
         qs = super().get_queryset()
         params = self.request.query_params
+        empresa = _resolver_empresa(self.request)
+        if empresa is not None:
+            qs = qs.filter(conta__empresa=empresa)
         if params.get('conta'):
             qs = qs.filter(conta_id=params['conta'])
         if params.get('tipo'):
@@ -184,6 +234,7 @@ class MovimentoFinanceiroViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet)
         serializer = MovimentoManualSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         dados = serializer.validated_data
+        _validar_empresa_vinculo(request, dados['conta'].empresa)
 
         try:
             mov = MovimentoFinanceiro.registrar(
@@ -214,7 +265,7 @@ class ContaPagarViewSet(
     AuditoriaStatusMixin, AuditoriaUpdateMixin,
     CsrfExemptMixin, viewsets.ModelViewSet,
 ):
-    queryset = ContaPagar.objects.select_related('fornecedor', 'categoria').all()
+    queryset = ContaPagar.objects.select_related('empresa', 'fornecedor', 'categoria').all()
     serializer_class = ContaPagarSerializer
     authentication_classes = [TokenAuthentication]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
@@ -233,6 +284,9 @@ class ContaPagarViewSet(
         qs = super().get_queryset()
         params = self.request.query_params
 
+        empresa = _resolver_empresa(self.request)
+        if empresa is not None:
+            qs = qs.filter(empresa=empresa)
         status_param = params.get('status')
         if status_param:
             qs = qs.filter(status=status_param)
@@ -253,7 +307,9 @@ class ContaPagarViewSet(
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(numero=ContaPagar.proximo_numero())
+        empresa = _resolver_empresa(self.request)
+        _validar_empresa_vinculo(self.request, empresa)
+        serializer.save(numero=ContaPagar.proximo_numero(), empresa=empresa)
         instance = serializer.instance
         detalhes = {
             'model': instance.__class__.__name__, 'id': instance.pk, 'descricao': str(instance),
@@ -334,7 +390,12 @@ class ContaPagarViewSet(
     @action(detail=False, methods=['get'], url_path='resumo')
     def resumo(self, request):
         hoje = timezone.localdate()
+        empresa = _resolver_empresa(request)
         abertas = ContaPagar.objects.filter(status__in=['pendente', 'parcial'])
+        movimentos = MovimentoFinanceiro.objects.all()
+        if empresa is not None:
+            abertas = abertas.filter(empresa=empresa)
+            movimentos = movimentos.filter(conta__empresa=empresa)
 
         em_atraso = abertas.filter(data_vencimento__lt=hoje).count()
         vence_hoje = abertas.filter(data_vencimento=hoje).count()
@@ -343,7 +404,7 @@ class ContaPagarViewSet(
         ).count()
 
         inicio_mes = hoje.replace(day=1)
-        pago_mes = MovimentoFinanceiro.objects.filter(
+        pago_mes = movimentos.filter(
             origem_tipo='conta_pagar', tipo='saida',
             data_movimento__gte=inicio_mes, data_movimento__lte=hoje,
         ).aggregate(t=Sum('valor'))['t'] or Decimal('0')
@@ -368,7 +429,7 @@ class ContaReceberViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     financeiro/signals.py. Eventos nunca aparecem aqui: o saldo deles é
     consultado dinamicamente em resumo/, nunca materializado como linha.
     """
-    queryset = ContaReceber.objects.select_related('cliente', 'categoria').all()
+    queryset = ContaReceber.objects.select_related('empresa', 'cliente', 'categoria').all()
     serializer_class = ContaReceberSerializer
     authentication_classes = [TokenAuthentication]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
@@ -381,6 +442,9 @@ class ContaReceberViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         params = self.request.query_params
+        empresa = _resolver_empresa(self.request)
+        if empresa is not None:
+            qs = qs.filter(empresa=empresa)
         if params.get('canal'):
             qs = qs.filter(canal=params['canal'])
         if params.get('status'):
@@ -400,7 +464,9 @@ class ContaReceberViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(numero=ContaReceber.proximo_numero(), canal='manual', origem_canal='manual')
+        empresa = _resolver_empresa(self.request)
+        _validar_empresa_vinculo(self.request, empresa)
+        serializer.save(numero=ContaReceber.proximo_numero(), canal='manual', origem_canal='manual', empresa=empresa)
 
     @action(detail=True, methods=['post'], url_path='baixa')
     def baixa(self, request, pk=None):
@@ -450,26 +516,36 @@ class ContaReceberViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
 
         hoje = timezone.localdate()
         limite30 = hoje + timedelta(days=30)
+        empresa = _resolver_empresa(request)
 
-        recebido_hoje = MovimentoFinanceiro.objects.filter(
+        movimentos = MovimentoFinanceiro.objects.all()
+        abertas = ContaReceber.objects.filter(status__in=['pendente', 'parcial'])
+        if empresa is not None:
+            movimentos = movimentos.filter(conta__empresa=empresa)
+            abertas = abertas.filter(empresa=empresa)
+
+        recebido_hoje = movimentos.filter(
             tipo='entrada', data_movimento=hoje,
         ).aggregate(t=Sum('valor'))['t'] or Decimal('0')
 
-        abertas = ContaReceber.objects.filter(status__in=['pendente', 'parcial'])
         a_receber_contas = abertas.aggregate(t=Sum(F('valor') - F('valor_recebido')))['t'] or Decimal('0')
         proximos_contas = abertas.filter(
             data_vencimento__gte=hoje, data_vencimento__lte=limite30,
         ).aggregate(t=Sum(F('valor') - F('valor_recebido')))['t'] or Decimal('0')
 
-        eventos_abertos = (
-            Evento.objects.exclude(status__in=['cancelado', 'entregue'])
-            .annotate(saldo=F('valor_total') - F('sinal_pago'))
-            .filter(saldo__gt=0)
-        )
-        a_receber_eventos = eventos_abertos.aggregate(t=Sum('saldo'))['t'] or Decimal('0')
-        proximos_eventos = eventos_abertos.filter(
-            data_evento__gte=hoje, data_evento__lte=limite30,
-        ).aggregate(t=Sum('saldo'))['t'] or Decimal('0')
+        # Eventos pertence só à matriz (mono-empresa por escopo) — só entra no
+        # consolidado ("todas") ou quando a empresa filtrada é a própria matriz.
+        a_receber_eventos = proximos_eventos = Decimal('0')
+        if empresa is None or empresa == Empresa.get_padrao():
+            eventos_abertos = (
+                Evento.objects.exclude(status__in=['cancelado', 'entregue'])
+                .annotate(saldo=F('valor_total') - F('sinal_pago'))
+                .filter(saldo__gt=0)
+            )
+            a_receber_eventos = eventos_abertos.aggregate(t=Sum('saldo'))['t'] or Decimal('0')
+            proximos_eventos = eventos_abertos.filter(
+                data_evento__gte=hoje, data_evento__lte=limite30,
+            ).aggregate(t=Sum('saldo'))['t'] or Decimal('0')
 
         return Response({
             'recebido_hoje': recebido_hoje,
@@ -485,7 +561,7 @@ class DespesaRecorrenteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
     Molde de despesa mensal — sem DELETE (pausar via PATCH ativo=False,
     nunca deletar; PROTECT em ContaPagar.recorrente cobre isso de qualquer forma).
     """
-    queryset = DespesaRecorrente.objects.select_related('fornecedor', 'categoria').all()
+    queryset = DespesaRecorrente.objects.select_related('empresa', 'fornecedor', 'categoria').all()
     serializer_class = DespesaRecorrenteSerializer
     authentication_classes = [TokenAuthentication]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
@@ -494,6 +570,18 @@ class DespesaRecorrenteViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         if self.action in ('create', 'update', 'partial_update'):
             return [IsAuthenticated()]
         return [AllowAny()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        empresa = _resolver_empresa(self.request)
+        if empresa is not None:
+            qs = qs.filter(empresa=empresa)
+        return qs
+
+    def perform_create(self, serializer):
+        empresa = _resolver_empresa(self.request)
+        _validar_empresa_vinculo(self.request, empresa)
+        serializer.save(empresa=empresa)
 
 
 # ─── Conferência de Saldo ──────────────────────────────────────────────────────
@@ -549,33 +637,27 @@ class FluxoCaixaView(CsrfExemptMixin, views.APIView):
 
         hoje = timezone.localdate()
         fim = hoje + timedelta(days=dias - 1)
+        empresa = _resolver_empresa(request)
 
-        realizado = (
-            MovimentoFinanceiro.objects
-            .filter(data_movimento__gte=hoje, data_movimento__lte=fim)
-            .values('data_movimento', 'tipo')
-            .annotate(total=Sum('valor'))
-        )
+        realizado_qs = MovimentoFinanceiro.objects.filter(data_movimento__gte=hoje, data_movimento__lte=fim)
+        pagar_qs = ContaPagar.objects.filter(status__in=['pendente', 'parcial'], data_vencimento__gte=hoje, data_vencimento__lte=fim)
+        receber_qs = ContaReceber.objects.filter(status__in=['pendente', 'parcial'], data_vencimento__gte=hoje, data_vencimento__lte=fim)
+        if empresa is not None:
+            realizado_qs = realizado_qs.filter(conta__empresa=empresa)
+            pagar_qs = pagar_qs.filter(empresa=empresa)
+            receber_qs = receber_qs.filter(empresa=empresa)
+
+        realizado = realizado_qs.values('data_movimento', 'tipo').annotate(total=Sum('valor'))
         realizado_por_dia = {}
         for row in realizado:
             chave = row['data_movimento']
             realizado_por_dia.setdefault(chave, {'entrada': Decimal('0'), 'saida': Decimal('0')})
             realizado_por_dia[chave][row['tipo']] = row['total']
 
-        pagar_projetado = (
-            ContaPagar.objects
-            .filter(status__in=['pendente', 'parcial'], data_vencimento__gte=hoje, data_vencimento__lte=fim)
-            .values('data_vencimento')
-            .annotate(total=Sum(F('valor') - F('valor_pago')))
-        )
+        pagar_projetado = pagar_qs.values('data_vencimento').annotate(total=Sum(F('valor') - F('valor_pago')))
         pagar_por_dia = {row['data_vencimento']: row['total'] for row in pagar_projetado}
 
-        receber_projetado = (
-            ContaReceber.objects
-            .filter(status__in=['pendente', 'parcial'], data_vencimento__gte=hoje, data_vencimento__lte=fim)
-            .values('data_vencimento')
-            .annotate(total=Sum(F('valor') - F('valor_recebido')))
-        )
+        receber_projetado = receber_qs.values('data_vencimento').annotate(total=Sum(F('valor') - F('valor_recebido')))
         receber_por_dia = {row['data_vencimento']: row['total'] for row in receber_projetado}
 
         dias_resposta = []
@@ -590,8 +672,12 @@ class FluxoCaixaView(CsrfExemptMixin, views.APIView):
                 'saida_projetada': pagar_por_dia.get(data, Decimal('0')),
             })
 
+        contas_qs = ContaBancaria.objects.filter(ativo=True)
+        if empresa is not None:
+            contas_qs = contas_qs.filter(empresa=empresa)
+
         contas = []
-        for conta in ContaBancaria.objects.filter(ativo=True):
+        for conta in contas_qs:
             ultima = conta.conferencias.first()
             contas.append({
                 'id': conta.id,

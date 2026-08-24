@@ -189,27 +189,42 @@ arretado/                        ← raiz Django
 │   │                               depender de AlertaEventoEnviado — mostra "o que está na janela agora")
 │   └── urls.py                  ← resumo/
 ├── financeiro/                  ← Contas a Pagar/Receber + ledger de caixa (spec completa em FINANCEIRO.md,
-│   │                               em andamento — fases 0-6 de 8 concluídas, ver Pendências)
-│   ├── models.py                ← CategoriaFinanceira (nasce vazia, sem seed — requisito de revenda),
-│   │                               ContaBancaria (saldo_atual só via MovimentoFinanceiro.registrar()),
-│   │                               Fornecedor, ConfiguracaoFinanceira (singleton, inclui conta_padrao_vendas —
-│   │                               destino dos movimentos automáticos de venda), TelefoneAlertaFinanceiro,
-│   │                               MovimentoFinanceiro (ledger, fonte única da verdade), ContaPagar (obrigação
+│   │                               em andamento — fases 0-6 de 8 concluídas, ver Pendências) + Fase 4 do
+│   │                               multi-empresa (MULTIEMPRESA.md — numeração de spec diferente da acima,
+│   │                               não confundir): ContaBancaria/ContaPagar/ContaReceber/DespesaRecorrente
+│   │                               ganharam FK `empresa` (PROTECT) e ConfiguracaoFinanceira deixou de ser
+│   │                               singleton global — vira 1 linha por empresa (`get(empresa)`,
+│   │                               `OneToOneField`) — ver bloco dedicado depois de views.py abaixo
+│   ├── models.py                ← CategoriaFinanceira (nasce vazia, sem seed — requisito de revenda,
+│   │                               **compartilhada** entre empresas — plano de contas único, não ganhou FK),
+│   │                               ContaBancaria (saldo_atual só via MovimentoFinanceiro.registrar(), FK
+│   │                               `empresa` PROTECT desde a Fase 4 do multi-empresa),
+│   │                               Fornecedor (**compartilhado**, sem FK empresa), ConfiguracaoFinanceira
+│   │                               (1 linha por empresa desde a Fase 4 — `OneToOneField` `empresa`, inclui
+│   │                               conta_padrao_vendas — destino dos movimentos automáticos de venda **da
+│   │                               empresa**), TelefoneAlertaFinanceiro (**compartilhado**, equipe única),
+│   │                               MovimentoFinanceiro (ledger, fonte única da verdade — **sem** FK empresa
+│   │                               própria, `MovimentoFinanceiro.empresa` é property que delega pra
+│   │                               `self.conta.empresa`, nunca denormalizar), ContaPagar (obrigação
 │   │                               projetada, valor_pago/status sempre derivados via recalcular_valor_pago() —
-│   │                               mesma filosofia de Evento.sinal_pago; campo recorrente FK opcional pra
-│   │                               DespesaRecorrente, UniqueConstraint(recorrente, data_vencimento) condicional
-│   │                               garante idempotência do cron), ContaReceber (obrigação projetada simétrica,
-│   │                               só existe pra iFood modo 'repasse' ou lançamento manual — Eventos e PDV
-│   │                               NUNCA materializam ContaReceber, ver signals.py; valor_recebido/status
-│   │                               derivados via recalcular_valor_recebido(), UniqueConstraint(origem_canal,
+│   │                               mesma filosofia de Evento.sinal_pago; FK `empresa` PROTECT desde a Fase 4;
+│   │                               campo recorrente FK opcional pra DespesaRecorrente,
+│   │                               UniqueConstraint(recorrente, data_vencimento) condicional garante
+│   │                               idempotência do cron), ContaReceber (obrigação projetada simétrica, FK
+│   │                               `empresa` PROTECT desde a Fase 4, só existe pra iFood modo 'repasse' ou
+│   │                               lançamento manual — Eventos e PDV NUNCA materializam ContaReceber, ver
+│   │                               signals.py; valor_recebido/status derivados via
+│   │                               recalcular_valor_recebido(), UniqueConstraint(origem_canal,
 │   │                               origem_id) condicional garante idempotência do signal), DespesaRecorrente
-│   │                               (molde de despesa mensal, dias_vencimento JSONField com lista de dias do
-│   │                               mês — dia inexistente no mês cai no último dia via datas_no_periodo()),
-│   │                               AlertaFinanceiroEnviado (rastreia último alerta de vencimento por
-│   │                               ContaPagar, controla repetição), SaldoConferido (conferência de saldo —
-│   │                               saldo_informado digitado pelo usuário x saldo_calculado, snapshot de
-│   │                               ContaBancaria.saldo_atual no momento do POST; sem edição, nova conferência
-│   │                               é sempre um registro novo, histórico preservado; diferenca é property)
+│   │                               (molde de despesa mensal, FK `empresa` PROTECT desde a Fase 4 — a ContaPagar
+│   │                               gerada pelo cron herda a empresa do molde —, dias_vencimento JSONField com
+│   │                               lista de dias do mês — dia inexistente no mês cai no último dia via
+│   │                               datas_no_periodo()), AlertaFinanceiroEnviado (rastreia último alerta de
+│   │                               vencimento por ContaPagar, controla repetição), SaldoConferido (conferência
+│   │                               de saldo — saldo_informado digitado pelo usuário x saldo_calculado, snapshot
+│   │                               de ContaBancaria.saldo_atual no momento do POST; sem edição, nova
+│   │                               conferência é sempre um registro novo, histórico preservado; diferenca é
+│   │                               property; **sem** FK empresa própria — herda implicitamente da conta)
 │   ├── signals.py               ← registrado em FinanceiroConfig.ready() — bate no ledger no fluxo normal
 │   │                               de venda, mesmo padrão de estoque/signals.py (sender como string,
 │   │                               try/except, idempotência via existence check): PedidoPDV ao entrar em
@@ -224,17 +239,26 @@ arretado/                        ← raiz Django
 │   │                               post_save com status='pago' → entrada direto, post_delete → estorno
 │   │                               automático (nunca DELETE do movimento original — ledger imutável). Se
 │   │                               conta_padrao_vendas não configurada, loga warning e não grava — nunca
-│   │                               cria ContaBancaria automaticamente
+│   │                               cria ContaBancaria automaticamente. Desde a Fase 4 do multi-empresa,
+│   │                               `ConfiguracaoFinanceira.get()` exige `empresa`: PDV e PagamentoEvento são
+│   │                               mono-empresa (sempre `Empresa.get_padrao()`); iFood resolve tudo pela
+│   │                               empresa do próprio pedido (`pedido.empresa`, FK desde a Fase 1) — permite
+│   │                               MANGAIO em 'repasse' e a matriz em 'no_ato' simultaneamente, cada uma na
+│   │                               sua própria conta_padrao_vendas
 │   ├── management/commands/gerar_contas_recorrentes.py ← cron diário: materializa ContaPagar
-│   │                               (origem='recorrente') a partir de cada DespesaRecorrente ativa, um
-│   │                               vencimento por dia em dias_vencimento dentro do horizonte configurado
-│   │                               (ConfiguracaoFinanceira.horizonte_recorrencia_dias) — idempotente pela
+│   │                               (origem='recorrente') a partir de cada DespesaRecorrente ativa **de
+│   │                               qualquer empresa, numa única passada** (Fase 4 do multi-empresa), um
+│   │                               vencimento por dia em dias_vencimento dentro do horizonte configurado em
+│   │                               ConfiguracaoFinanceira.get(despesa.empresa).horizonte_recorrencia_dias —
+│   │                               a ContaPagar gerada herda a empresa do molde — idempotente pela
 │   │                               UniqueConstraint(recorrente, data_vencimento)
 │   ├── management/commands/alertar_vencimentos.py ← cron diário: alerta a equipe (WhatsApp, via
-│   │                               TelefoneAlertaFinanceiro) sobre ContaPagar pendente/parcial vencendo em
-│   │                               até alerta_antecedencia_dias ou já em atraso — repete a cada
-│   │                               alerta_repeticao_dias, controlado por AlertaFinanceiroEnviado (mesmo
-│   │                               padrão de alertar_eventos/alertar_estoque_baixo)
+│   │                               TelefoneAlertaFinanceiro, compartilhados entre empresas) sobre ContaPagar
+│   │                               pendente/parcial vencendo em até alerta_antecedencia_dias ou já em atraso
+│   │                               — janela/repetição lidas da ConfiguracaoFinanceira **de cada empresa**
+│   │                               (Fase 4), controlado por AlertaFinanceiroEnviado (mesmo padrão de
+│   │                               alertar_eventos/alertar_estoque_baixo); mensagem ganha o prefixo
+│   │                               `[{empresa.nome}]` (sempre, incondicional)
 │   └── views.py                 ← CategoriaFinanceiraViewSet/ContaBancariaViewSet/FornecedorViewSet,
 │                                    MovimentoFinanceiroViewSet (só leitura + action manual/, lançamento
 │                                    avulso/estorno), ConfiguracaoFinanceiraViewSet, TelefoneAlertaFinanceiroViewSet,
@@ -246,7 +270,18 @@ arretado/                        ← raiz Django
 │                                    realizado do ledger + projetado de ContaPagar/ContaReceber pendente/parcial,
 │                                    + saldos por conta e última conferência de cada uma; não inclui saldo
 │                                    dinâmico de Evento, diferente de contas-receber/resumo — fora do escopo
-│                                    literal da Fase 6)
+│                                    literal da Fase 6). **Fase 4 do multi-empresa**: todos os endpoints acima
+│                                    aceitam `?empresa=<id>` (default: `empresa_ativa` do usuário autenticado,
+│                                    senão `Empresa.get_padrao()` — nunca `.objects.first()`, resolvido por
+│                                    `_resolver_empresa()`) e `?empresa=todas` (sentinela de consolidado —
+│                                    devolve `None`, sem filtro); `contas-receber/resumo/` só soma o saldo
+│                                    dinâmico de Evento quando a empresa resolvida é `None` (todas) ou a
+│                                    própria matriz (Eventos é mono-empresa); `create`/`update` em
+│                                    `ContaBancariaViewSet`/`ContaPagarViewSet`/`ContaReceberViewSet`/
+│                                    `DespesaRecorrenteViewSet` validam (`_validar_empresa_vinculo()`) que o
+│                                    `?empresa=` explícito está entre as empresas do usuário (mesma regra de
+│                                    `usuarios.views._empresas_efetivas`, duplicada aqui a propósito — 3
+│                                    linhas, não vale importar função privada de outro app)
 ├── manutencao/                  ← Backup do banco (pg_dump) + mídia (tarfile) com envio externo pro
 │   │                               Backblaze B2 via rclone + alerta de falha via WhatsApp (spec completa
 │   │                               em `backup.md`)
@@ -280,7 +315,9 @@ arretado-crm/                    ← raiz React
     │                               configuracao, telefonesAlerta),
     │                               financeiroApi (categorias, contasBancarias, fornecedores, contasPagar
     │                               com baixa/cancelar/resumo, contasReceber com baixa/resumo, recorrentes,
-    │                               movimentos com manual, conferencias, fluxoCaixa, configuracao, telefonesAlerta),
+    │                               movimentos com manual, conferencias, fluxoCaixa, configuracao, telefonesAlerta
+    │                               — Fase 4 do multi-empresa: `create`/`resumo`/`fluxoCaixa`/`configuracao.get`/
+    │                               `configuracao.update` aceitam empresa/empresaId, repassado como `?empresa=`),
     │                               empresasApi (list/create/update, uploadArquivo/removerArquivo por campo
     │                               de logo/timbre — FormData, mesmo padrão de pdvApi.updateFoto —,
     │                               brandingLogin — ver "Multi-Empresa" abaixo),
@@ -335,7 +372,15 @@ arretado-crm/                    ← raiz React
     │   ├── Financeiro.jsx       ← 5 abas: Contas a Pagar (+ seção Despesas Recorrentes), Contas a Receber,
     │   │                          Fluxo de Caixa (gráfico divergente realizado×projetado + cards de conta
     │   │                          com conferência de saldo + lançamento manual), Categorias, Configurações
-    │   │                          (config singleton + telefones de alerta + contas bancárias + fornecedores)
+    │   │                          (config por empresa + telefones de alerta + contas bancárias + fornecedores).
+    │   │                          Fase 4 do multi-empresa: consome `useAuth().empresaAtiva`/`empresas`
+    │   │                          (mesmo contexto global da Sidebar — **não** replica o seletor local
+    │   │                          independente de `IFood.jsx`, que é anterior à Fase 2 e não compartilha
+    │   │                          estado); badge discreto com o nome da empresa ativa no cabeçalho; abas
+    │   │                          Contas a Pagar/Receber/Fluxo de Caixa ganham chip "Todas as empresas" (só
+    │   │                          visível com 2+ vínculos) que troca o `?empresa=` de `empresaAtiva.id` pra
+    │   │                          `'todas'` (consolidado); aba Configurações sempre usa `empresaAtiva.id`
+    │   │                          (config é sempre de uma empresa específica, sem noção de "todas")
     │   ├── Eventos.jsx
     │   ├── Orcamentos.jsx       ← inclui botão "Emitir Contrato" (status='aprovado') + ModalEmitirContrato
     │   ├── Locais.jsx           ← cadastro de Locais de Evento (LocalEvento)
@@ -424,6 +469,37 @@ arretado-crm/                    ← raiz React
 - **`dashboard/` é um app só-leitura, sem models** — `DashboardResumoView` (`GET /api/v1/dashboard/resumo/`) apenas agrega dados que já existem em `pedidos.PedidoUnificado` e `eventos.Evento`/`PagamentoEvento`. Regra importante: a receita de **Eventos** no dia (`canais.eventos.recebido_hoje` e a fatia "eventos" do `grafico_7dias`) vem **exclusivamente** de `PagamentoEvento` com `status='pago'` e `data_pagamento` do dia — nunca de `Evento.valor_total` nem do status de entrega (é recebimento efetivo de caixa, não valor do pedido). Já `ticket_medio.eventos` é a exceção: usa `Evento.valor_total` (não `PagamentoEvento`) dos eventos `status='entregue'` nos últimos 30 dias, porque ali a métrica é tamanho médio de venda, não fluxo de caixa. `fila_operacional` cruza os 3 canais lendo só `PedidoUnificado` (o `Evento` já sincroniza pra lá via `EVENTO_STATUS_MAP`), nunca faz query separada em `eventos.Evento`
 - **`relatorios.ProdutosMaisVendidosView`** (`GET /relatorios/produtos-mais-vendidos/`, `AllowAny`, sem model próprio) — ranking de produtos mais vendidos consolidando iFood + PDV + Eventos por quantidade e valor, num período configurável. Só conta venda **de fato concretizada**: iFood `status='CONCLUDED'` (via `ItemPedidoIFood`), PDV `status` em confirmado/em_preparo/pronto/concluido — exclui aberto/cancelado (via `ItemPedidoPDV`), Evento `status='entregue'` (via `ItemEvento`). **Orçamentos ficam de fora de propósito** — `ItemOrcamento` é cotação, não venda fechada, mesmo raciocínio de nunca materializar `ContaReceber` pra Evento. Agrupa por **nome do item normalizado** (`unicodedata` remove acento, lowercase, colapsa espaços) — nunca por `pdv.Produto`, porque `ItemPedidoIFood` nunca tem FK pra `Produto` (só nome em texto, mesma limitação já documentada no débito automático de estoque); então "Bolo de Chocolate" e "BOLO DE CHOCOLATE" agrupam junto entre canais, mas variações reais de nome (ex: com/sem tamanho) ficam separadas — decisão consciente de simplicidade, sem fuzzy match. `canal` aceita múltiplos valores (`?canal=ifood&canal=pdv`, default: todos os 3), `ordenar` é `quantidade` (default) ou `valor`, `limit` entre 1-200 (default 30). Resposta sempre traz o breakdown por canal de cada produto (`produtos[].canais.{ifood,pdv,eventos}`), não só o total agregado. Só JSON — sem export Excel/PDF (diferente de `RelatorioIFoodView`), decisão consciente desta entrega; revisitar se o usuário pedir
 - **Módulo Financeiro** (app `financeiro/`, spec completa em `FINANCEIRO.md` — em andamento, fases 0-6 de 8 concluídas) — duas camadas, mesma filosofia de `Evento`/`PagamentoEvento`: `ContaPagar`/`ContaReceber` são a obrigação projetada (tem vencimento e status, pode nunca acontecer); `MovimentoFinanceiro` é o ledger (fonte única da verdade do que passou pelo caixa). Requisito de revenda: **nenhum valor da Arretado hardcoded** — `CategoriaFinanceira` nasce vazia, sem seed automático
+- **Financeiro por empresa** (Fase 4 do multi-empresa, `MULTIEMPRESA.md` — numeração de spec diferente das
+  fases do `FINANCEIRO.md` acima, não confundir) — caixa e obrigações são por CNPJ. `financeiro.ContaBancaria`/
+  `ContaPagar`/`ContaReceber`/`DespesaRecorrente` ganharam FK `empresa` (`PROTECT`, ciclo `null=True` → data
+  migration atribuindo `Empresa.get_padrao()` → `null=False`, mesmo ciclo da Fase 1 do iFood).
+  `financeiro.ConfiguracaoFinanceira` **deixou de ser singleton global** — ganhou `OneToOneField` `empresa` e
+  `ConfiguracaoFinanceira.get()` virou **`ConfiguracaoFinanceira.get(empresa)`** (`get_or_create(empresa=...)`,
+  abandona a convenção antiga de `pk=1`) — todo call site precisou ser atualizado (`financeiro/signals.py`,
+  os 2 crons, `financeiro/views.py`, e o único ponto fora do app: `estoque/views.py::_gerar_conta_pagar_da_nota()`,
+  que resolve sempre `Empresa.get_padrao()` porque Estoque continua mono-empresa por escopo).
+  `financeiro.MovimentoFinanceiro` **não ganhou campo próprio** — só uma property `empresa` (`return
+  self.conta.empresa`); filtro de queryset é sempre via `conta__empresa`, nunca denormalizar.
+  `CategoriaFinanceira`/`Fornecedor`/`TelefoneAlertaFinanceiro` continuam **compartilhados** entre empresas
+  (plano de contas único, equipe única — sem FK). Sinais de venda (`financeiro/signals.py`) resolvem a
+  `ConfiguracaoFinanceira`/`conta_padrao_vendas` **da empresa certa**: PDV e `PagamentoEvento` são mono-empresa
+  (sempre `Empresa.get_padrao()`, canais mono-empresa por escopo do multi-empresa); iFood usa `pedido.empresa`
+  (FK já existente desde a Fase 1) — permite a MANGAIO operar em `repasse` e a matriz em `no_ato`
+  simultaneamente, cada uma batendo na sua própria conta. Todos os ViewSets do app (exceto
+  `CategoriaFinanceiraViewSet`/`FornecedorViewSet`/`TelefoneAlertaFinanceiroViewSet`, que ficam sem filtro por
+  serem compartilhados) e o `FluxoCaixaView` aceitam `?empresa=<id>` (helper `financeiro/views.py::
+  _resolver_empresa()` — `?empresa=` explícito > `empresa_ativa` do usuário autenticado > `Empresa.get_padrao()`,
+  nunca `.objects.first()`) e `?empresa=todas` (sentinela de consolidado, devolve `None` — sem filtro).
+  `contas-receber/resumo/` só soma o saldo dinâmico de `Evento` quando a empresa resolvida é `None` (todas) ou
+  a própria matriz (Eventos é mono-empresa, não faz sentido aparecer no resumo isolado da MANGAIO). Actions
+  `IsAuthenticated` de criação (`ContaBancariaViewSet`/`ContaPagarViewSet`/`ContaReceberViewSet`/
+  `DespesaRecorrenteViewSet`.`perform_create()`, e a action `manual/` de `MovimentoFinanceiroViewSet`) validam
+  via `_validar_empresa_vinculo()` (duplica a lógica de 3 linhas de `usuarios.views._empresas_efetivas` — não
+  importa a função privada de outro app) que o `?empresa=` resolvido está entre as empresas do usuário (admin
+  vê todas as ativas). `ConfiguracaoFinanceiraSerializer.validate_conta_padrao_vendas()` rejeita uma conta
+  bancária de empresa diferente da configuração. Frontend: `Financeiro.jsx` consome `useAuth().empresaAtiva`/
+  `empresas` (contexto global já existente desde a Fase 2, não um seletor local como o de `IFood.jsx`) — ver
+  bloco próprio na Estrutura de Pastas acima
 - **`financeiro.MovimentoFinanceiro` é o ledger — fonte única da verdade.** Todo movimento passa por `MovimentoFinanceiro.registrar()` (nunca `.objects.create()` direto em view/signal/command), mesmo contrato de `estoque.MovimentoEstoque.registrar()`: `transaction.atomic()` + `select_for_update()` na `ContaBancaria` (evita race condition entre baixas/vendas concorrentes), quantiza `valor` a 2 casas antes de `full_clean()`, calcula `saldo_posterior` e atualiza `ContaBancaria.saldo_atual` via `update_fields`. `UniqueConstraint(origem_tipo, origem_id)` é **condicional** — só se aplica quando `origem_tipo in ('pdv','ifood','evento_pagamento')` (idempotência dos signals de venda, ver `financeiro/signals.py`); baixas de conta (`conta_pagar`/`conta_receber`, permitem múltiplos movimentos parciais) e `manual` (livre — usado pelos estornos automáticos) ficam de fora da constraint. Violar essa constraint condicional é pego por `full_clean()` como `ValidationError` (Django valida `UniqueConstraint` com `condition` no nível do model, não só no banco) — `registrar()` não faz try/except em cima disso, quem chama é quem decide como tratar (os signals de venda fazem um `.exists()` explícito antes de chamar, mesmo padrão de `estoque.signals`). **Não implementar DELETE de `MovimentoFinanceiro`** — ledger imutável, erro se corrige com um movimento manual inverso (estorno), nunca apagando o original. `POST /financeiro/movimentos/manual/` (Fase 6, exige login) é o endpoint pra isso — chama `MovimentoFinanceiro.registrar()` com `origem_tipo='manual'` (fora da constraint condicional, permite múltiplos lançamentos livremente), audita `movimento_manual`
 - **`financeiro.ContaPagar`** é a obrigação projetada (`CP-0001` via `proximo_numero()`, mesmo padrão de `Orcamento`/`Contrato`/`Evento`). `valor_pago`/`status` **nunca** são gravados direto — sempre via `recalcular_valor_pago()` (soma os `MovimentoFinanceiro` com `origem_tipo='conta_pagar'`/`origem_id=self.id`/`tipo='saida'`; deriva `paga` se `valor_pago >= valor`, `parcial` se `0 < valor_pago < valor`, senão mantém `pendente`) — mesma filosofia de `Evento.sinal_pago`. `cancelar/` só é permitido com `valor_pago == 0`. `PATCH` só é permitido com `status == 'pendente'` (mesma restrição de `Orcamento.update()` — depois de qualquer baixa, a conta fica imutável nesses campos). Campo `recorrente` (FK pra `DespesaRecorrente`, opcional, `PROTECT`) é preenchido só pelo cron `gerar_contas_recorrentes` — nunca pela API (`read_only_fields` no serializer); `UniqueConstraint(recorrente, data_vencimento)` condicional (`recorrente__isnull=False`) garante que o cron nunca duplica a mesma competência. **Cuidado com ordem de operações na migration**: quando o autodetector do Django gera `AddConstraint` referenciando um campo que só existe depois de um `AddField` posterior na mesma migration, ele pode ordenar o `AddConstraint` **antes** do `AddField` (bug real encontrado nesta feature — `FieldDoesNotExist: ContaPagar has no field named 'recorrente'` ao rodar `migrate`) — sempre conferir a ordem das `operations` geradas quando `makemigrations` cria constraint condicional sobre campo novo, e mover o `AddConstraint` pra depois do `AddField` correspondente se necessário. `categoria` é **opcional** (`null=True`/`blank=True`, decisão da Fase 5 — ver "Nota Fiscal → ContaPagar" abaixo) — `ContaPagar` gerada automaticamente por nota fiscal nasce sem categoria, `DespesaRecorrente` sempre tem (copiada do molde); o serializer trata `categoria=None` como válido (`validate_categoria` só valida `tipo == 'saida'` quando uma categoria é de fato informada)
 - **`financeiro.ContaReceber`** espelha `ContaPagar` pro lado de entradas, mas **só existe pra iFood no modo `repasse` ou lançamento manual avulso** — `CR-0001` via `proximo_numero()`. `valor_recebido`/`status` nunca gravados direto, sempre via `recalcular_valor_recebido()` (mesma filosofia). `canal` (`ifood`/`manual`) é read-only na API — `POST /financeiro/contas-receber/` sempre cria `canal='manual'`/`origem_canal='manual'` via `perform_create()`, os registros `canal='ifood'` só nascem no signal. `UniqueConstraint(origem_canal, origem_id)` condicional (`origem_canal != 'manual'`) garante idempotência do signal, mesmo padrão de `MovimentoFinanceiro`. **Eventos e PDV nunca materializam `ContaReceber`** (ver "O Que NÃO Fazer") — o saldo de Eventos é sempre consultado dinamicamente (`Evento.valor_total - sinal_pago`, eventos não `cancelado`/`entregue`) tanto em `contas-receber/resumo/` quanto em qualquer tela futura; PDV e iFood `no_ato` batem direto no ledger porque o dinheiro já entrou no caixa, sem passar por obrigação projetada
@@ -559,7 +635,7 @@ arretado-crm/                    ← raiz React
 | Resumo de Cozinha (Evento) | PDF operacional (A4 página cheia, ReportLab Platypus, sem timbre) com itens do Evento agrupados por categoria, pra a equipe de cozinha montar a produção — sem preços. Botão em `Eventos.jsx` (card de detalhe + linha da lista) | ✅ Concluída (só A4 página cheia — meia-folha/térmica fora de escopo por ora) |
 | Módulo Financeiro — Fases 0-7 (bug fix pré-requisito, models base, `MovimentoFinanceiro.registrar()`, `ContaPagar` + baixa/cancelar/resumo, `DespesaRecorrente` + crons, `ContaReceber` + signals PDV/iFood/PagamentoEvento, integração Estoque → nota fiscal vira `ContaPagar`, fluxo de caixa + conferência de saldo + lançamento manual, frontend `Financeiro.jsx`) | Spec completa em `FINANCEIRO.md` (9 fases, 0-8). App `financeiro/`: `CategoriaFinanceira`/`ContaBancaria`/`Fornecedor`/`ConfiguracaoFinanceira`/`TelefoneAlertaFinanceiro`, ledger `MovimentoFinanceiro` (mesmo contrato de `MovimentoEstoque`) + action `movimentos/manual/`, `ContaPagar`/`ContaReceber` (obrigação projetada, `valor_pago`/`valor_recebido`/`status` derivados), `DespesaRecorrente` + `AlertaFinanceiroEnviado` + crons `gerar_contas_recorrentes`/`alertar_vencimentos`, signals de venda (PDV/iFood/PagamentoEvento) batendo automaticamente no ledger com estorno em cancelamento, `estoque.ImportacaoNotaFiscal.fornecedor_cnpj` + geração automática de `ContaPagar` na confirmação da nota, `SaldoConferido` (conferências/) + `fluxo-caixa/` (agregador realizado x projetado + saldos por conta) + `Financeiro.jsx` (5 abas, `financeiroApi` em `services.js`, rota `/financeiro` + item de menu) | 🔄 Em andamento (fases 0-7 de 8 — falta só a Fase 8, testes finais + revisão do CLAUDE.md canônico) |
 | Sistema de Backup (Banco + Mídia) | App `manutencao/` (spec completa em `backup.md`) — `ConfiguracaoBackup`/`TelefoneAlertaBackup`, cron `fazer_backup` (pg_dump + tarfile de media/ + rotação local + envio pro Backblaze B2 via rclone + rotação remota) e `verificar_backup` (alerta WhatsApp sem dedup se backup ausente/velho/corrompido) | ✅ Concluída (fases 1-5 — envio externo configurado com Backblaze B2 em 30/jul/2026; restauração é sempre manual, ver Padrões Obrigatórios) |
-| Multi-Empresa + Temas — Fases 0-3 (app `empresas/` + model `Empresa`; iFood multi-empresa; Usuários × Empresas + empresa ativa; sistema de temas) | Spec completa em `MULTIEMPRESA.md` (6 fases, 0-5). Fase 0: app `empresas/`: model `Empresa` (multi-tenant por linha, branding em 12 campos de cor + 3 logos + timbre preparatório, `padrao` único via constraint condicional), `EmpresaViewSet` (CRUD sem DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (rota `/empresas`, menu Administração, `role=admin`). Fase 1: FK `empresa` (`PROTECT`) em `ifood.ConfiguracaoIFood`/`ifood.PedidoIFood` e `pedidos.PedidoUnificado` (`null=True`); credencial de ação de pedido sempre resolvida pela empresa do pedido (nunca `.objects.first()`); `IFood.jsx` com seletor de empresa (só visível com 2+ empresas ativas). Fase 2: `usuarios.Usuario` ganhou `empresas` (M2M) + `empresa_ativa` (FK) + `preferencia_tema`; login devolve empresas/empresa_ativa/tema "efetivos" (fallback pra empresa padrão, nunca bloqueia); `POST /usuarios/definir-empresa-ativa/` (audita `empresa_alternada`, admin pode ativar qualquer empresa) + `POST /usuarios/preferencia-tema/` (não audita); `useAuth.jsx` (`trocarEmpresa`/`definirPreferenciaTema`), `EscolherEmpresa.jsx` (rota pós-login com 2+ empresas), `EmpresaSwitcher.jsx` (pill na Sidebar — projeto não tem header global), checkbox de vínculo em `Usuarios.jsx`. Fase 3 (100% frontend, sem migration): tokens novos em `index.css` (rgb companheiros, trio de status compartilhado, badges de canal/marca externa, tokens de sidebar, `--font-display`/`--font-body`) + conversão mecânica de ~150 ocorrências de hex/rgb cru pra `var()` em 20 CSS Modules + `ui.module.css` (auditoria feita por agente, valores idênticos — zero mudança visual); `temas.css` (novo, paletas `neutro-claro`/`neutro-escuro`); `utils/tema.js` (`aplicarCoresEmpresa`/`aplicarModoNeutro`/`aplicarTema`); `useAuth.jsx` aplica o tema (+ título + favicon) num `useEffect`; `Login.jsx` consome `brandingLogin()` (órfão desde a Fase 0); `Sidebar.jsx` mostra logo/subtítulo dinâmicos da empresa ativa; `SeletorTema.jsx` novo (rodapé da Sidebar). Validado visualmente via Playwright headless (usuário de teste `TESTE Fase3 Temas`, criado e removido na mesma sessão) nos 3 modos, em Login/Dashboard/Financeiro/Estoque — matriz byte-idêntica confirmada, troca de tema instantânea sem reload | 🔄 Em andamento (fases 0-3 de 6 — matriz criada via data migration, MANGAIO ainda não cadastrada; Financeiro e Dashboard/Relatórios multi-empresa são as próximas 2 fases) |
+| Multi-Empresa + Temas — Fases 0-4 (app `empresas/` + model `Empresa`; iFood multi-empresa; Usuários × Empresas + empresa ativa; sistema de temas; Financeiro por empresa) | Spec completa em `MULTIEMPRESA.md` (6 fases, 0-5). Fase 0: app `empresas/`: model `Empresa` (multi-tenant por linha, branding em 12 campos de cor + 3 logos + timbre preparatório, `padrao` único via constraint condicional), `EmpresaViewSet` (CRUD sem DELETE/PUT, auditado) + `branding-login/`, tela `Empresas.jsx` (rota `/empresas`, menu Administração, `role=admin`). Fase 1: FK `empresa` (`PROTECT`) em `ifood.ConfiguracaoIFood`/`ifood.PedidoIFood` e `pedidos.PedidoUnificado` (`null=True`); credencial de ação de pedido sempre resolvida pela empresa do pedido (nunca `.objects.first()`); `IFood.jsx` com seletor de empresa (só visível com 2+ empresas ativas). Fase 2: `usuarios.Usuario` ganhou `empresas` (M2M) + `empresa_ativa` (FK) + `preferencia_tema`; login devolve empresas/empresa_ativa/tema "efetivos" (fallback pra empresa padrão, nunca bloqueia); `POST /usuarios/definir-empresa-ativa/` (audita `empresa_alternada`, admin pode ativar qualquer empresa) + `POST /usuarios/preferencia-tema/` (não audita); `useAuth.jsx` (`trocarEmpresa`/`definirPreferenciaTema`), `EscolherEmpresa.jsx` (rota pós-login com 2+ empresas), `EmpresaSwitcher.jsx` (pill na Sidebar — projeto não tem header global), checkbox de vínculo em `Usuarios.jsx`. Fase 3 (100% frontend, sem migration): tokens novos em `index.css` (rgb companheiros, trio de status compartilhado, badges de canal/marca externa, tokens de sidebar, `--font-display`/`--font-body`) + conversão mecânica de ~150 ocorrências de hex/rgb cru pra `var()` em 20 CSS Modules + `ui.module.css` (auditoria feita por agente, valores idênticos — zero mudança visual); `temas.css` (novo, paletas `neutro-claro`/`neutro-escuro`); `utils/tema.js` (`aplicarCoresEmpresa`/`aplicarModoNeutro`/`aplicarTema`); `useAuth.jsx` aplica o tema (+ título + favicon) num `useEffect`; `Login.jsx` consome `brandingLogin()` (órfão desde a Fase 0); `Sidebar.jsx` mostra logo/subtítulo dinâmicos da empresa ativa; `SeletorTema.jsx` novo (rodapé da Sidebar). Validado visualmente via Playwright headless (usuário de teste `TESTE Fase3 Temas`, criado e removido na mesma sessão) nos 3 modos, em Login/Dashboard/Financeiro/Estoque — matriz byte-idêntica confirmada, troca de tema instantânea sem reload. Fase 4 (Financeiro por empresa, ver "Financeiro por empresa" em Padrões Obrigatórios): FK `empresa` (`PROTECT`) em `ContaBancaria`/`ContaPagar`/`ContaReceber`/`DespesaRecorrente`; `ConfiguracaoFinanceira` deixou de ser singleton global (`OneToOneField` `empresa`, `get(empresa)`); `MovimentoFinanceiro` sem FK própria (property `empresa` via `conta`); signals de venda resolvem a config pela empresa certa (iFood por `pedido.empresa`, PDV/Eventos sempre a matriz); todos os ViewSets aceitam `?empresa=<id>`/`?empresa=todas`; `Financeiro.jsx` consome o contexto global (`useAuth().empresaAtiva`/`empresas`), badge + chip "Todas as empresas" nas abas de resumo. 76 testes de `financeiro` + suíte completa (303) verdes; código local, aguardando confirmação do usuário pra `migrate`+`restart`+`npm run build` em produção | 🔄 Em andamento (fases 0-4 de 6 — matriz criada via data migration, MANGAIO ainda não cadastrada; falta só Dashboard/Relatórios multi-empresa) |
 
 ---
 
@@ -743,7 +819,10 @@ GET /api/v1/dashboard/resumo/                    ← sem parâmetros; agrega can
                                                      total recebido hoje + comparativo vs ontem, gráfico 7 dias,
                                                      a receber, fila operacional, próximos eventos e ticket médio
 
-# Financeiro (fases 0-6 de 8 — ver FINANCEIRO.md e Padrões Obrigatórios)
+# Financeiro (fases 0-6 de 8 — ver FINANCEIRO.md — + Fase 4 do multi-empresa, ver MULTIEMPRESA.md e Padrões Obrigatórios)
+# Fase 4: todos os endpoints abaixo (exceto categorias/fornecedores/telefones-alerta, compartilhados) aceitam
+# ?empresa=<id> (default: empresa_ativa do usuário autenticado, senão Empresa.get_padrao()) e ?empresa=todas
+# (consolidado, sem filtro) — omitido nas linhas abaixo por repetição, mesma regra em todas
 GET/POST         /api/v1/financeiro/categorias/                  ← POST exige login
 GET/PATCH/DELETE /api/v1/financeiro/categorias/{id}/              ← DELETE exige login · audita registro_excluido
 GET/POST         /api/v1/financeiro/contas-bancarias/             ← POST exige login · sem DELETE (PROTECT do ledger, desativar via ativo=False)
@@ -757,7 +836,7 @@ POST             /api/v1/financeiro/contas-pagar/{id}/cancelar/   ← exige logi
 GET              /api/v1/financeiro/contas-pagar/resumo/          ← cards: em_atraso, vence_hoje, proximos_7_dias, total_mes {pago, pendente}
 GET              /api/v1/financeiro/movimentos/                  ← só leitura (ledger, imutável) · filtros: conta, tipo, categoria, data_inicio, data_fim
 POST             /api/v1/financeiro/movimentos/manual/            ← exige login · lançamento avulso/estorno · origem_tipo='manual' · audita movimento_manual
-GET/PATCH        /api/v1/financeiro/configuracao/1/               ← singleton · PATCH exige login · audita config_financeira_alterada
+GET/PATCH        /api/v1/financeiro/configuracao/1/               ← 1 linha por empresa (Fase 4) · pk na URL é ignorado, resolve por ?empresa= · PATCH exige login · audita config_financeira_alterada
 GET/POST         /api/v1/financeiro/telefones-alerta/
 GET/PATCH/DELETE /api/v1/financeiro/telefones-alerta/{id}/        ← DELETE exige login · audita registro_excluido
 GET/POST         /api/v1/financeiro/recorrentes/                  ← POST exige login
@@ -765,7 +844,7 @@ GET/PATCH        /api/v1/financeiro/recorrentes/{id}/             ← PATCH exig
 GET/POST         /api/v1/financeiro/contas-receber/                ← filtros: canal, status, mes (YYYY-MM), search · POST exige login (sempre cria canal='manual')
 GET/PATCH        /api/v1/financeiro/contas-receber/{id}/           ← PATCH exige login
 POST             /api/v1/financeiro/contas-receber/{id}/baixa/     ← exige login · mesmo BaixaContaSerializer da baixa de ContaPagar · audita baixa_registrada
-GET              /api/v1/financeiro/contas-receber/resumo/         ← recebido_hoje, a_receber, proximos_30_dias — inclui saldo de Evento via query dinâmica (nunca materializado como linha)
+GET              /api/v1/financeiro/contas-receber/resumo/         ← recebido_hoje, a_receber, proximos_30_dias — inclui saldo de Evento via query dinâmica (nunca materializado como linha), só quando a empresa filtrada é a matriz ou 'todas'
 GET/POST         /api/v1/financeiro/conferencias/                  ← POST exige login · saldo_calculado é sempre snapshot de ContaBancaria.saldo_atual no momento (nunca vem do payload) · sem PATCH/DELETE
 GET              /api/v1/financeiro/fluxo-caixa/?dias=N            ← N entre 1-90 (default 14) · por dia: entrada/saida realizada (ledger) e projetada (ContaPagar/ContaReceber pendente/parcial) · + saldos por conta e última conferência de cada uma
 
@@ -959,7 +1038,7 @@ Infra já configurada em produção (não precisa recriar):
 - Não implementar DELETE de `financeiro.MovimentoFinanceiro` — ledger imutável; erro se corrige com um lançamento manual inverso (estorno), nunca apagando o original
 - Não semear `financeiro.CategoriaFinanceira` com valores hardcoded — requisito de revenda, o cadastro nasce vazio e é o usuário quem cadastra
 - Não permitir `PATCH` em `financeiro.ContaPagar` quando `status` não for `pendente` — depois da primeira baixa, os campos de valor/vencimento ficam imutáveis (mesma filosofia de `Orcamento`)
-- Não instanciar `ConfiguracaoFinanceira()` diretamente — sempre usar `ConfiguracaoFinanceira.get()`
+- Não instanciar `ConfiguracaoFinanceira()` diretamente — sempre usar `ConfiguracaoFinanceira.get(empresa)` (desde a Fase 4 do multi-empresa, o argumento é obrigatório — não é mais singleton global)
 - Não gravar `financeiro.ContaPagar.recorrente` fora do cron `gerar_contas_recorrentes` — é `read_only` no serializer, a API nunca deixa o usuário setar esse campo na criação manual
 - Não criar `ContaPagar` de uma `DespesaRecorrente` sem checar a `UniqueConstraint(recorrente, data_vencimento)` primeiro — o cron sempre confere `ContaPagar.objects.filter(recorrente=..., data_vencimento=...).exists()` antes de criar, nunca confia só na constraint pra evitar duplicata silenciosa
 - Não implementar `DELETE` em `financeiro.DespesaRecorrente` — pausar é `ativo=False`; `categoria`/`fornecedor` são `PROTECT` e travariam a exclusão de qualquer forma se já tiver `ContaPagar` gerada
@@ -985,7 +1064,11 @@ Infra já configurada em produção (não precisa recriar):
 - Não permitir duas empresas com `padrao=True`, nem desmarcar a única com `padrao=True` sem promover outra na mesma requisição — os dois casos são bloqueados no `EmpresaSerializer.validate()`/`UniqueConstraint` condicional; não contornar essa validação em nenhum endpoint novo
 - Não implementar `DELETE`/`PUT` em `empresas.Empresa` — inativar é sempre `ativo=False` (mesma filosofia de `DespesaRecorrente`/`ConfiguracaoIFood`); FKs de outros apps vão apontar pra cá com `PROTECT` nas próximas fases
 - Não hardcodar nome/cor/CNPJ de nenhuma empresa (Arretado ou futuras) em código, CSS ou serializer — é requisito de revenda do multi-empresa (ver `MULTIEMPRESA.md`); campo de cor vazio já cai no token CSS atual por construção, não duplicar a paleta da Arretado em nenhum lugar
-- Não tocar em Financeiro/Dashboard/frontend de temas por causa do multi-empresa ainda — são as Fases 3-5 do `MULTIEMPRESA.md` (Fases 0-2 já concluídas), cada uma é sessão própria com sua própria migration/teste/confirmação de deploy
+- Não tocar em Dashboard/Relatórios por causa do multi-empresa ainda — é a Fase 5 do `MULTIEMPRESA.md` (Fases 0-4 já concluídas, Financeiro incluso), sessão própria com sua própria migration/teste/confirmação de deploy
+- Não gravar `financeiro.ContaBancaria`/`ContaPagar`/`ContaReceber`/`DespesaRecorrente.empresa` fora do que `financeiro/views.py::_resolver_empresa()` resolve (`?empresa=` explícito > `empresa_ativa` do usuário > `Empresa.get_padrao()`) — os 4 campos são `read_only` nos serializers de propósito, nunca aceitos do payload
+- Não denormalizar `empresa` em `financeiro.MovimentoFinanceiro` — é sempre a `property` que delega pra `self.conta.empresa` (mesma regra do "O Que NÃO Fazer" do `MULTIEMPRESA.md` — ver Padrões Obrigatórios)
+- Não permitir `financeiro.ConfiguracaoFinanceira.conta_padrao_vendas` apontando pra uma `ContaBancaria` de empresa diferente — validado em `ConfiguracaoFinanceiraSerializer.validate_conta_padrao_vendas()`
+- Não resolver `conta_padrao_vendas`/config financeira de um pedido iFood via `Empresa.get_padrao()` — sempre `pedido.empresa` (permite MANGAIO e matriz em modos de recebimento diferentes simultaneamente); PDV e `PagamentoEvento` continuam sempre `Empresa.get_padrao()` (mono-empresa por escopo)
 - Não bloquear login por falta de vínculo de empresa — `usuarios.Usuario` sem nenhuma `empresas` vinculada (ou cuja única empresa virou `ativo=False`) sempre cai na empresa padrão via `_empresas_efetivas()`; nunca retornar 403/404 nesse caso
 - Não permitir `definir-empresa-ativa/` pra empresa fora do vínculo do usuário — exceto `role=admin`, que pode ativar qualquer empresa `ativo=True` (checar sempre `usuario.empresas.filter(pk=empresa.pk).exists()` antes, exceto pra admin)
 - Não auditar `preferencia-tema/` (cosmético) — auditar sempre `definir-empresa-ativa/` (`empresa_alternada`, afeta dado financeiro que o usuário enxerga nas próximas fases)

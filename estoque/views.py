@@ -444,9 +444,13 @@ class ImportacaoNotaFiscalViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         (defesa em profundidade — na prática o guard de status já impede
         confirmar duas vezes pela API).
         """
+        from empresas.models import Empresa
         from financeiro.models import ConfiguracaoFinanceira, ContaPagar, Fornecedor
 
-        cfg_financeira = ConfiguracaoFinanceira.get()
+        # Estoque é mono-empresa por escopo (Fase 4 do multi-empresa não o altera,
+        # ver MULTIEMPRESA.md) — a nota fiscal é sempre da empresa padrão.
+        empresa_padrao = Empresa.get_padrao()
+        cfg_financeira = ConfiguracaoFinanceira.get(empresa_padrao)
         if not cfg_financeira.nota_gera_conta_pagar:
             return
         if ContaPagar.objects.filter(nota_fiscal=importacao).exists():
@@ -462,7 +466,7 @@ class ImportacaoNotaFiscalViewSet(CsrfExemptMixin, viewsets.ModelViewSet):
         fornecedor = self._resolver_fornecedor(importacao)
         hoje = timezone.localdate()
         conta_pagar = ContaPagar.objects.create(
-            numero=ContaPagar.proximo_numero(), fornecedor=fornecedor, categoria=None,
+            numero=ContaPagar.proximo_numero(), empresa=empresa_padrao, fornecedor=fornecedor, categoria=None,
             descricao=f'NF {importacao.numero_nota}' if importacao.numero_nota else 'Nota fiscal (sem número)',
             valor=valor_total, data_emissao=hoje, data_vencimento=hoje,
             origem='nota_fiscal', nota_fiscal=importacao,

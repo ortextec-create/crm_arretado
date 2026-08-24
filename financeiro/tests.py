@@ -38,8 +38,10 @@ from .views import (
 )
 
 
-def _conta(nome='Caixa da loja', saldo=Decimal('0')):
-    return ContaBancaria.objects.create(nome=nome, tipo='caixa', saldo_atual=saldo)
+def _conta(nome='Caixa da loja', saldo=Decimal('0'), empresa=None):
+    return ContaBancaria.objects.create(
+        nome=nome, tipo='caixa', saldo_atual=saldo, empresa=empresa or Empresa.get_padrao(),
+    )
 
 
 def _categoria_saida(nome='Fornecedores'):
@@ -123,7 +125,8 @@ class ContaPagarViewSetTests(TestCase):
 
     def _criar_conta_pagar(self, valor=Decimal('300.00')):
         return ContaPagar.objects.create(
-            numero=ContaPagar.proximo_numero(), fornecedor=self.fornecedor, categoria=self.categoria,
+            numero=ContaPagar.proximo_numero(), empresa=Empresa.get_padrao(),
+            fornecedor=self.fornecedor, categoria=self.categoria,
             valor=valor, data_emissao='2026-07-01', data_vencimento='2026-07-30',
         )
 
@@ -265,7 +268,7 @@ class DespesaRecorrenteDatasNoPeriodoTests(TestCase):
 
     def _despesa(self, dias):
         return DespesaRecorrente.objects.create(
-            descricao='Aluguel', categoria=self.categoria, valor=Decimal('1500.00'),
+            descricao='Aluguel', empresa=Empresa.get_padrao(), categoria=self.categoria, valor=Decimal('1500.00'),
             dias_vencimento=dias,
         )
 
@@ -295,7 +298,8 @@ class DespesaRecorrenteDatasNoPeriodoTests(TestCase):
 
     def test_dias_vencimento_invalido_rejeitado_no_clean(self):
         despesa = DespesaRecorrente(
-            descricao='X', categoria=self.categoria, valor=Decimal('10.00'), dias_vencimento=[0, 40],
+            descricao='X', empresa=Empresa.get_padrao(), categoria=self.categoria,
+            valor=Decimal('10.00'), dias_vencimento=[0, 40],
         )
         with self.assertRaises(ValidationError):
             despesa.full_clean()
@@ -304,21 +308,25 @@ class DespesaRecorrenteDatasNoPeriodoTests(TestCase):
 class GerarContasRecorrentesCommandTests(TestCase):
     def setUp(self):
         self.categoria = _categoria_saida()
-        ConfiguracaoFinanceira.objects.create(pk=1, horizonte_recorrencia_dias=40)
+        self.empresa = Empresa.get_padrao()
+        ConfiguracaoFinanceira.objects.create(empresa=self.empresa, horizonte_recorrencia_dias=40)
 
     def test_gera_conta_pagar_dentro_do_horizonte(self):
         DespesaRecorrente.objects.create(
-            descricao='Internet', categoria=self.categoria, valor=Decimal('120.00'), dias_vencimento=[5],
+            descricao='Internet', empresa=self.empresa, categoria=self.categoria,
+            valor=Decimal('120.00'), dias_vencimento=[5],
         )
         call_command('gerar_contas_recorrentes')
         self.assertGreaterEqual(ContaPagar.objects.filter(origem='recorrente').count(), 1)
         conta = ContaPagar.objects.filter(origem='recorrente').first()
         self.assertEqual(conta.valor, Decimal('120.00'))
         self.assertEqual(conta.status, 'pendente')
+        self.assertEqual(conta.empresa, self.empresa)
 
     def test_rodar_duas_vezes_nao_duplica(self):
         DespesaRecorrente.objects.create(
-            descricao='Energia', categoria=self.categoria, valor=Decimal('300.00'), dias_vencimento=[1, 15],
+            descricao='Energia', empresa=self.empresa, categoria=self.categoria,
+            valor=Decimal('300.00'), dias_vencimento=[1, 15],
         )
         call_command('gerar_contas_recorrentes')
         total_primeira = ContaPagar.objects.filter(origem='recorrente').count()
@@ -328,7 +336,7 @@ class GerarContasRecorrentesCommandTests(TestCase):
 
     def test_despesa_inativa_nao_gera_conta(self):
         DespesaRecorrente.objects.create(
-            descricao='Pausada', categoria=self.categoria, valor=Decimal('50.00'),
+            descricao='Pausada', empresa=self.empresa, categoria=self.categoria, valor=Decimal('50.00'),
             dias_vencimento=[1], ativo=False,
         )
         call_command('gerar_contas_recorrentes')
@@ -338,13 +346,14 @@ class GerarContasRecorrentesCommandTests(TestCase):
 class AlertarVencimentosCommandTests(TestCase):
     def setUp(self):
         self.categoria = _categoria_saida()
-        ConfiguracaoFinanceira.objects.create(pk=1, alerta_antecedencia_dias=3, alerta_repeticao_dias=1)
+        self.empresa = Empresa.get_padrao()
+        ConfiguracaoFinanceira.objects.create(empresa=self.empresa, alerta_antecedencia_dias=3, alerta_repeticao_dias=1)
         TelefoneAlertaFinanceiro.objects.create(numero='5586999990000', nome='Equipe')
 
     def _conta_pagar(self, dias_para_vencer):
         vencimento = timezone.localdate() + timedelta(days=dias_para_vencer)
         return ContaPagar.objects.create(
-            numero=ContaPagar.proximo_numero(), categoria=self.categoria,
+            numero=ContaPagar.proximo_numero(), empresa=self.empresa, categoria=self.categoria,
             valor=Decimal('200.00'), data_emissao=timezone.localdate(), data_vencimento=vencimento,
         )
 
@@ -399,7 +408,7 @@ class AlertarVencimentosCommandTests(TestCase):
 class PdvSignalTests(TestCase):
     def setUp(self):
         self.conta = _conta(saldo=Decimal('0'))
-        ConfiguracaoFinanceira.objects.create(pk=1, conta_padrao_vendas=self.conta)
+        ConfiguracaoFinanceira.objects.create(empresa=Empresa.get_padrao(), conta_padrao_vendas=self.conta)
 
     def test_confirmar_pedido_gera_movimento_entrada(self):
         pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('80.00'))
@@ -412,7 +421,7 @@ class PdvSignalTests(TestCase):
         self.assertEqual(self.conta.saldo_atual, Decimal('80.00'))
 
     def test_confirmar_sem_conta_padrao_nao_gera_movimento(self):
-        ConfiguracaoFinanceira.objects.filter(pk=1).update(conta_padrao_vendas=None)
+        ConfiguracaoFinanceira.objects.filter(empresa=Empresa.get_padrao()).update(conta_padrao_vendas=None)
         pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('50.00'))
         pedido.status = 'confirmado'
         pedido.save()
@@ -448,7 +457,7 @@ class PdvSignalTests(TestCase):
 class IfoodSignalTests(TestCase):
     def setUp(self):
         self.conta = _conta(saldo=Decimal('0'))
-        self.cfg = ConfiguracaoFinanceira.objects.create(pk=1, conta_padrao_vendas=self.conta)
+        self.cfg = ConfiguracaoFinanceira.objects.create(empresa=Empresa.get_padrao(), conta_padrao_vendas=self.conta)
 
     def _pedido(self, order_id='order-1'):
         return PedidoIFood.objects.create(
@@ -518,7 +527,7 @@ class IfoodSignalTests(TestCase):
 class PagamentoEventoSignalTests(TestCase):
     def setUp(self):
         self.conta = _conta(saldo=Decimal('0'))
-        ConfiguracaoFinanceira.objects.create(pk=1, conta_padrao_vendas=self.conta)
+        ConfiguracaoFinanceira.objects.create(empresa=Empresa.get_padrao(), conta_padrao_vendas=self.conta)
         self.cliente = Cliente.objects.create(nome='Cliente Teste', telefone_principal='86999998888')
         self.evento = Evento.objects.create(
             numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
@@ -590,7 +599,7 @@ class ContaReceberViewSetTests(TestCase):
 
     def test_baixa_recebe_e_deriva_status_recebida(self):
         conta_receber = ContaReceber.objects.create(
-            numero=ContaReceber.proximo_numero(), categoria=self.categoria,
+            numero=ContaReceber.proximo_numero(), empresa=Empresa.get_padrao(), categoria=self.categoria,
             valor=Decimal('150.00'), data_vencimento='2026-08-10',
         )
         view = ContaReceberViewSet.as_view({'post': 'baixa'})
@@ -606,7 +615,7 @@ class ContaReceberViewSetTests(TestCase):
 
     def test_baixa_maior_que_saldo_rejeitada(self):
         conta_receber = ContaReceber.objects.create(
-            numero=ContaReceber.proximo_numero(), categoria=self.categoria,
+            numero=ContaReceber.proximo_numero(), empresa=Empresa.get_padrao(), categoria=self.categoria,
             valor=Decimal('100.00'), data_vencimento='2026-08-10',
         )
         view = ContaReceberViewSet.as_view({'post': 'baixa'})
@@ -797,7 +806,7 @@ class FluxoCaixaViewTests(TestCase):
     def test_projetado_inclui_conta_a_pagar_pendente(self):
         vencimento = self.hoje + timedelta(days=3)
         ContaPagar.objects.create(
-            numero=ContaPagar.proximo_numero(), categoria=self.categoria_saida,
+            numero=ContaPagar.proximo_numero(), empresa=Empresa.get_padrao(), categoria=self.categoria_saida,
             valor=Decimal('120.00'), data_emissao=self.hoje, data_vencimento=vencimento,
         )
         view = FluxoCaixaView.as_view()
@@ -809,7 +818,7 @@ class FluxoCaixaViewTests(TestCase):
     def test_projetado_inclui_conta_a_receber_pendente(self):
         vencimento = self.hoje + timedelta(days=2)
         ContaReceber.objects.create(
-            numero=ContaReceber.proximo_numero(), categoria=self.categoria_entrada,
+            numero=ContaReceber.proximo_numero(), empresa=Empresa.get_padrao(), categoria=self.categoria_entrada,
             valor=Decimal('90.00'), data_vencimento=vencimento,
         )
         view = FluxoCaixaView.as_view()
@@ -821,7 +830,7 @@ class FluxoCaixaViewTests(TestCase):
     def test_conta_paga_nao_entra_mais_no_projetado(self):
         vencimento = self.hoje + timedelta(days=1)
         conta_pagar = ContaPagar.objects.create(
-            numero=ContaPagar.proximo_numero(), categoria=self.categoria_saida,
+            numero=ContaPagar.proximo_numero(), empresa=Empresa.get_padrao(), categoria=self.categoria_saida,
             valor=Decimal('50.00'), data_emissao=self.hoje, data_vencimento=vencimento,
         )
         MovimentoFinanceiro.registrar(
@@ -859,3 +868,104 @@ class FluxoCaixaViewTests(TestCase):
         req = self.factory.get('/api/v1/financeiro/fluxo-caixa/?dias=500')
         resp = view(req)
         self.assertEqual(len(resp.data['dias']), 90)
+
+
+# ─── Fase 4 do multi-empresa (MULTIEMPRESA.md): roteamento por empresa ─────────
+
+class MultiEmpresaRoteamentoSignaisTests(TestCase):
+    """
+    Critério de pronto da Fase 4: com 2 empresas ativas, os 3 signals de
+    venda (PDV, iFood, PagamentoEvento) resolvem a conta/config certa —
+    iFood pela empresa do próprio pedido, PDV/Eventos sempre na matriz
+    (mono-empresa por escopo), mesmo com a 2ª empresa existindo.
+    """
+
+    def setUp(self):
+        self.matriz = Empresa.get_padrao()
+        self.mangaio = Empresa.objects.create(nome='Mangaio')
+        self.conta_matriz = _conta(nome='Caixa Matriz', empresa=self.matriz)
+        self.conta_mangaio = _conta(nome='Caixa Mangaio', empresa=self.mangaio)
+        ConfiguracaoFinanceira.objects.create(empresa=self.matriz, conta_padrao_vendas=self.conta_matriz)
+        ConfiguracaoFinanceira.objects.create(
+            empresa=self.mangaio, conta_padrao_vendas=self.conta_mangaio,
+            recebimento_ifood='repasse', dias_repasse_ifood=20,
+        )
+
+    def test_ifood_matriz_no_ato_bate_na_conta_da_matriz(self):
+        pedido = PedidoIFood.objects.create(
+            ifood_order_id='order-matriz', ifood_merchant_id='merch-matriz',
+            total_valor=Decimal('45.00'), empresa=self.matriz,
+        )
+        pedido.status = 'CONCLUDED'
+        pedido.save()
+        mov = MovimentoFinanceiro.objects.get(origem_tipo='ifood', origem_id=str(pedido.id))
+        self.assertEqual(mov.conta, self.conta_matriz)
+        self.conta_mangaio.refresh_from_db()
+        self.assertEqual(self.conta_mangaio.saldo_atual, Decimal('0'))
+
+    def test_ifood_mangaio_repasse_gera_conta_receber_da_mangaio(self):
+        pedido = PedidoIFood.objects.create(
+            ifood_order_id='order-mangaio', ifood_merchant_id='merch-mangaio',
+            total_valor=Decimal('60.00'), empresa=self.mangaio,
+        )
+        pedido.status = 'CONCLUDED'
+        pedido.save()
+        self.assertFalse(MovimentoFinanceiro.objects.filter(origem_tipo='ifood', origem_id=str(pedido.id)).exists())
+        conta_receber = ContaReceber.objects.get(origem_canal='ifood', origem_id=str(pedido.id))
+        self.assertEqual(conta_receber.empresa, self.mangaio)
+        self.assertEqual(conta_receber.data_vencimento, pedido.criado_em.date() + timedelta(days=20))
+
+    def test_pdv_continua_na_matriz_mesmo_com_mangaio_existindo(self):
+        pedido = PedidoPDV.objects.create(numero=PedidoPDV.proximo_numero(), total=Decimal('30.00'))
+        pedido.status = 'confirmado'
+        pedido.save()
+        mov = MovimentoFinanceiro.objects.get(origem_tipo='pdv', origem_id=str(pedido.id))
+        self.assertEqual(mov.conta, self.conta_matriz)
+
+    def test_pagamento_evento_continua_na_matriz_mesmo_com_mangaio_existindo(self):
+        cliente = Cliente.objects.create(nome='Cliente Multi', telefone_principal='86999996666')
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=cliente, tipo_evento='aniversario',
+            data_evento=date.today() + timedelta(days=10), status='orcamento',
+        )
+        pagamento = PagamentoEvento.objects.create(evento=evento, valor=Decimal('90.00'), status='pago')
+        mov = MovimentoFinanceiro.objects.get(origem_tipo='evento_pagamento', origem_id=str(pagamento.id))
+        self.assertEqual(mov.conta, self.conta_matriz)
+
+
+class MultiEmpresaFiltroViewSetTests(TestCase):
+    """?empresa=<id>|todas em ContaBancariaViewSet — mesmo padrão vale para os demais ViewSets do app."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.matriz = Empresa.get_padrao()
+        self.mangaio = Empresa.objects.create(nome='Mangaio')
+        self.conta_matriz = _conta(nome='Caixa Matriz', empresa=self.matriz)
+        self.conta_mangaio = _conta(nome='Caixa Mangaio', empresa=self.mangaio)
+
+    def test_lista_sem_parametro_cai_na_empresa_padrao(self):
+        from .views import ContaBancariaViewSet
+
+        view = ContaBancariaViewSet.as_view({'get': 'list'})
+        resp = view(self.factory.get('/api/v1/financeiro/contas-bancarias/'))
+        nomes = [c['nome'] for c in resp.data['results']]
+        self.assertIn('Caixa Matriz', nomes)
+        self.assertNotIn('Caixa Mangaio', nomes)
+
+    def test_lista_filtra_por_empresa_explicita(self):
+        from .views import ContaBancariaViewSet
+
+        view = ContaBancariaViewSet.as_view({'get': 'list'})
+        resp = view(self.factory.get(f'/api/v1/financeiro/contas-bancarias/?empresa={self.mangaio.id}'))
+        nomes = [c['nome'] for c in resp.data['results']]
+        self.assertIn('Caixa Mangaio', nomes)
+        self.assertNotIn('Caixa Matriz', nomes)
+
+    def test_lista_todas_devolve_as_duas(self):
+        from .views import ContaBancariaViewSet
+
+        view = ContaBancariaViewSet.as_view({'get': 'list'})
+        resp = view(self.factory.get('/api/v1/financeiro/contas-bancarias/?empresa=todas'))
+        nomes = [c['nome'] for c in resp.data['results']]
+        self.assertIn('Caixa Matriz', nomes)
+        self.assertIn('Caixa Mangaio', nomes)

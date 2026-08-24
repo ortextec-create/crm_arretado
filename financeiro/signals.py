@@ -10,9 +10,14 @@ Eventos e PDV NUNCA materializam ContaReceber (ver ContaReceber.__doc__ /
 CLAUDE.md) — só o iFood no modo 'repasse'. PDV e iFood 'no_ato' batem
 direto no ledger porque o dinheiro já entrou no caixa.
 
-Conta destino dos movimentos automáticos: ConfiguracaoFinanceira.get().
-conta_padrao_vendas. Se não configurada, loga warning e NÃO grava — nunca
-criar ContaBancaria automaticamente.
+Conta destino dos movimentos automáticos: ConfiguracaoFinanceira.get(empresa).
+conta_padrao_vendas — resolvida pela empresa do pedido (Fase 4 do
+multi-empresa, MULTIEMPRESA.md; não confundir com a "Fase 4" do FINANCEIRO.md
+citada acima, numeração de spec diferente). PDV e PagamentoEvento são
+mono-empresa (sempre Empresa.get_padrao()); iFood usa pedido.empresa
+(denormalizada desde a Fase 1). Se a config da empresa não tiver
+conta_padrao_vendas, loga warning e NÃO grava — nunca criar ContaBancaria
+automaticamente.
 
 Estorno em cancelamento pós-movimento (PDV/iFood 'no_ato') e em remoção de
 PagamentoEvento: movimento manual inverso (saída de mesmo valor), nunca
@@ -27,15 +32,18 @@ from django.dispatch import receiver
 logger = logging.getLogger(__name__)
 
 
-def _conta_padrao_ou_none():
+def _conta_padrao_ou_none(empresa):
     from .models import ConfiguracaoFinanceira
-    conta = ConfiguracaoFinanceira.get().conta_padrao_vendas
+    conta = ConfiguracaoFinanceira.get(empresa).conta_padrao_vendas
     if not conta:
-        logger.warning('financeiro: conta_padrao_vendas não configurada — movimento automático não gravado.')
+        logger.warning(
+            'financeiro: conta_padrao_vendas não configurada pra empresa %s — movimento automático não gravado.',
+            empresa,
+        )
     return conta
 
 
-# ─── PDV ────────────────────────────────────────────────────────────────────
+# ─── PDV (mono-empresa — sempre a empresa padrão) ──────────────────────────
 
 @receiver(post_save, sender='pdv.PedidoPDV')
 def on_pedido_pdv_salvo(sender, instance, **kwargs):
@@ -49,10 +57,12 @@ def on_pedido_pdv_salvo(sender, instance, **kwargs):
 
 
 def _registrar_venda_pdv(pedido):
+    from empresas.models import Empresa
+
     from .models import MovimentoFinanceiro
     if MovimentoFinanceiro.objects.filter(origem_tipo='pdv', origem_id=pedido.id).exists():
         return  # já registrado — idempotência
-    conta = _conta_padrao_ou_none()
+    conta = _conta_padrao_ou_none(Empresa.get_padrao())
     if not conta:
         return
     MovimentoFinanceiro.registrar(
@@ -89,16 +99,22 @@ def on_pedido_ifood_salvo(sender, instance, **kwargs):
 
 
 def _registrar_venda_ifood(pedido):
-    """Só dispara na transição pra CONCLUDED — nunca em cada evento de polling."""
+    """
+    Só dispara na transição pra CONCLUDED — nunca em cada evento de polling.
+    Resolve tudo pela empresa do próprio pedido (FK desde a Fase 1 do
+    multi-empresa) — permite MANGAIO em 'repasse' e matriz em 'no_ato'
+    simultaneamente, sem misturar credencial/conta de uma empresa com o
+    pedido de outra.
+    """
     from .models import ConfiguracaoFinanceira, ContaReceber, MovimentoFinanceiro
 
-    cfg = ConfiguracaoFinanceira.get()
+    cfg = ConfiguracaoFinanceira.get(pedido.empresa)
     referencia = pedido.display_id or pedido.ifood_order_id
 
     if cfg.recebimento_ifood == 'no_ato':
         if MovimentoFinanceiro.objects.filter(origem_tipo='ifood', origem_id=pedido.id).exists():
             return
-        conta = _conta_padrao_ou_none()
+        conta = _conta_padrao_ou_none(pedido.empresa)
         if not conta:
             return
         MovimentoFinanceiro.registrar(
@@ -112,7 +128,8 @@ def _registrar_venda_ifood(pedido):
         return
     data_pedido = (pedido.ifood_criado_em or pedido.criado_em).date()
     ContaReceber.objects.create(
-        numero=ContaReceber.proximo_numero(), cliente=pedido.cliente, cliente_nome=pedido.cliente_nome,
+        numero=ContaReceber.proximo_numero(), empresa=pedido.empresa,
+        cliente=pedido.cliente, cliente_nome=pedido.cliente_nome,
         canal='ifood', referencia=referencia, valor=pedido.total_valor,
         data_vencimento=data_pedido + timedelta(days=cfg.dias_repasse_ifood),
         origem_canal='ifood', origem_id=str(pedido.id),
@@ -154,10 +171,12 @@ def on_pagamento_evento_salvo(sender, instance, **kwargs):
 
 
 def _registrar_pagamento_evento(pagamento):
+    from empresas.models import Empresa
+
     from .models import MovimentoFinanceiro
     if MovimentoFinanceiro.objects.filter(origem_tipo='evento_pagamento', origem_id=pagamento.id).exists():
         return
-    conta = _conta_padrao_ou_none()
+    conta = _conta_padrao_ou_none(Empresa.get_padrao())
     if not conta:
         return
     MovimentoFinanceiro.registrar(

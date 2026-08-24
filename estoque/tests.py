@@ -450,7 +450,7 @@ class ConfirmarNotaGeraContaPagarTests(TestCase):
         self.admin.set_password('senha-123')
         self.admin.save()
         self.materia = _materia(nome='Chocolate 70%', quantidade_estoque=Decimal('0'))
-        ConfiguracaoFinanceira.objects.create(pk=1, nota_gera_conta_pagar=True)
+        ConfiguracaoFinanceira.objects.create(empresa=Empresa.get_padrao(), nota_gera_conta_pagar=True)
 
     def _token(self):
         resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
@@ -488,7 +488,7 @@ class ConfirmarNotaGeraContaPagarTests(TestCase):
         self.assertIn('8821', conta_pagar.descricao)
 
     def test_nota_gera_conta_pagar_desativado_nao_gera_nada(self):
-        ConfiguracaoFinanceira.objects.filter(pk=1).update(nota_gera_conta_pagar=False)
+        ConfiguracaoFinanceira.objects.filter(empresa=Empresa.get_padrao()).update(nota_gera_conta_pagar=False)
         importacao = self._importacao_com_item()
         self._confirmar(importacao)
         self.assertFalse(ContaPagar.objects.filter(nota_fiscal=importacao).exists())

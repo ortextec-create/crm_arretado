@@ -1,8 +1,10 @@
 """
 Management command: python manage.py gerar_contas_recorrentes
-Roda diariamente (cron). Para cada DespesaRecorrente ativa, materializa uma
-ContaPagar (origem='recorrente') por vencimento dentro do horizonte
-configurado em ConfiguracaoFinanceira.get().horizonte_recorrencia_dias.
+Roda diariamente (cron). Para cada DespesaRecorrente ativa (de qualquer
+empresa, numa única passada — Fase 4 do multi-empresa, MULTIEMPRESA.md),
+materializa uma ContaPagar (origem='recorrente') por vencimento dentro do
+horizonte configurado em ConfiguracaoFinanceira.get(despesa.empresa).
+horizonte_recorrencia_dias — a ContaPagar gerada herda a empresa do molde.
 Idempotente pela UniqueConstraint(recorrente, data_vencimento) — nunca duplica.
 """
 from datetime import timedelta
@@ -17,17 +19,18 @@ class Command(BaseCommand):
     help = 'Gera ContaPagar para os vencimentos de DespesaRecorrente ativas dentro do horizonte configurado'
 
     def handle(self, *args, **options):
-        cfg = ConfiguracaoFinanceira.get()
         hoje = timezone.localdate()
-        limite = hoje + timedelta(days=cfg.horizonte_recorrencia_dias)
 
         total_criadas = 0
-        for despesa in DespesaRecorrente.objects.filter(ativo=True):
+        for despesa in DespesaRecorrente.objects.select_related('empresa').filter(ativo=True):
+            cfg = ConfiguracaoFinanceira.get(despesa.empresa)
+            limite = hoje + timedelta(days=cfg.horizonte_recorrencia_dias)
             for data_vencimento in despesa.datas_no_periodo(hoje, limite):
                 if ContaPagar.objects.filter(recorrente=despesa, data_vencimento=data_vencimento).exists():
                     continue
                 conta = ContaPagar.objects.create(
                     numero=ContaPagar.proximo_numero(),
+                    empresa=despesa.empresa,
                     fornecedor=despesa.fornecedor,
                     descricao=despesa.descricao,
                     categoria=despesa.categoria,

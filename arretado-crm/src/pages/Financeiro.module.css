@@ -18,6 +18,7 @@
 .title    { font-size: 20px; color: var(--texto); margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
 .title i  { color: var(--caramelo); }
 .subtitle { font-size: 12px; color: var(--muted); margin: 0; }
+.empresaBadge { color: var(--caramelo); font-weight: 600; }
 
 /* Tab bar */
 .tabBar {

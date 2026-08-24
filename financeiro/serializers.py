@@ -25,10 +25,12 @@ class CategoriaFinanceiraSerializer(serializers.ModelSerializer):
 
 
 class ContaBancariaSerializer(serializers.ModelSerializer):
+    empresa_nome = serializers.CharField(source='empresa.nome', read_only=True, default=None)
+
     class Meta:
         model = ContaBancaria
-        fields = ['id', 'nome', 'tipo', 'saldo_atual', 'ativo', 'criado_em', 'atualizado_em']
-        read_only_fields = ['saldo_atual']
+        fields = ['id', 'nome', 'tipo', 'empresa', 'empresa_nome', 'saldo_atual', 'ativo', 'criado_em', 'atualizado_em']
+        read_only_fields = ['empresa', 'saldo_atual']
 
 
 class FornecedorSerializer(serializers.ModelSerializer):
@@ -41,14 +43,21 @@ class FornecedorSerializer(serializers.ModelSerializer):
 
 
 class ConfiguracaoFinanceiraSerializer(serializers.ModelSerializer):
+    empresa_nome = serializers.CharField(source='empresa.nome', read_only=True, default=None)
+
     class Meta:
         model = ConfiguracaoFinanceira
         fields = [
-            'recebimento_ifood', 'dias_repasse_ifood', 'nota_gera_conta_pagar',
+            'empresa', 'empresa_nome', 'recebimento_ifood', 'dias_repasse_ifood', 'nota_gera_conta_pagar',
             'alerta_antecedencia_dias', 'alerta_repeticao_dias', 'horizonte_recorrencia_dias',
             'conta_padrao_vendas', 'atualizado_em',
         ]
-        read_only_fields = ['atualizado_em']
+        read_only_fields = ['empresa', 'atualizado_em']
+
+    def validate_conta_padrao_vendas(self, conta):
+        if conta and self.instance and conta.empresa_id != self.instance.empresa_id:
+            raise serializers.ValidationError('A conta bancária precisa ser da mesma empresa desta configuração.')
+        return conta
 
 
 class TelefoneAlertaFinanceiroSerializer(serializers.ModelSerializer):
@@ -59,6 +68,7 @@ class TelefoneAlertaFinanceiroSerializer(serializers.ModelSerializer):
 
 class MovimentoFinanceiroSerializer(serializers.ModelSerializer):
     conta_nome = serializers.CharField(source='conta.nome', read_only=True, default=None)
+    empresa_nome = serializers.CharField(source='conta.empresa.nome', read_only=True, default=None)
     categoria_nome = serializers.CharField(source='categoria.nome', read_only=True, default=None)
     fornecedor_nome = serializers.CharField(source='fornecedor.nome', read_only=True, default=None)
     cliente_nome = serializers.CharField(source='cliente.nome', read_only=True, default=None)
@@ -67,7 +77,7 @@ class MovimentoFinanceiroSerializer(serializers.ModelSerializer):
     class Meta:
         model = MovimentoFinanceiro
         fields = [
-            'id', 'conta', 'conta_nome', 'tipo', 'valor', 'data_movimento',
+            'id', 'conta', 'conta_nome', 'empresa_nome', 'tipo', 'valor', 'data_movimento',
             'categoria', 'categoria_nome', 'fornecedor', 'fornecedor_nome',
             'cliente', 'cliente_nome', 'descricao', 'forma_pagamento',
             'origem_tipo', 'origem_id', 'comprovante', 'saldo_posterior',
@@ -76,6 +86,7 @@ class MovimentoFinanceiroSerializer(serializers.ModelSerializer):
 
 
 class ContaPagarSerializer(serializers.ModelSerializer):
+    empresa_nome = serializers.CharField(source='empresa.nome', read_only=True, default=None)
     fornecedor_nome = serializers.CharField(source='fornecedor.nome', read_only=True, default=None)
     categoria_nome = serializers.CharField(source='categoria.nome', read_only=True, default=None)
     saldo_restante = serializers.SerializerMethodField()
@@ -83,12 +94,12 @@ class ContaPagarSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContaPagar
         fields = [
-            'id', 'numero', 'fornecedor', 'fornecedor_nome', 'descricao', 'categoria',
+            'id', 'numero', 'empresa', 'empresa_nome', 'fornecedor', 'fornecedor_nome', 'descricao', 'categoria',
             'categoria_nome', 'valor', 'data_emissao', 'data_vencimento', 'status',
             'origem', 'nota_fiscal', 'recorrente', 'anexo', 'observacao', 'valor_pago',
             'saldo_restante', 'criado_em', 'atualizado_em',
         ]
-        read_only_fields = ['numero', 'status', 'origem', 'nota_fiscal', 'recorrente', 'valor_pago']
+        read_only_fields = ['numero', 'empresa', 'status', 'origem', 'nota_fiscal', 'recorrente', 'valor_pago']
 
     def get_saldo_restante(self, obj):
         return obj.valor - obj.valor_pago
@@ -105,15 +116,17 @@ class ContaPagarSerializer(serializers.ModelSerializer):
 
 
 class DespesaRecorrenteSerializer(serializers.ModelSerializer):
+    empresa_nome = serializers.CharField(source='empresa.nome', read_only=True, default=None)
     fornecedor_nome = serializers.CharField(source='fornecedor.nome', read_only=True, default=None)
     categoria_nome = serializers.CharField(source='categoria.nome', read_only=True, default=None)
 
     class Meta:
         model = DespesaRecorrente
         fields = [
-            'id', 'descricao', 'fornecedor', 'fornecedor_nome', 'categoria', 'categoria_nome',
+            'id', 'empresa', 'empresa_nome', 'descricao', 'fornecedor', 'fornecedor_nome', 'categoria', 'categoria_nome',
             'valor', 'valor_tipo', 'dias_vencimento', 'ativo', 'criado_em', 'atualizado_em',
         ]
+        read_only_fields = ['empresa']
 
     def validate_categoria(self, categoria):
         if categoria.tipo != 'saida':
@@ -135,6 +148,7 @@ class DespesaRecorrenteSerializer(serializers.ModelSerializer):
 
 
 class ContaReceberSerializer(serializers.ModelSerializer):
+    empresa_nome = serializers.CharField(source='empresa.nome', read_only=True, default=None)
     cliente_nome_crm = serializers.CharField(source='cliente.nome', read_only=True, default=None)
     categoria_nome = serializers.CharField(source='categoria.nome', read_only=True, default=None)
     saldo_restante = serializers.SerializerMethodField()
@@ -142,11 +156,11 @@ class ContaReceberSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContaReceber
         fields = [
-            'id', 'numero', 'cliente', 'cliente_nome_crm', 'cliente_nome', 'canal', 'referencia',
-            'categoria', 'categoria_nome', 'valor', 'data_vencimento', 'status', 'origem_canal',
+            'id', 'numero', 'empresa', 'empresa_nome', 'cliente', 'cliente_nome_crm', 'cliente_nome', 'canal',
+            'referencia', 'categoria', 'categoria_nome', 'valor', 'data_vencimento', 'status', 'origem_canal',
             'origem_id', 'valor_recebido', 'saldo_restante', 'criado_em', 'atualizado_em',
         ]
-        read_only_fields = ['numero', 'status', 'canal', 'origem_canal', 'origem_id', 'valor_recebido']
+        read_only_fields = ['numero', 'empresa', 'status', 'canal', 'origem_canal', 'origem_id', 'valor_recebido']
 
     def get_saldo_restante(self, obj):
         return obj.valor - obj.valor_recebido

@@ -379,7 +379,7 @@ export const financeiroApi = {
   },
   contasBancarias: {
     list:   (params = {}) => api.get('/financeiro/contas-bancarias/', { params }),
-    create: (data)        => api.post('/financeiro/contas-bancarias/', data),
+    create: (data, empresa) => api.post('/financeiro/contas-bancarias/', data, { params: { empresa } }),
     update: (id, data)    => api.patch(`/financeiro/contas-bancarias/${id}/`, data),
   },
   fornecedores: {
@@ -390,22 +390,22 @@ export const financeiroApi = {
   },
   contasPagar: {
     list:     (params = {}) => api.get('/financeiro/contas-pagar/', { params }),
-    create:   (data)        => api.post('/financeiro/contas-pagar/', data),
+    create:   (data, empresa) => api.post('/financeiro/contas-pagar/', data, { params: { empresa } }),
     update:   (id, data)    => api.patch(`/financeiro/contas-pagar/${id}/`, data),
     baixa:    (id, data, config = {}) => api.post(`/financeiro/contas-pagar/${id}/baixa/`, data, config),
     cancelar: (id)          => api.post(`/financeiro/contas-pagar/${id}/cancelar/`),
-    resumo:   ()            => api.get('/financeiro/contas-pagar/resumo/'),
+    resumo:   (params = {}) => api.get('/financeiro/contas-pagar/resumo/', { params }),
   },
   contasReceber: {
     list:   (params = {}) => api.get('/financeiro/contas-receber/', { params }),
-    create: (data)        => api.post('/financeiro/contas-receber/', data),
+    create: (data, empresa) => api.post('/financeiro/contas-receber/', data, { params: { empresa } }),
     update: (id, data)    => api.patch(`/financeiro/contas-receber/${id}/`, data),
     baixa:  (id, data, config = {}) => api.post(`/financeiro/contas-receber/${id}/baixa/`, data, config),
-    resumo: ()            => api.get('/financeiro/contas-receber/resumo/'),
+    resumo: (params = {}) => api.get('/financeiro/contas-receber/resumo/', { params }),
   },
   recorrentes: {
     list:   (params = {}) => api.get('/financeiro/recorrentes/', { params }),
-    create: (data)        => api.post('/financeiro/recorrentes/', data),
+    create: (data, empresa) => api.post('/financeiro/recorrentes/', data, { params: { empresa } }),
     update: (id, data)    => api.patch(`/financeiro/recorrentes/${id}/`, data),
   },
   movimentos: {
@@ -416,10 +416,11 @@ export const financeiroApi = {
     list:   (params = {}) => api.get('/financeiro/conferencias/', { params }),
     create: (data)        => api.post('/financeiro/conferencias/', data),
   },
-  fluxoCaixa: (dias = 14) => api.get('/financeiro/fluxo-caixa/', { params: { dias } }),
+  // empresa: id da empresa ativa, ou 'todas' pro consolidado (ver MULTIEMPRESA.md Fase 4)
+  fluxoCaixa: (dias = 14, empresa) => api.get('/financeiro/fluxo-caixa/', { params: { dias, empresa } }),
   configuracao: {
-    get:    ()     => api.get('/financeiro/configuracao/1/'),
-    update: (data) => api.patch('/financeiro/configuracao/1/', data),
+    get:    (empresa)       => api.get('/financeiro/configuracao/1/', { params: { empresa } }),
+    update: (data, empresa) => api.patch('/financeiro/configuracao/1/', data, { params: { empresa } }),
   },
   telefonesAlerta: {
     list:   ()     => api.get('/financeiro/telefones-alerta/'),
