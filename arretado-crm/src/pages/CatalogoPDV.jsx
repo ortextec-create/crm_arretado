@@ -235,7 +235,7 @@ function ModalProduto({ produto, categorias, onClose, onSaved, showToast }) {
   }
 
   return (
-    <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className={styles.overlay}>
       <div className={styles.modalProduto}>
         <div className={styles.modalHeader}>
           <span className={styles.modalTitle}>

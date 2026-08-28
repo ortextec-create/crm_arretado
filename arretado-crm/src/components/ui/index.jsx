@@ -110,7 +110,6 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }) {
     <div
       className={styles.overlay}
       ref={overlayRef}
-      onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
     >
       <div className={styles.modal} style={{ width }} role="dialog" aria-modal="true">
         <div className={styles.modalHeader}>

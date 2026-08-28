@@ -279,7 +279,7 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
     : []
 
   return (
-    <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className={styles.overlay}>
       <div className={styles.modalNovo}>
 
         <div className={styles.modalHeader}>
@@ -565,7 +565,7 @@ function ModalDetalhe({ pedido, onClose, onUpdated, showToast }) {
   }
 
   return (
-    <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className={styles.overlay}>
       <div className={styles.modalDetalhe}>
         <div className={styles.modalHeader}>
           <span className={styles.modalTitle}>
