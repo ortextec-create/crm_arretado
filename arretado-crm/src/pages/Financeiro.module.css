@@ -87,7 +87,11 @@
 .chipActive { background: var(--caramelo); border-color: var(--caramelo); color: var(--caramelo-texto); }
 
 /* Table */
-.tableWrap { overflow-x: auto; flex: 1; }
+/* flex: none — nunca colapsar dentro da coluna flex de .abaInner. Com `flex: 1`
+   + `overflow-x: auto` a altura mínima automática do item vira 0 e a tabela
+   some quando a seção irmã "Despesas Recorrentes" ocupa todo o espaço vertical
+   (a .abaInner já rola sozinha via overflow-y: auto). */
+.tableWrap { overflow-x: auto; flex: none; }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .table th {
   padding: 8px 12px; text-align: left; color: var(--muted);
