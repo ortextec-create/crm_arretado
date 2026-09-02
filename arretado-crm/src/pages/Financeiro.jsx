@@ -92,6 +92,7 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, empresaId, 
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFiltro, setStatusFiltro] = useState('')
+  const [kpiFiltro, setKpiFiltro] = useState('')
   const [search, setSearch] = useState('')
   const [todas, setTodas] = useState(false)
   const [modalNova, setModalNova] = useState(false)
@@ -109,12 +110,18 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, empresaId, 
     setLoading(true)
     const params = { page_size: 100, empresa: empresaParam }
     if (statusFiltro) params.status = statusFiltro
+    if (kpiFiltro === 'pago_mes') params.pago_mes = 1
+    else if (kpiFiltro) params.vencimento = kpiFiltro
     if (search) params.search = search
     financeiroApi.contasPagar.list(params)
       .then((r) => setContas(r.data.results ?? r.data))
       .catch(() => setContas([]))
       .finally(() => setLoading(false))
-  }, [statusFiltro, search, empresaParam])
+  }, [statusFiltro, kpiFiltro, search, empresaParam])
+
+  // KPI clicável: alterna o filtro por bucket de vencimento e zera o filtro de status
+  // (são dimensões mutuamente exclusivas na UI).
+  const toggleKpi = (k) => { setKpiFiltro((v) => (v === k ? '' : k)); setStatusFiltro('') }
 
   const loadRecorrentes = useCallback(() => {
     financeiroApi.recorrentes.list({ page_size: 100, empresa: empresaParam }).then((r) => setRecorrentes(r.data.results ?? r.data)).catch(() => {})
@@ -148,22 +155,26 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, empresaId, 
     <div className={styles.abaInner}>
       {resumo && (
         <div className={styles.statsRow}>
-          <div className={`${styles.statCard} ${styles.statDanger}`}>
+          <button type="button" onClick={() => toggleKpi('atraso')}
+            className={`${styles.statCard} ${styles.statDanger} ${kpiFiltro === 'atraso' ? styles.statCardActive : ''}`}>
             <i className={`ti ti-alert-triangle ${styles.statIconDanger}`} />
             <div><div className={styles.statValue}>{resumo.em_atraso}</div><div className={styles.statLabel}>Em atraso</div></div>
-          </div>
-          <div className={styles.statCard}>
+          </button>
+          <button type="button" onClick={() => toggleKpi('hoje')}
+            className={`${styles.statCard} ${kpiFiltro === 'hoje' ? styles.statCardActive : ''}`}>
             <i className="ti ti-calendar-due" style={{ color: 'var(--caramelo)' }} />
             <div><div className={styles.statValue}>{resumo.vence_hoje}</div><div className={styles.statLabel}>Vence hoje</div></div>
-          </div>
-          <div className={styles.statCard}>
+          </button>
+          <button type="button" onClick={() => toggleKpi('proximos_7')}
+            className={`${styles.statCard} ${kpiFiltro === 'proximos_7' ? styles.statCardActive : ''}`}>
             <i className="ti ti-calendar-time" style={{ color: 'var(--caramelo)' }} />
             <div><div className={styles.statValue}>{resumo.proximos_7_dias}</div><div className={styles.statLabel}>Próx. 7 dias</div></div>
-          </div>
-          <div className={`${styles.statCard} ${styles.statAccent}`}>
+          </button>
+          <button type="button" onClick={() => toggleKpi('pago_mes')}
+            className={`${styles.statCard} ${styles.statAccent} ${kpiFiltro === 'pago_mes' ? styles.statCardActive : ''}`}>
             <i className="ti ti-report-money" />
             <div><div className={styles.statValue}>{fmt(resumo.total_mes.pago)}</div><div className={styles.statLabel}>Pago no mês (pendente {fmt(resumo.total_mes.pendente)})</div></div>
-          </div>
+          </button>
         </div>
       )}
 
@@ -174,7 +185,7 @@ function AbaContasPagar({ categorias, fornecedores, contasBancarias, empresaId, 
         </div>
         <div className={styles.chipRow}>
           {['', 'pendente', 'parcial', 'paga', 'cancelada'].map((s) => (
-            <button key={s || 'todas'} className={`${styles.chip} ${statusFiltro === s ? styles.chipActive : ''}`} onClick={() => setStatusFiltro(s)}>
+            <button key={s || 'todas'} className={`${styles.chip} ${statusFiltro === s && !kpiFiltro ? styles.chipActive : ''}`} onClick={() => { setStatusFiltro(s); setKpiFiltro('') }}>
               {s ? STATUS_PAGAR_LABEL[s] : 'Todas'}
             </button>
           ))}

@@ -290,6 +290,34 @@ class ContaPagarViewSet(
         status_param = params.get('status')
         if status_param:
             qs = qs.filter(status=status_param)
+
+        # Filtro por "bucket" de vencimento — usado pelos KPIs clicáveis da tela
+        # (Em atraso / Vence hoje / Próx. 7 dias). Cada um implica conta aberta.
+        vencimento = params.get('vencimento')
+        if vencimento in ('atraso', 'hoje', 'proximos_7'):
+            hoje = timezone.localdate()
+            qs = qs.filter(status__in=['pendente', 'parcial'])
+            if vencimento == 'atraso':
+                qs = qs.filter(data_vencimento__lt=hoje)
+            elif vencimento == 'hoje':
+                qs = qs.filter(data_vencimento=hoje)
+            else:  # proximos_7
+                qs = qs.filter(data_vencimento__gt=hoje, data_vencimento__lte=hoje + timedelta(days=7))
+
+        # KPI "Pago no mês": contas que receberam ao menos uma baixa no mês corrente
+        # (mesma fonte do card — MovimentoFinanceiro origem_tipo='conta_pagar').
+        if params.get('pago_mes') in ('1', 'true'):
+            hoje = timezone.localdate()
+            inicio_mes = hoje.replace(day=1)
+            baixadas = (
+                MovimentoFinanceiro.objects
+                .filter(origem_tipo='conta_pagar', tipo='saida',
+                        data_movimento__gte=inicio_mes, data_movimento__lte=hoje)
+                .values_list('origem_id', flat=True)
+            )
+            ids = [int(x) for x in baixadas if str(x).isdigit()]
+            qs = qs.filter(id__in=ids)
+
         if params.get('categoria'):
             qs = qs.filter(categoria_id=params['categoria'])
         if params.get('fornecedor'):
