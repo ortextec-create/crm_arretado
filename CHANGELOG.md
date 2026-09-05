@@ -5,6 +5,14 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.5.2] - 2026-09-05
+
+### Adicionado
+- **Eventos — Resumo de Cozinha com imagens de inspiração**: o PDF de resumo de cozinha
+  pode agora incluir as imagens de inspiração do evento numa folha separada no final
+  (`?imagens=1`), sem distorcer a imagem original. Antes de imprimir, se o evento tiver
+  imagem(ns) anexada(s), o sistema pergunta se deve incluir essa folha.
+
 ## [v1.5.1] - 2026-09-05
 
 ### Adicionado
