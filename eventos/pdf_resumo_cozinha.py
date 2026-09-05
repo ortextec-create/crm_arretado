@@ -16,7 +16,7 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak,
 )
 
 # ── Paleta de cores (mesma de pdf_orcamento.py) ────────────────────────────────
@@ -32,9 +32,19 @@ ML   = 48.0
 MR   = W - 48.0
 MW   = MR - ML
 
+# Caixa máxima de cada imagem de inspiração (kind='proportional' — encolhe
+# mantendo a proporção original, nunca distorce)
+IMG_MAX_W = MW * 0.9
+IMG_MAX_H = 380.0
 
-def gerar_pdf_resumo_cozinha(evento) -> bytes:
-    return _gerar_conteudo(evento)
+
+def gerar_pdf_resumo_cozinha(evento, imagens=None) -> bytes:
+    """
+    `imagens` é opcional (lista de `eventos.ImagemInspiracao`) — quando
+    não-vazia, entra numa folha separada no final do PDF, com a opção de
+    incluir ou não vindo do chamador (`?imagens=1` na view — ver CLAUDE.md).
+    """
+    return _gerar_conteudo(evento, imagens=imagens or [])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -232,9 +242,26 @@ def _tabela_assinatura():
     return tbl
 
 
+# ── Folha separada de imagens de inspiração (opcional) ─────────────────────────
+
+def _flowables_imagens(imagens, st):
+    flow = [PageBreak(), Paragraph('IMAGENS DE INSPIRAÇÃO', st['secao'])]
+    for img in imagens:
+        try:
+            flow.append(Spacer(1, 10))
+            flow.append(Image(
+                img.imagem.path, width=IMG_MAX_W, height=IMG_MAX_H,
+                kind='proportional', hAlign='CENTER',
+            ))
+        except Exception:
+            # arquivo ausente/corrompido no disco — nunca derruba a geração do PDF
+            continue
+    return flow
+
+
 # ── Geração do conteúdo ────────────────────────────────────────────────────────
 
-def _gerar_conteudo(evento) -> bytes:
+def _gerar_conteudo(evento, imagens=None) -> bytes:
     st = _estilos()
 
     buf = BytesIO()
@@ -280,6 +307,9 @@ def _gerar_conteudo(evento) -> bytes:
 
     story.append(Spacer(1, 26))
     story.append(_tabela_assinatura())
+
+    if imagens:
+        story += _flowables_imagens(imagens, st)
 
     hf = partial(_header_footer, evento=evento)
     doc.build(story, onFirstPage=hf, onLaterPages=hf)

@@ -180,9 +180,12 @@ export default function Eventos() {
     setEmitirEvento(ev)
   }
 
-  const handleResumoCozinha = async (eventoId) => {
+  const handleResumoCozinha = async (eventoId, temImagens) => {
+    const incluirImagens = temImagens
+      ? window.confirm('Incluir as imagens de inspiração numa folha separada do PDF?')
+      : false
     try {
-      const res = await eventosApi.resumoCozinha(eventoId)
+      const res = await eventosApi.resumoCozinha(eventoId, incluirImagens)
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
       window.open(url, '_blank')
     } catch {
@@ -359,7 +362,7 @@ export default function Eventos() {
                       <td onClick={e => e.stopPropagation()}>
                         <button
                           className={styles.linkContrato}
-                          onClick={() => handleResumoCozinha(ev.id)}
+                          onClick={() => handleResumoCozinha(ev.id, ev.n_imagens_inspiracao > 0)}
                           title="Imprimir resumo de cozinha"
                         >
                           <i className="ti ti-printer" /> Cozinha
@@ -430,7 +433,7 @@ export default function Eventos() {
           onEditar={() => setShowEditar(true)}
           onReenviarContrato={() => abrirReenviarContrato(eventoAtivo)}
           onEmitirContrato={() => abrirEmitirContrato(eventoAtivo)}
-          onResumoCozinha={() => handleResumoCozinha(eventoAtivo.id)}
+          onResumoCozinha={() => handleResumoCozinha(eventoAtivo.id, (eventoAtivo.imagens_inspiracao?.length ?? 0) > 0)}
         />
       )}
 

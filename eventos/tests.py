@@ -777,6 +777,52 @@ class ImagemInspiracaoEventoTests(AuditoriaEventosDestroyTestCase):
         self.assertEqual(log.detalhes['evento_id'], self.evento.id)
 
 
+class ResumoCozinhaImagensTests(AuditoriaEventosDestroyTestCase):
+    """
+    O resumo de cozinha inclui as imagens de inspiração numa folha separada,
+    só quando o usuário pede (?imagens=1) — ver CLAUDE.md.
+    """
+    def setUp(self):
+        super().setUp()
+        self.evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='confirmado',
+        )
+        ItemEvento.objects.create(evento=self.evento, nome='Bolo de chocolate', preco_unit=50, quantidade=1)
+        ImagemInspiracao.objects.create(evento=self.evento, imagem=GIF_1PX)
+
+    def _n_paginas(self, resp):
+        from pypdf import PdfReader
+        return len(PdfReader(BytesIO(resp.content)).pages)
+
+    def test_sem_parametro_nao_inclui_imagens(self):
+        view = EventoViewSet.as_view({'get': 'resumo_cozinha'})
+        req = self.factory.get(f'/api/v1/eventos/{self.evento.id}/resumo-cozinha/')
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'application/pdf')
+        self.assertEqual(self._n_paginas(resp), 1)
+
+    def test_com_parametro_imagens_1_inclui_folha_separada(self):
+        view = EventoViewSet.as_view({'get': 'resumo_cozinha'})
+        req = self.factory.get(f'/api/v1/eventos/{self.evento.id}/resumo-cozinha/?imagens=1')
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._n_paginas(resp), 2)
+
+    def test_com_parametro_imagens_1_mas_evento_sem_imagem_nao_adiciona_pagina(self):
+        evento_sem_imagem = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='confirmado',
+        )
+        ItemEvento.objects.create(evento=evento_sem_imagem, nome='Bolo', preco_unit=50, quantidade=1)
+        view = EventoViewSet.as_view({'get': 'resumo_cozinha'})
+        req = self.factory.get(f'/api/v1/eventos/{evento_sem_imagem.id}/resumo-cozinha/?imagens=1')
+        resp = view(req, pk=evento_sem_imagem.id)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._n_paginas(resp), 1)
+
+
 class OrcamentoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
     def setUp(self):
         super().setUp()

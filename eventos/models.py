@@ -390,6 +390,17 @@ class Evento(models.Model):
         self.sinal_pago = total_pago
         self.save(update_fields=['sinal_pago', 'atualizado_em'])
 
+    def galeria_imagens_inspiracao(self):
+        """
+        Imagens de inspiração visíveis para este evento — do Orçamento de
+        origem quando existir (mesma galeria compartilhada, sem duplicar),
+        senão as anexadas direto ao Evento (ver ImagemInspiracao em models.py
+        e CLAUDE.md). Único ponto de resolução, reusado por
+        EventoDetailSerializer/EventoListSerializer e pelo resumo de cozinha.
+        """
+        origem = getattr(self, 'orcamento_origem', None)
+        return origem.imagens_inspiracao.all() if origem else self.imagens_inspiracao_diretas.all()
+
     # ── Permissões de transição ───────────────────────────────────────────
     @property
     def pode_confirmar(self):

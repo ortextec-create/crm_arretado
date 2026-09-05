@@ -590,12 +590,19 @@ class EventoViewSet(
     def resumo_cozinha(self, request, pk=None):
         evento = (
             Evento.objects
-            .prefetch_related('itens__produto__categoria')
-            .select_related('cliente', 'local')
+            .prefetch_related(
+                'itens__produto__categoria',
+                'orcamento_origem__imagens_inspiracao', 'imagens_inspiracao_diretas',
+            )
+            .select_related('cliente', 'local', 'orcamento_origem')
             .get(pk=pk)
         )
+        # ?imagens=1 — opção do usuário de incluir (ou não) as imagens de
+        # inspiração numa folha separada do PDF (ver "Resumo de Cozinha" no CLAUDE.md)
+        incluir_imagens = request.query_params.get('imagens') in ('1', 'true', 'True')
+        imagens = list(evento.galeria_imagens_inspiracao()) if incluir_imagens else []
         from .pdf_resumo_cozinha import gerar_pdf_resumo_cozinha
-        pdf_bytes = gerar_pdf_resumo_cozinha(evento)
+        pdf_bytes = gerar_pdf_resumo_cozinha(evento, imagens=imagens)
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'inline; filename="resumo-cozinha-{evento.numero}.pdf"'
         return response

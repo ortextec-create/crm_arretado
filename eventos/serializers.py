@@ -73,6 +73,7 @@ class EventoListSerializer(serializers.ModelSerializer):
     ultima_modificacao   = serializers.SerializerMethodField()
     contrato             = serializers.SerializerMethodField()
     tem_orcamento_origem = serializers.SerializerMethodField()
+    n_imagens_inspiracao = serializers.SerializerMethodField()
 
     class Meta:
         model  = Evento
@@ -89,6 +90,7 @@ class EventoListSerializer(serializers.ModelSerializer):
             'pode_confirmar', 'pode_iniciar_producao', 'pode_marcar_pronto',
             'pode_entregar', 'pode_cancelar',
             'criado_em', 'atualizado_em', 'ultima_modificacao', 'contrato', 'tem_orcamento_origem',
+            'n_imagens_inspiracao',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -106,6 +108,11 @@ class EventoListSerializer(serializers.ModelSerializer):
 
     def get_tem_orcamento_origem(self, obj):
         return bool(getattr(obj, 'orcamento_origem', None))
+
+    def get_n_imagens_inspiracao(self, obj):
+        # Usado pelo frontend só pra decidir se pergunta "incluir imagens?" antes
+        # de imprimir o resumo de cozinha — ver eventosApi.resumoCozinha.
+        return obj.galeria_imagens_inspiracao().count()
 
 
 class PagamentoEventoSerializer(serializers.ModelSerializer):
@@ -133,12 +140,7 @@ class EventoDetailSerializer(EventoListSerializer):
         ]
 
     def get_imagens_inspiracao(self, obj):
-        # Quando o evento veio de um orçamento, a galeria continua sendo a do
-        # orçamento (mesma fonte, sem duplicar); sem orçamento de origem, o evento
-        # tem sua própria galeria via `imagens_inspiracao_diretas` — ver CLAUDE.md.
-        origem = getattr(obj, 'orcamento_origem', None)
-        qs = origem.imagens_inspiracao.all() if origem else obj.imagens_inspiracao_diretas.all()
-        return ImagemInspiracaoSerializer(qs, many=True).data
+        return ImagemInspiracaoSerializer(obj.galeria_imagens_inspiracao(), many=True).data
 
 
 class EventoCreateSerializer(serializers.ModelSerializer):
