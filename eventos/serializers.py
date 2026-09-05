@@ -133,10 +133,12 @@ class EventoDetailSerializer(EventoListSerializer):
         ]
 
     def get_imagens_inspiracao(self, obj):
+        # Quando o evento veio de um orçamento, a galeria continua sendo a do
+        # orçamento (mesma fonte, sem duplicar); sem orçamento de origem, o evento
+        # tem sua própria galeria via `imagens_inspiracao_diretas` — ver CLAUDE.md.
         origem = getattr(obj, 'orcamento_origem', None)
-        if not origem:
-            return []
-        return ImagemInspiracaoSerializer(origem.imagens_inspiracao.all(), many=True).data
+        qs = origem.imagens_inspiracao.all() if origem else obj.imagens_inspiracao_diretas.all()
+        return ImagemInspiracaoSerializer(qs, many=True).data
 
 
 class EventoCreateSerializer(serializers.ModelSerializer):

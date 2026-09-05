@@ -1046,6 +1046,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
   const [carrinho,    setCarrinho]    = useState([])
   const [savingItems, setSavingItems] = useState(false)
   const [lightboxImg, setLightboxImg] = useState(null)
+  const [uploadingImagens, setUploadingImagens] = useState(false)
 
   // Histórico (aba) — fetch lazy, só quando a aba é ativada pela 1ª vez
   const [historico,        setHistorico]        = useState(null)
@@ -1182,6 +1183,32 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
       onToast({ message: 'Pagamento removido.', type: 'success' })
     } catch {
       onToast({ message: 'Erro ao remover pagamento.', type: 'error' })
+    }
+  }
+
+  const handleAddImagens = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    setUploadingImagens(true)
+    try {
+      const formData = new FormData()
+      files.forEach(f => formData.append('imagens', f))
+      await eventosApi.adicionarImagens(evento.id, formData)
+      await onItemAdded()
+    } catch {
+      onToast({ message: 'Erro ao enviar imagem.', type: 'error' })
+    } finally {
+      setUploadingImagens(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleRemoverImagem = async (imgId) => {
+    try {
+      await eventosApi.removerImagem(evento.id, imgId)
+      await onItemAdded()
+    } catch {
+      onToast({ message: 'Erro ao remover imagem.', type: 'error' })
     }
   }
 
@@ -1547,20 +1574,34 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
                 <i className="ti ti-lock" /> Uso interno — nunca aparece em PDFs ou WhatsApp.
               </p>
               {nImagens === 0 ? (
-                <p className={styles.semItens}>
-                  {evento.tem_orcamento_origem
-                    ? 'Nenhuma imagem anexada ao orçamento de origem.'
-                    : 'Este evento não tem imagens de inspiração porque não veio de um orçamento.'}
-                </p>
+                <p className={styles.semItens}>Nenhuma imagem anexada.</p>
               ) : (
                 <div className={styles.imagensInspiracaoGrid}>
                   {evento.imagens_inspiracao.map(img => (
                     <div key={img.id} className={styles.imagemInspiracaoThumb}>
                       <img src={img.imagem} alt="Inspiração" onClick={() => setLightboxImg(img.imagem)} />
+                      <button
+                        className={styles.imagemInspiracaoRemoverBtn}
+                        onClick={() => handleRemoverImagem(img.id)}
+                        title="Remover imagem"
+                      >
+                        <i className="ti ti-x" />
+                      </button>
                     </div>
                   ))}
                 </div>
               )}
+              <label className={styles.uploadImagemBtn}>
+                <i className="ti ti-photo-plus" /> {uploadingImagens ? 'Enviando...' : 'Adicionar imagens'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleAddImagens}
+                  disabled={uploadingImagens}
+                  style={{ display: 'none' }}
+                />
+              </label>
             </>
           )}
 

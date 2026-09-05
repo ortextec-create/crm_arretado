@@ -111,7 +111,8 @@ class EventoViewSet(
     CsrfExemptMixin, viewsets.ModelViewSet,
 ):
     queryset           = Evento.objects.prefetch_related(
-        'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao', 'contratos',
+        'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
+        'imagens_inspiracao_diretas', 'contratos',
     ).select_related('cliente', 'local', 'orcamento_origem').all()
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['data_evento', 'criado_em', 'valor_total']
@@ -134,7 +135,7 @@ class EventoViewSet(
             'adicionar_pagamento', 'remover_pagamento', 'destroy', 'remover_item',
             'create', 'update', 'partial_update',
             'confirmar', 'iniciar_producao', 'marcar_pronto', 'entregar', 'cancelar',
-            'adicionar_item', 'historico', 'gerar_contrato',
+            'adicionar_item', 'historico', 'gerar_contrato', 'remover_imagem',
         ):
             return [IsAuthenticated()]
         return [AllowAny()]
@@ -323,6 +324,53 @@ class EventoViewSet(
         item.delete()
         evento.refresh_from_db()  # evita cache stale do prefetch_related('itens') — ver CLAUDE.md
         evento.recalcular_totais()
+        return Response(EventoDetailSerializer(evento).data)
+
+    # ── Imagens de Inspiração ────────────────────────────────────────────
+    # Podem ser adicionadas/removidas a qualquer momento, em qualquer status
+    # (sem a restrição de status que vale para itens) — mesma filosofia de
+    # adicionar_imagens/remover_imagem em OrcamentoViewSet. Quando o evento
+    # veio de um orçamento, a imagem é anexada ao ORÇAMENTO de origem (mesma
+    # galeria compartilhada, sem duplicar — ver CLAUDE.md); sem orçamento de
+    # origem, a imagem é anexada direto ao Evento.
+
+    @action(detail=True, methods=['post'], url_path='imagens')
+    def adicionar_imagens(self, request, pk=None):
+        evento = self.get_object()
+        arquivos = request.FILES.getlist('imagens')
+        if not arquivos:
+            return Response(
+                {'detail': 'Nenhuma imagem enviada.'}, status=status.HTTP_400_BAD_REQUEST
+            )
+        origem = getattr(evento, 'orcamento_origem', None)
+        for arquivo in arquivos:
+            if origem:
+                ImagemInspiracao.objects.create(orcamento=origem, imagem=arquivo)
+            else:
+                ImagemInspiracao.objects.create(evento=evento, imagem=arquivo)
+        evento.refresh_from_db()  # evita cache stale do prefetch — ver CLAUDE.md
+        return Response(EventoDetailSerializer(evento).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'imagens/(?P<imagem_id>[^/.]+)/remover')
+    def remover_imagem(self, request, pk=None, imagem_id=None):
+        evento = self.get_object()
+        origem = getattr(evento, 'orcamento_origem', None)
+        galeria = origem.imagens_inspiracao if origem else evento.imagens_inspiracao_diretas
+        try:
+            img = galeria.get(pk=imagem_id)
+        except ImagemInspiracao.DoesNotExist:
+            return Response({'detail': 'Imagem não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_EXCLUIDO,
+            detalhes={
+                'model': 'ImagemInspiracao', 'id': img.id,
+                'evento_id': evento.id, 'evento_numero': evento.numero,
+            },
+            request=request,
+        )
+        img.imagem.delete(save=False)
+        img.delete()
+        evento.refresh_from_db()  # evita cache stale do prefetch — ver CLAUDE.md
         return Response(EventoDetailSerializer(evento).data)
 
     # ── Contrato ──────────────────────────────────────────────────────────

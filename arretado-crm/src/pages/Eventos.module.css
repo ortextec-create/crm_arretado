@@ -849,6 +849,7 @@
 }
 
 .imagemInspiracaoThumb {
+  position: relative;
   aspect-ratio: 1;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -857,6 +858,42 @@
 }
 
 .imagemInspiracaoThumb img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; }
+
+.imagemInspiracaoRemoverBtn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.imagemInspiracaoRemoverBtn:hover { background: var(--status-critico-fg); }
+
+.uploadImagemBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  margin-top: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--texto);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.uploadImagemBtn:hover { background: var(--border); }
 
 .lightboxOverlay {
   position: fixed;

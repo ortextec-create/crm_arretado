@@ -203,16 +203,36 @@ class ItemOrcamento(models.Model):
 
 
 class ImagemInspiracao(models.Model):
-    orcamento  = models.ForeignKey(Orcamento, on_delete=models.CASCADE, related_name='imagens_inspiracao')
+    # Exatamente um dos dois é preenchido (ver Meta.constraints): quando o Evento
+    # veio de um Orçamento, a imagem continua anexada ao ORÇAMENTO de origem (mesma
+    # galeria compartilhada entre Orçamento e Evento, sem duplicar — ver CLAUDE.md);
+    # `evento` só é usado quando não existe orçamento de origem (evento criado direto),
+    # permitindo anexar imagem de inspiração a qualquer momento também nesse caso.
+    orcamento  = models.ForeignKey(
+        Orcamento, null=True, blank=True, on_delete=models.CASCADE, related_name='imagens_inspiracao'
+    )
+    evento     = models.ForeignKey(
+        'Evento', null=True, blank=True, on_delete=models.CASCADE, related_name='imagens_inspiracao_diretas'
+    )
     imagem     = models.ImageField(upload_to='orcamentos/inspiracao/%Y/%m/')
     criado_em  = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = 'Imagem de Inspiração'
         ordering     = ['criado_em']
+        constraints  = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(orcamento__isnull=False, evento__isnull=True) |
+                    models.Q(orcamento__isnull=True, evento__isnull=False)
+                ),
+                name='imageminspiracao_exatamente_um_dono',
+            ),
+        ]
 
     def __str__(self):
-        return f'Inspiração {self.orcamento.numero} #{self.pk}'
+        dono = self.orcamento.numero if self.orcamento_id else self.evento.numero
+        return f'Inspiração {dono} #{self.pk}'
 
 
 # ─────────────────────────────────────────────────────────────────────────────

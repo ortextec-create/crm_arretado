@@ -706,6 +706,77 @@ class EventoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
         self.assertEqual(log.detalhes['evento_id'], self.evento.id)
 
 
+class ImagemInspiracaoEventoTests(AuditoriaEventosDestroyTestCase):
+    """
+    Imagem de inspiração pode ser adicionada/removida a qualquer momento
+    direto no Evento, com ou sem orçamento de origem (ver CLAUDE.md).
+    """
+    def setUp(self):
+        super().setUp()
+        self.evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='confirmado',
+        )
+        self.orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10),
+        )
+        self.evento_convertido = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='confirmado',
+        )
+        self.orc.evento = self.evento_convertido
+        self.orc.save(update_fields=['evento'])
+
+    def test_adicionar_imagem_sem_orcamento_origem_anexa_direto_no_evento(self):
+        view = EventoViewSet.as_view({'post': 'adicionar_imagens'})
+        req = self.factory.post(
+            f'/api/v1/eventos/{self.evento.id}/imagens/', {'imagens': GIF_1PX}, format='multipart',
+        )
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(len(resp.data['imagens_inspiracao']), 1)
+
+        img = ImagemInspiracao.objects.get()
+        self.assertEqual(img.evento_id, self.evento.id)
+        self.assertIsNone(img.orcamento_id)
+
+    def test_adicionar_imagem_com_orcamento_origem_anexa_ao_orcamento_sem_duplicar(self):
+        view = EventoViewSet.as_view({'post': 'adicionar_imagens'})
+        req = self.factory.post(
+            f'/api/v1/eventos/{self.evento_convertido.id}/imagens/', {'imagens': GIF_1PX}, format='multipart',
+        )
+        resp = view(req, pk=self.evento_convertido.id)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(len(resp.data['imagens_inspiracao']), 1)
+
+        img = ImagemInspiracao.objects.get()
+        self.assertEqual(img.orcamento_id, self.orc.id)
+        self.assertIsNone(img.evento_id)
+
+    def test_remover_imagem_direta_do_evento_sem_token_401(self):
+        img = ImagemInspiracao.objects.create(evento=self.evento, imagem=GIF_1PX)
+        view = EventoViewSet.as_view({'delete': 'remover_imagem'})
+        req = self.factory.delete(f'/api/v1/eventos/{self.evento.id}/imagens/{img.id}/remover/')
+        resp = view(req, pk=self.evento.id, imagem_id=img.id)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_remover_imagem_direta_do_evento_com_token_gera_log(self):
+        img = ImagemInspiracao.objects.create(evento=self.evento, imagem=GIF_1PX)
+        view = EventoViewSet.as_view({'delete': 'remover_imagem'})
+        req = self.factory.delete(
+            f'/api/v1/eventos/{self.evento.id}/imagens/{img.id}/remover/',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=self.evento.id, imagem_id=img.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(ImagemInspiracao.objects.filter(pk=img.id).exists())
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_REGISTRO_EXCLUIDO).latest('id')
+        self.assertEqual(log.detalhes['model'], 'ImagemInspiracao')
+        self.assertEqual(log.detalhes['evento_id'], self.evento.id)
+
+
 class OrcamentoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
     def setUp(self):
         super().setUp()

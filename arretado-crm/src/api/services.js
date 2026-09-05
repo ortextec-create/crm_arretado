@@ -224,6 +224,10 @@ export const eventosApi = {
   removerItem:     (id, itemId) => api.delete(`/eventos/${id}/itens/${itemId}/remover/`),
   adicionarPagamento: (id, data, config={}) => api.post(`/eventos/${id}/pagamentos/`, data, config),
   removerPagamento:   (id, pagamentoId) => api.delete(`/eventos/${id}/pagamentos/${pagamentoId}/remover/`),
+  adicionarImagens: (id, formData) => api.post(`/eventos/${id}/imagens/`, formData, {
+    headers: { 'Content-Type': undefined },
+  }),
+  removerImagem:   (id, imagemId) => api.delete(`/eventos/${id}/imagens/${imagemId}/remover/`),
   agenda:          (mes)   => api.get('/eventos/agenda/', { params: { mes } }),
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
   historico:       (id)    => api.get(`/eventos/${id}/historico/`),
