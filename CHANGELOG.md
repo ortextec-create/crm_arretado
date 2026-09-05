@@ -5,6 +5,34 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.5.1] - 2026-09-05
+
+### Adicionado
+- **Brindes e Permutas** (spec completa em `BRINDES_PERMUTAS.md`, 5 fases): campo `natureza`
+  (venda/brinde/permuta, granularidade por item) em `ItemOrcamento`/`ItemEvento`/
+  `ItemPedidoPDV` — item não-venda zera `preco_total` mas preserva `preco_unit` como
+  referência de preço de tabela. Guard no ledger financeiro evita entrada fantasma de
+  R$0,00 para pedido/evento 100% brinde; ranking de produtos mais vendidos passa a
+  ignorar item de brinde/permuta. PDF de orçamento/contrato mostra o item com rótulo
+  (" — Brinde"/" — Permuta") e o preço de tabela riscado. Seletor de natureza no
+  frontend (Orçamentos/Eventos/PDV), com preço travado quando não é venda. PDV Avulso
+  (venda 100% brinde/permuta sem Orçamento/Evento) confirmado funcionando sem código
+  novo.
+- **Eventos — Imagens de Inspiração a qualquer momento**: a galeria de imagens de
+  referência, antes exclusiva do Orçamento, agora também pode ser editada direto no
+  Evento, em qualquer status — com ou sem orçamento de origem. Quando o Evento veio de
+  um Orçamento, a imagem nova continua indo pra galeria do Orçamento (sem duplicar);
+  sem orçamento de origem, fica anexada direto ao Evento.
+- **Financeiro — KPIs de Contas a Pagar viram filtros clicáveis**: os 4 cards do topo
+  (Em atraso / Vence hoje / Próx. 7 dias / Pago no mês) agora filtram a lista ao clicar.
+
+### Corrigido
+- **Financeiro**: lista de Contas a Pagar podia colapsar visualmente (~0px de altura)
+  quando a seção de Despesas Recorrentes crescia muito, por causa de `flex: 1` +
+  `overflow-x: auto` na mesma coluna flex.
+- **UI**: modais (`Modal.jsx`, PDV, Catálogo PDV) não fecham mais ao clicar fora —
+  evita perda de dados digitados em formulários como Novo Orçamento.
+
 ## [v1.5.0] - 2026-08-24
 
 ### Adicionado
