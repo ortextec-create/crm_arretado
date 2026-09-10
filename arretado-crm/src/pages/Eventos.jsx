@@ -1072,6 +1072,29 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
     }
   }, [abaAtiva, historico, evento.id])
 
+  // Orientações para a cozinha (aba) — editável em qualquer status
+  const [cozinhaTexto,  setCozinhaTexto]  = useState(evento.observacoes_cozinha || '')
+  const [savingCozinha, setSavingCozinha] = useState(false)
+
+  useEffect(() => {
+    setCozinhaTexto(evento.observacoes_cozinha || '')
+  }, [evento.observacoes_cozinha])
+
+  const cozinhaSujo = cozinhaTexto !== (evento.observacoes_cozinha || '')
+
+  const salvarCozinha = async () => {
+    setSavingCozinha(true)
+    try {
+      await eventosApi.update(evento.id, { observacoes_cozinha: cozinhaTexto })
+      await onItemAdded()
+      onToast({ message: 'Orientações para a cozinha salvas.', type: 'success' })
+    } catch {
+      onToast({ message: 'Erro ao salvar as orientações para a cozinha.', type: 'error' })
+    } finally {
+      setSavingCozinha(false)
+    }
+  }
+
   // Pagamentos
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
   const [savingPagamento,      setSavingPagamento]      = useState(false)
@@ -1290,7 +1313,12 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
           </div>
 
           {evento.observacoes_cozinha && (
-            <div className={styles.cozinhaCard}>
+            <div
+              className={styles.cozinhaCard}
+              style={{ cursor: 'pointer' }}
+              onClick={() => setAbaAtiva('cozinha')}
+              title="Editar orientações para a cozinha"
+            >
               <span className={styles.cozinhaCardTitulo}>
                 <i className="ti ti-tools-kitchen-2" /> Orientações para a cozinha
               </span>
@@ -1360,6 +1388,9 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             </button>
             <button className={`${styles.tabBtn} ${abaAtiva === 'imagens' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('imagens')}>
               Imagens ({nImagens})
+            </button>
+            <button className={`${styles.tabBtn} ${abaAtiva === 'cozinha' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('cozinha')}>
+              Cozinha{evento.observacoes_cozinha ? ' •' : ''}
             </button>
             <button className={`${styles.tabBtn} ${abaAtiva === 'historico' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('historico')}>
               Histórico
@@ -1621,6 +1652,35 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
                   style={{ display: 'none' }}
                 />
               </label>
+            </>
+          )}
+
+          {/* ── Aba: Cozinha ────────────────────────────────────────────── */}
+          {abaAtiva === 'cozinha' && (
+            <>
+              <div className={styles.itensHeader}>
+                <h4><i className="ti ti-tools-kitchen-2" /> Orientações para a cozinha</h4>
+              </div>
+              <p className={styles.imagensAviso}>
+                <i className="ti ti-lock" /> Uso interno — sai só no resumo de cozinha, nunca no orçamento ou contrato.
+              </p>
+              <textarea
+                className={styles.cozinhaTextarea}
+                rows={7}
+                value={cozinhaTexto}
+                onChange={e => setCozinhaTexto(e.target.value)}
+                placeholder="Alergias, montagem no local, cor de cobertura, ordem de produção…"
+              />
+              <div className={styles.cozinhaAcoes}>
+                {cozinhaSujo && (
+                  <Btn variant="ghost" onClick={() => setCozinhaTexto(evento.observacoes_cozinha || '')} disabled={savingCozinha}>
+                    Descartar
+                  </Btn>
+                )}
+                <Btn onClick={salvarCozinha} disabled={savingCozinha || !cozinhaSujo}>
+                  <i className="ti ti-device-floppy" /> {savingCozinha ? 'Salvando…' : 'Salvar orientações'}
+                </Btn>
+              </div>
             </>
           )}
 
