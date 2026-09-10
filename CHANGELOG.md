@@ -5,6 +5,15 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.5.4] - 2026-09-10
+
+### Adicionado
+- **Eventos — aba "Cozinha" no modal de detalhe**: as orientações para a cozinha
+  (`Evento.observacoes_cozinha`) agora têm aba própria no modal de detalhe do Evento,
+  ao lado de "Histórico" — dá pra editar e salvar direto ali, em qualquer status, sem
+  abrir o modal de edição completo. O card de orientações na lateral do detalhe passa
+  a abrir essa aba ao clicar. Só frontend — o backend já aceitava a edição.
+
 ## [v1.5.3] - 2026-09-10
 
 ### Adicionado
