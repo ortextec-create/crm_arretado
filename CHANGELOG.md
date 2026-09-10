@@ -5,6 +5,21 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.5.3] - 2026-09-10
+
+### Adicionado
+- **Eventos — Orientações para a cozinha**: novo campo `Evento.observacoes_cozinha`
+  (texto livre) com instruções internas da equipe de produção (alergias, montagem no
+  local, cor de cobertura…). Aparece só no PDF de resumo de cozinha, numa caixa
+  destacada "ORIENTAÇÕES PARA A COZINHA" logo abaixo do bloco cliente/local — nunca
+  em documento client-facing (orçamento/contrato). Editável no wizard de criação e no
+  modal de edição do Evento, em qualquer status; auditado no PATCH.
+
+### Corrigido
+- **Auditoria**: migration faltante do choice `acao='empresa_alternada'` (adicionado
+  ao model na Fase 2 do Multi-Empresa sem gerar a migration). Alteração choices-only,
+  SQL no-op no Postgres — sincroniza o histórico de migrations com o model.
+
 ## [v1.5.2] - 2026-09-05
 
 ### Adicionado
