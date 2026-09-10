@@ -111,6 +111,12 @@ def _estilos():
         'texto': ParagraphStyle(
             'texto', fontName='Helvetica', fontSize=8.8, textColor=CINZA_ESC, leading=12,
         ),
+        'callout_titulo': ParagraphStyle(
+            'callout_titulo', fontName='Helvetica-Bold', fontSize=9, textColor=MARROM, spaceAfter=2,
+        ),
+        'callout_texto': ParagraphStyle(
+            'callout_texto', fontName='Helvetica', fontSize=9, textColor=CINZA_ESC, leading=13,
+        ),
         'assinatura_label': ParagraphStyle(
             'assinatura_label', fontName='Helvetica', fontSize=8, textColor=CINZA_MED,
             alignment=TA_CENTER,
@@ -222,6 +228,30 @@ def _tabela_itens(evento, st):
     return table
 
 
+def _callout_cozinha(texto, st):
+    """Caixa destacada com as orientações internas para a cozinha
+    (evento.observacoes_cozinha) — nunca aparece em documento client-facing."""
+    html = escape(texto).replace('\n', '<br/>')
+    tbl = Table(
+        [
+            [Paragraph('ORIENTAÇÕES PARA A COZINHA', st['callout_titulo'])],
+            [Paragraph(html, st['callout_texto'])],
+        ],
+        colWidths=[MW],
+    )
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#FBF0DD')),
+        ('BOX',           (0, 0), (-1, -1), 1.0, CARAMELO),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+        ('TOPPADDING',    (0, 0), (0, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (0, 0), 2),
+        ('TOPPADDING',    (0, 1), (0, 1), 0),
+        ('BOTTOMPADDING', (0, 1), (0, 1), 8),
+    ]))
+    return tbl
+
+
 def _tabela_assinatura():
     tbl = Table(
         [
@@ -295,6 +325,10 @@ def _gerar_conteudo(evento, imagens=None) -> bytes:
     ]))
     story.append(info_table)
     story.append(Spacer(1, 14))
+
+    if evento.observacoes_cozinha:
+        story.append(_callout_cozinha(evento.observacoes_cozinha, st))
+        story.append(Spacer(1, 14))
 
     story.append(Paragraph('ITENS', st['secao']))
     story.append(_tabela_itens(evento, st))

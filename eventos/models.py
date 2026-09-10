@@ -343,6 +343,9 @@ class Evento(models.Model):
                                         help_text='Valor de entrada/sinal já recebido')
 
     observacoes   = models.TextField(blank=True, default='')
+    # Orientações internas para a equipe de cozinha — só sai no PDF de resumo de
+    # cozinha, nunca em documento client-facing (orçamento/contrato).
+    observacoes_cozinha = models.TextField(blank=True, default='')
 
     criado_em     = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)

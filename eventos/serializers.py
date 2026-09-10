@@ -136,7 +136,7 @@ class EventoDetailSerializer(EventoListSerializer):
     class Meta(EventoListSerializer.Meta):
         fields = EventoListSerializer.Meta.fields + [
             'itens', 'local_detalhe', 'pagamentos',
-            'imagens_inspiracao', 'observacoes',
+            'imagens_inspiracao', 'observacoes', 'observacoes_cozinha',
         ]
 
     def get_imagens_inspiracao(self, obj):
@@ -152,7 +152,7 @@ class EventoCreateSerializer(serializers.ModelSerializer):
             'cliente', 'cliente_nome', 'cliente_telefone',
             'tipo_evento', 'data_evento', 'hora_evento',
             'tipo_entrega', 'local', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
-            'desconto', 'sinal_pago', 'observacoes',
+            'desconto', 'sinal_pago', 'observacoes', 'observacoes_cozinha',
             'itens',
         ]
 

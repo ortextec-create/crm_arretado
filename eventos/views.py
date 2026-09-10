@@ -127,7 +127,7 @@ class EventoViewSet(
     campos_log_atualizacao = [
         'cliente', 'cliente_nome', 'cliente_telefone', 'tipo_evento', 'data_evento', 'hora_evento',
         'tipo_entrega', 'local', 'endereco_avulso', 'bairro_entrega', 'taxa_entrega',
-        'desconto', 'observacoes',
+        'desconto', 'observacoes', 'observacoes_cozinha',
     ]
 
     def get_permissions(self):

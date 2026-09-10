@@ -823,6 +823,77 @@ class ResumoCozinhaImagensTests(AuditoriaEventosDestroyTestCase):
         self.assertEqual(self._n_paginas(resp), 1)
 
 
+class ResumoCozinhaOrientacoesTests(AuditoriaEventosDestroyTestCase):
+    """
+    `Evento.observacoes_cozinha` — orientações internas para a produção. Sai só
+    no resumo de cozinha (nunca no orçamento/contrato) e faz round-trip pela API.
+    """
+    def setUp(self):
+        super().setUp()
+        self.evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='confirmado',
+            observacoes_cozinha='Bolo sem lactose. Montar a torre so no local.',
+        )
+        ItemEvento.objects.create(evento=self.evento, nome='Bolo de chocolate', preco_unit=50, quantidade=1)
+
+    def _texto_pdf(self, resp):
+        from pypdf import PdfReader
+        return '\n'.join(p.extract_text() or '' for p in PdfReader(BytesIO(resp.content)).pages)
+
+    def test_orientacoes_saem_no_resumo_de_cozinha(self):
+        view = EventoViewSet.as_view({'get': 'resumo_cozinha'})
+        req = self.factory.get(f'/api/v1/eventos/{self.evento.id}/resumo-cozinha/')
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 200)
+        texto = self._texto_pdf(resp)
+        self.assertIn('ORIENTAÇÕES PARA A COZINHA', texto)
+        self.assertIn('Bolo sem lactose', texto)
+
+    def test_resumo_sem_orientacoes_nao_tem_a_secao(self):
+        self.evento.observacoes_cozinha = ''
+        self.evento.save(update_fields=['observacoes_cozinha'])
+        view = EventoViewSet.as_view({'get': 'resumo_cozinha'})
+        req = self.factory.get(f'/api/v1/eventos/{self.evento.id}/resumo-cozinha/')
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('ORIENTAÇÕES PARA A COZINHA', self._texto_pdf(resp))
+
+    def test_detail_expoe_observacoes_cozinha(self):
+        view = EventoViewSet.as_view({'get': 'retrieve'})
+        req = self.factory.get(f'/api/v1/eventos/{self.evento.id}/')
+        resp = view(req, pk=self.evento.id)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['observacoes_cozinha'], 'Bolo sem lactose. Montar a torre so no local.')
+
+    def test_create_e_update_gravam_observacoes_cozinha(self):
+        view = EventoViewSet.as_view({'post': 'create'})
+        req = self.factory.post(
+            '/api/v1/eventos/',
+            {
+                'cliente': self.cliente.id, 'tipo_evento': 'aniversario',
+                'data_evento': str(datetime.date.today() + datetime.timedelta(days=15)),
+                'observacoes_cozinha': 'Sem açúcar no recheio.',
+            },
+            format='json', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        ev = Evento.objects.exclude(pk=self.evento.pk).latest('id')
+        self.assertEqual(ev.observacoes_cozinha, 'Sem açúcar no recheio.')
+
+        view_up = EventoViewSet.as_view({'patch': 'partial_update'})
+        req_up = self.factory.patch(
+            f'/api/v1/eventos/{ev.id}/',
+            {'observacoes_cozinha': 'Sem açúcar E sem lactose.'},
+            format='json', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp_up = view_up(req_up, pk=ev.id)
+        self.assertEqual(resp_up.status_code, 200, resp_up.data)
+        ev.refresh_from_db()
+        self.assertEqual(ev.observacoes_cozinha, 'Sem açúcar E sem lactose.')
+
+
 class OrcamentoDestroyAuditoriaTests(AuditoriaEventosDestroyTestCase):
     def setUp(self):
         super().setUp()

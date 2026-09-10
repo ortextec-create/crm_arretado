@@ -577,6 +577,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
   const [dataEvento,  setDataEvento]  = useState('')
   const [horaEvento,  setHoraEvento]  = useState('')
   const [observacoes, setObservacoes] = useState('')
+  const [observacoesCozinha, setObservacoesCozinha] = useState('')
 
   // Cliente
   const [buscaCliente,    setBuscaCliente]    = useState('')
@@ -698,6 +699,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
         desconto:         Number(desconto || 0),
         sinal_pago:       Number(sinal || 0),
         observacoes,
+        observacoes_cozinha: observacoesCozinha,
         itens: carrinho.map(i => ({
           produto:    i.produto,
           nome:       i.nome,
@@ -803,6 +805,11 @@ function ModalNovoEvento({ onClose, onSaved }) {
             <div className={`${styles.formGroup} ${styles.fullRow}`}>
               <label>Observações</label>
               <textarea value={observacoes} onChange={e => setObservacoes(e.target.value)} rows={3} placeholder="Observações gerais do evento…" />
+            </div>
+
+            <div className={`${styles.formGroup} ${styles.fullRow}`}>
+              <label>Orientações para a cozinha</label>
+              <textarea value={observacoesCozinha} onChange={e => setObservacoesCozinha(e.target.value)} rows={3} placeholder="Detalhes internos para a produção — sai só no resumo de cozinha, nunca no orçamento/contrato…" />
             </div>
           </div>
         )}
@@ -1282,6 +1289,15 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             {evento.observacoes && <InfoRow icon="ti-notes" label="Obs." value={evento.observacoes} />}
           </div>
 
+          {evento.observacoes_cozinha && (
+            <div className={styles.cozinhaCard}>
+              <span className={styles.cozinhaCardTitulo}>
+                <i className="ti ti-tools-kitchen-2" /> Orientações para a cozinha
+              </span>
+              <span className={styles.cozinhaCardTexto}>{evento.observacoes_cozinha}</span>
+            </div>
+          )}
+
           {/* Financeiro */}
           <div className={styles.financeiroCard}>
             <div className={styles.financeiroLinha}><span>Subtotal</span><span>{fmt(evento.subtotal)}</span></div>
@@ -1666,6 +1682,7 @@ function ModalEditarEvento({ evento, onClose, onSalvo }) {
     taxa_entrega:     String(evento.taxa_entrega || '0'),
     desconto:         String(evento.desconto || '0'),
     observacoes:      evento.observacoes || '',
+    observacoes_cozinha: evento.observacoes_cozinha || '',
   })
   const [locais,      setLocais]      = useState([])
   const [taxasBairro, setTaxasBairro] = useState([])
@@ -1737,6 +1754,7 @@ function ModalEditarEvento({ evento, onClose, onSalvo }) {
         taxa_entrega:     form.tipo_entrega === 'entrega_local' ? (parseFloat(form.taxa_entrega) || 0) : 0,
         desconto:         parseFloat(form.desconto) || 0,
         observacoes:      form.observacoes,
+        observacoes_cozinha: form.observacoes_cozinha,
       }
       const res = await eventosApi.update(evento.id, payload)
       onSalvo(res.data)
@@ -1869,6 +1887,13 @@ function ModalEditarEvento({ evento, onClose, onSalvo }) {
         <div className={`${styles.formGroup} ${styles.fullRow}`}>
           <label>Observações</label>
           <textarea rows={2} value={form.observacoes} onChange={e => set('observacoes', e.target.value)} />
+        </div>
+
+        {/* Orientações para a cozinha (internas — só saem no resumo de cozinha) */}
+        <div className={`${styles.formGroup} ${styles.fullRow}`}>
+          <label>Orientações para a cozinha</label>
+          <textarea rows={2} value={form.observacoes_cozinha} onChange={e => set('observacoes_cozinha', e.target.value)}
+            placeholder="Detalhes internos para a produção — sai só no resumo de cozinha, nunca no orçamento/contrato…" />
         </div>
       </div>
 
