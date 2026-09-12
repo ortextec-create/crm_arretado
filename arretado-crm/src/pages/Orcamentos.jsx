@@ -506,9 +506,13 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
   }
 
   function addItem() {
-    if (!novoItem.nome || !novoItem.preco_unit) return
+    // preco_unit é sempre o preço de tabela (referência), exigido mesmo pra
+    // brinde/permuta — checar truthy da string não pega "0" (string não-vazia,
+    // truthy em JS); bug real: item entrava com preço zero e só o backend
+    // rejeitava no submit, com erro genérico por índice do array.
+    const price = parseFloat(novoItem.preco_unit)
+    if (!novoItem.nome || !(price > 0)) return
     const qty   = parseInt(novoItem.quantidade) || 1
-    const price = parseFloat(novoItem.preco_unit) || 0
     const total = novoItem.natureza === 'venda' ? price * qty : 0
     setForm(f => ({
       ...f,
@@ -822,13 +826,16 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
   }
 
   async function handleAddItem() {
-    if (!novoItem.nome || !novoItem.preco_unit) return
+    // mesmo cuidado de ModalNovoOrcamento.addItem() — checar truthy da string
+    // não pega "0" (preco_unit é sempre exigido, mesmo pra brinde/permuta)
+    const price = parseFloat(novoItem.preco_unit)
+    if (!novoItem.nome || !(price > 0)) return
     setAddingItem(true)
     try {
       const res = await orcamentosApi.adicionarItem(orc.id, {
         produto:    novoItem.produto || null,
         nome:       novoItem.nome,
-        preco_unit: parseFloat(novoItem.preco_unit),
+        preco_unit: price,
         quantidade: parseInt(novoItem.quantidade) || 1,
         observacao: novoItem.observacao,
         natureza:   novoItem.natureza,
@@ -848,12 +855,14 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
   }
 
   async function handleEditItemSalvar(item) {
+    const price = parseFloat(editItemForm.preco_unit)
+    if (!(price > 0)) return
     setSavingItem(true)
     try {
       const res = await orcamentosApi.editarItem(orc.id, item.id, {
         produto:    item.produto || null,
         nome:       item.nome,
-        preco_unit: parseFloat(editItemForm.preco_unit) || 0,
+        preco_unit: price,
         quantidade: parseInt(editItemForm.quantidade) || 1,
         observacao: item.observacao,
         natureza:   editItemForm.natureza,
