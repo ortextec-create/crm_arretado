@@ -219,6 +219,10 @@ class EventoCreateSerializer(serializers.ModelSerializer):
         validated_data.pop('itens', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        # taxa_entrega/desconto podem vir no payload — recalcula valor_total
+        # (mesmo padrão de OrcamentoCreateSerializer.update()); sinal_pago não
+        # entra aqui, é sempre derivado de PagamentoEvento via recalcular_sinal_pago()
+        instance.valor_total = max(instance.subtotal - instance.desconto, 0) + instance.taxa_entrega
         instance.save()
         return instance
 

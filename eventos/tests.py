@@ -1182,6 +1182,52 @@ class EventoCriacaoEdicaoAuditoriaTests(AuditoriaEventosDestroyTestCase):
         self.assertEqual(log.usuario_id, self.admin.id)
         self.assertEqual(set(log.detalhes['campos'].keys()), {'observacoes'})
 
+    def test_update_taxa_entrega_recalcula_valor_total(self):
+        # Bug real: EventoCreateSerializer.update() setava os atributos e salvava
+        # sem recalcular valor_total (diferente de OrcamentoCreateSerializer.update(),
+        # que já fazia certo) — PATCH de taxa_entrega/desconto não refletia no total.
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+            subtotal=100, desconto=0, taxa_entrega=0, valor_total=100,
+        )
+        view = EventoViewSet.as_view({'patch': 'partial_update'})
+        req = self.factory.patch(
+            f'/api/v1/eventos/{evento.id}/', {'taxa_entrega': '15.00'}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=evento.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        evento.refresh_from_db()
+        self.assertEqual(evento.taxa_entrega, Decimal('15.00'))
+        self.assertEqual(evento.valor_total, Decimal('115.00'))
+
+    def test_update_desconto_recalcula_valor_total_e_nao_afeta_sinal_pago(self):
+        evento = Evento.objects.create(
+            numero=Evento.proximo_numero(), cliente=self.cliente, tipo_evento='aniversario',
+            data_evento=datetime.date.today() + datetime.timedelta(days=10), status='orcamento',
+            subtotal=200, desconto=0, taxa_entrega=0, valor_total=200,
+        )
+        PagamentoEvento.objects.create(
+            evento=evento, valor=Decimal('50.00'), forma_pagamento='outro', status='pago',
+            data_pagamento=datetime.date.today(),
+        )
+        evento.recalcular_sinal_pago()
+
+        view = EventoViewSet.as_view({'patch': 'partial_update'})
+        req = self.factory.patch(
+            f'/api/v1/eventos/{evento.id}/', {'desconto': '30.00'}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=evento.id)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        evento.refresh_from_db()
+        self.assertEqual(evento.valor_total, Decimal('170.00'))
+        self.assertEqual(evento.sinal_pago, Decimal('50.00'))
+        self.assertEqual(evento.saldo_restante, Decimal('120.00'))
+
 
 class EventoStatusAuditoriaTests(AuditoriaEventosDestroyTestCase):
     def setUp(self):
