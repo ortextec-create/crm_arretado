@@ -615,7 +615,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
   useEffect(() => {
     locaisEventoApi.list({ ativo: 'true' }).then(r => setLocais(r.data.results ?? r.data)).catch(() => {})
     pdvApi.listCategorias().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
-    pdvApi.listProdutos({ ativo: 'true' }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
+    pdvApi.listProdutos({ ativo: 'true', page_size: 500 }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
     taxasEntregaApi.list({ ativo: true }).then(r => setTaxasBairro(r.data.results ?? r.data)).catch(() => {})
   }, [])
 
@@ -1107,7 +1107,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
   // CORRIGIDO: usa pdvApi.listProdutos() e pdvApi.listCategorias()
   useEffect(() => {
     if (addingItem) {
-      pdvApi.listProdutos({ ativo: 'true' }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
+      pdvApi.listProdutos({ ativo: 'true', page_size: 500 }).then(r => setProdutos(r.data.results ?? r.data)).catch(() => {})
       pdvApi.listCategorias().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
     }
   }, [addingItem])
