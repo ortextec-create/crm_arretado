@@ -206,9 +206,13 @@ export default function Orcamentos() {
     showToast(`Evento ${evento.numero} criado com sucesso!`)
   }
 
-  function handleEditarSalvo(orc) {
+  async function handleEditarSalvo(orc) {
     setShowEditar(false)
-    setOrcAtivo(orc)
+    // PATCH responde com OrcamentoCreateSerializer, que não traz valor_total/
+    // subtotal — sempre rebuscar o detalhe completo em vez de usar a resposta
+    // do PATCH direto como novo estado (mesmo bug já corrigido em Eventos.jsx).
+    const r = await orcamentosApi.detail(orc.id)
+    setOrcAtivo(r.data)
     loadOrcamentos()
     showToast(`Orçamento ${orc.numero} atualizado.`)
   }

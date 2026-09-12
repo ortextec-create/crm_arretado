@@ -457,8 +457,13 @@ export default function Eventos() {
         <ModalEditarEvento
           evento={eventoAtivo}
           onClose={() => setShowEditar(false)}
-          onSalvo={(updated) => {
-            setEventoAtivo(updated)
+          onSalvo={async () => {
+            // PATCH responde com EventoCreateSerializer, que não traz valor_total/
+            // subtotal/saldo_restante — sempre rebuscar o detalhe completo em vez
+            // de usar a resposta do PATCH direto como novo estado (bug real: editar
+            // taxa_entrega/desconto deixava o total/saldo exibidos desatualizados).
+            const r = await eventosApi.detail(eventoAtivo.id)
+            setEventoAtivo(r.data)
             setShowEditar(false)
             loadEventos()
             setToast({ message: 'Evento atualizado com sucesso!', type: 'success' })
