@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styles from './ui.module.css'
 
 // ─── BUTTON ─────────────────────────────────────────────────────────────────
@@ -95,8 +95,9 @@ export function Textarea({ ...props }) {
 }
 
 // ─── MODAL ──────────────────────────────────────────────────────────────────
-export function Modal({ open, onClose, title, children, footer, width = 520 }) {
+export function Modal({ open, onClose, title, children, footer, width = 520, expandable = false, expandedWidth = 900 }) {
   const overlayRef = useRef()
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     const handleKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -111,12 +112,24 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }) {
       className={styles.overlay}
       ref={overlayRef}
     >
-      <div className={styles.modal} style={{ width }} role="dialog" aria-modal="true">
+      <div className={styles.modal} style={{ width: expanded ? expandedWidth : width }} role="dialog" aria-modal="true">
         <div className={styles.modalHeader}>
           <h3 className="serif">{title}</h3>
-          <button className={styles.modalClose} onClick={onClose} aria-label="Fechar">
-            <i className="ti ti-x" />
-          </button>
+          <div className={styles.modalHeaderActions}>
+            {expandable && (
+              <button
+                className={styles.modalClose}
+                onClick={() => setExpanded(e => !e)}
+                aria-label={expanded ? 'Recolher' : 'Expandir'}
+                title={expanded ? 'Recolher' : 'Expandir'}
+              >
+                <i className={`ti ${expanded ? 'ti-arrows-minimize' : 'ti-arrows-maximize'}`} />
+              </button>
+            )}
+            <button className={styles.modalClose} onClick={onClose} aria-label="Fechar">
+              <i className="ti ti-x" />
+            </button>
+          </div>
         </div>
         <div className={styles.modalBody}>{children}</div>
         {footer && <div className={styles.modalFooter}>{footer}</div>}

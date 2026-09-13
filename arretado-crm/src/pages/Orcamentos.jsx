@@ -1295,7 +1295,7 @@ function ModalEditarOrcamento({ orc, onClose, onSalvo }) {
   }
 
   return (
-    <Modal open title={`Editar Orçamento ${orc.numero}`} onClose={onClose} wide>
+    <Modal open title={`Editar Orçamento ${orc.numero}`} onClose={onClose} wide expandable expandedWidth={900}>
       <AtorAcao acao="Editando" />
       <div className={styles.formGrid}>
         {/* Cliente */}
