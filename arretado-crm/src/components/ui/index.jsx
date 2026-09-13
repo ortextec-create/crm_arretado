@@ -95,7 +95,7 @@ export function Textarea({ ...props }) {
 }
 
 // ─── MODAL ──────────────────────────────────────────────────────────────────
-export function Modal({ open, onClose, title, children, footer, width = 520, expandable = false, expandedWidth = 900 }) {
+export function Modal({ open, onClose, title, children, footer, width = 520, expandable = false, expandedWidth = 900, expandedMaxHeight = '96vh' }) {
   const overlayRef = useRef()
   const [expanded, setExpanded] = useState(false)
 
@@ -112,7 +112,12 @@ export function Modal({ open, onClose, title, children, footer, width = 520, exp
       className={styles.overlay}
       ref={overlayRef}
     >
-      <div className={styles.modal} style={{ width: expanded ? expandedWidth : width }} role="dialog" aria-modal="true">
+      <div
+        className={styles.modal}
+        style={{ width: expanded ? expandedWidth : width, maxHeight: expanded ? expandedMaxHeight : undefined }}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className={styles.modalHeader}>
           <h3 className="serif">{title}</h3>
           <div className={styles.modalHeaderActions}>

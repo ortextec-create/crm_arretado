@@ -109,7 +109,7 @@
   max-height: 90vh; overflow-y: auto;
   max-width: 100%;
   box-shadow: var(--shadow-lg);
-  transition: width 0.18s ease;
+  transition: width 0.18s ease, max-height 0.18s ease;
 }
 .modalHeader {
   padding: 20px 24px;
