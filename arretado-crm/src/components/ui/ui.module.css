@@ -106,17 +106,19 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  max-height: 90vh; overflow-y: auto;
+  max-height: 90vh;
   max-width: 100%;
   box-shadow: var(--shadow-lg);
-  transition: width 0.18s ease, max-height 0.18s ease;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.18s ease, height 0.18s ease, max-height 0.18s ease;
 }
 .modalHeader {
   padding: 20px 24px;
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
-  position: sticky; top: 0;
-  background: var(--surface); z-index: 1;
+  flex-shrink: 0;
+  background: var(--surface);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .modalHeader h3 { font-size: 17px; font-weight: 600; color: var(--texto); }
@@ -129,12 +131,12 @@
   transition: all 0.15s;
 }
 .modalClose:hover { color: var(--texto); background: var(--border); }
-.modalBody { padding: 24px; }
+.modalBody { padding: 24px; flex: 1; overflow-y: auto; min-height: 0; }
 .modalFooter {
   padding: 16px 24px;
   border-top: 1px solid var(--border);
   display: flex; justify-content: flex-end; gap: 10px;
-  position: sticky; bottom: 0;
+  flex-shrink: 0;
   background: var(--surface); z-index: 1;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
