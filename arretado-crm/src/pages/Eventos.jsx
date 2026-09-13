@@ -1267,7 +1267,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
   const nImagens     = evento.imagens_inspiracao?.length ?? 0
 
   return (
-    <Modal open title={`Evento ${evento.numero}`} onClose={onClose} width={920}>
+    <Modal open title={`Evento ${evento.numero}`} onClose={onClose} width={920} expandable expandedWidth={1300}>
       <PresencaAtiva model="Evento" objetoId={evento.id} />
 
       {/* Stepper de status (ou badge de cancelado) */}
