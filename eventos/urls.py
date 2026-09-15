@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     LocalEventoViewSet, EventoViewSet, OrcamentoViewSet,
-    ContratoViewSet, ConfiguracaoContratoViewSet,
+    ContratoViewSet, AditivoContratoViewSet, ConfiguracaoContratoViewSet,
     ConfiguracaoAlertaEventoViewSet, TelefoneAlertaEventoViewSet,
 )
 
@@ -10,6 +10,7 @@ router = DefaultRouter()
 router.register('locais',               LocalEventoViewSet,         basename='locais-evento')
 router.register('orcamentos',           OrcamentoViewSet,           basename='orcamentos')
 router.register('contratos',            ContratoViewSet,            basename='contratos')
+router.register('aditivos',             AditivoContratoViewSet,     basename='aditivos-contrato')
 router.register('configuracao-contrato', ConfiguracaoContratoViewSet, basename='configuracao-contrato')
 router.register('configuracao-alertas', ConfiguracaoAlertaEventoViewSet, basename='configuracao-alertas')
 router.register('telefones-alerta',     TelefoneAlertaEventoViewSet, basename='telefones-alerta')

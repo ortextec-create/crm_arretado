@@ -229,3 +229,72 @@ jurídico do modelo enviado. Pontos de atenção:
 7. Seção "Contrato" na tela `Configuracoes.jsx` (mesmo padrão das seções Z-API/WhatsApp)
 8. Botão "Emitir Contrato" + modal em `Orcamentos.jsx`, novo `contratosApi` em `services.js`
 9. Testar geração + envio ponta a ponta com um orçamento aprovado real
+
+---
+
+## 9. Aditivo de Contrato (extensão pós-implementação — 14/set/2026)
+
+Extensão implementada depois da entrega original acima: o Evento pode ser modificado pelo cliente
+(itens/valores) a qualquer momento antes do evento acontecer, mesmo já com Contrato emitido — a
+Cláusula 19ª do próprio contrato já prevê isso ("mediante disponibilidade do CONTRATADO e **aditivo
+contratual por escrito**"). Este bloco documenta como esse aditivo é gerado.
+
+### Model `eventos.AditivoContrato` (novo)
+
+Snapshot imutável, mesma filosofia de `Contrato` — nunca recalculado depois, mesmo que o Evento mude
+de novo (cada nova alteração de valor gera um aditivo **novo**, encadeado ao anterior):
+
+| Campo | Tipo | Observação |
+|---|---|---|
+| `contrato` | FK `Contrato`, `PROTECT`, `related_name='aditivos'` | contrato mais recente do evento no momento da emissão |
+| `evento` | FK `Evento`, `PROTECT`, `related_name='aditivos'` | |
+| `cliente` | FK `Cliente`, `SET_NULL`, opcional | snapshot direto, mesmo padrão de `Contrato.cliente` |
+| `numero` | CharField único | `ADT-0001` via `proximo_numero()` (mesmo padrão de `Contrato`/`Evento`) |
+| `valor_total_anterior` | Decimal | valor antes desta alteração |
+| `subtotal_novo`/`desconto_novo`/`taxa_entrega_novo`/`valor_total_novo` | Decimal | snapshot do Evento no momento da emissão |
+| `itens_snapshot` | JSONField (lista) | `{nome, quantidade, preco_unit, preco_total, natureza, observacao}` por item — nunca relido do Evento ao vivo depois |
+
+`valor_total_anterior` é sempre resolvido como o `valor_total_novo` do último `AditivoContrato` já
+emitido para aquele `Contrato`, ou o `Contrato.valor_total` original se ainda não houver nenhum
+aditivo (`eventos/serializers.py::_valor_referencia_contrato()`).
+
+### Endpoint
+
+```
+POST /api/v1/eventos/{id}/gerar-aditivo/     ← exige login · audita aditivo_emitido
+GET  /api/v1/eventos/aditivos/{id}/pdf/      ← AllowAny
+POST /api/v1/eventos/aditivos/{id}/enviar-whatsapp/  ← exige login · audita aditivo_enviado
+```
+
+`gerar-aditivo/` (`EventoViewSet.gerar_aditivo`) rejeita (400) quando: o evento não tem nenhum
+`Contrato` emitido (`sem_contrato`); o evento está `cancelado`/`entregue` (`evento_cancelado`/
+`evento_entregue`); ou o `Evento.valor_total` atual é igual ao valor de referência (`sem_alteracao`
+— nada mudou desde o contrato/último aditivo, não há o que documentar). Não exige recoletar
+CPF/RG/endereço do CONTRATANTE — esses dados já estão no `Contrato` original.
+
+### PDF (`eventos/pdf_aditivo.py`)
+
+Reaproveita a paleta/helpers de `pdf_contrato.py` (nunca duplicar estilo) — documento curto (1-2
+páginas, ReportLab Platypus): identificação do contrato original, cláusula do motivo (alteração
+pedida pela CONTRATANTE), cláusula do novo valor (de X para Y), cláusula preservando as demais
+condições do contrato original, e um Anexo com a tabela de itens atualizados (mesmo tratamento de
+`natureza != 'venda'` com preço riscado do Anexo 1 do contrato) — sempre lido do `itens_snapshot`
+gravado no aditivo, nunca do Evento ao vivo.
+
+### Frontend
+
+`EventoListSerializer`/`EventoDetailSerializer` expõem `aditivo_disponivel` (bool) — botão "Aditivo"
+na listagem e "Emitir Aditivo" no modal de detalhe de `Eventos.jsx` só aparecem quando esse campo é
+`true`. `EventoDetailSerializer` também expõe `aditivos` (histórico resumido). Modal
+`ModalEmitirAditivo` é mais simples que `ModalEmitirContratoEvento` — sem formulário de dados do
+CONTRATANTE, só confirma e gera, depois oferece "Ver PDF"/"Enviar por WhatsApp" (mesmo padrão de
+sucesso do contrato). `aditivosApi` novo em `services.js`, mesmo padrão de `contratosApi`.
+
+### O que NÃO fazer (aditivo)
+
+- Não recalcular `itens_snapshot`/`valor_total_novo` de um `AditivoContrato` já emitido — é snapshot,
+  igual `Contrato`
+- Não comparar o `Evento.valor_total` atual contra `Contrato.valor_total` direto pra decidir se cabe
+  aditivo novo — sempre via `_valor_referencia_contrato()` (considera o último aditivo já emitido)
+- Não permitir aditivo de evento `cancelado`/`entregue`
+- Não pedir CPF/RG/endereço de novo no fluxo de aditivo — já estão no `Contrato` original

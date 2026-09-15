@@ -709,6 +709,60 @@ class Contrato(models.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Aditivo de Contrato — emitido quando o Evento (já com Contrato emitido)
+# tem seus valores/itens alterados a pedido do cliente antes do evento
+# acontecer (ver Contrato.md). Snapshot imutável, mesma filosofia do
+# Contrato: nunca recalculado depois, mesmo que o Evento mude de novo — cada
+# nova alteração de valor gera um Aditivo NOVO, referenciando o anterior.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AditivoContrato(models.Model):
+    contrato = models.ForeignKey(Contrato, on_delete=models.PROTECT, related_name='aditivos')
+    evento   = models.ForeignKey(Evento, on_delete=models.PROTECT, related_name='aditivos')
+    cliente  = models.ForeignKey(
+        Cliente, null=True, blank=True, on_delete=models.SET_NULL, related_name='aditivos_contrato',
+    )
+
+    numero = models.CharField(max_length=20, unique=True, db_index=True)
+
+    # Valor total do Evento antes desta alteração — o valor do Contrato original
+    # se este for o primeiro aditivo, senão o valor_total_novo do aditivo anterior.
+    valor_total_anterior = models.DecimalField(max_digits=10, decimal_places=2)
+
+    # ── Snapshot do Evento no momento da emissão deste aditivo (nunca recalculado depois) ──
+    subtotal_novo     = models.DecimalField(max_digits=10, decimal_places=2)
+    desconto_novo     = models.DecimalField(max_digits=10, decimal_places=2)
+    taxa_entrega_novo = models.DecimalField(max_digits=10, decimal_places=2)
+    valor_total_novo  = models.DecimalField(max_digits=10, decimal_places=2)
+    itens_snapshot    = models.JSONField(default=list)
+
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Aditivo de Contrato'
+        verbose_name_plural = 'Aditivos de Contrato'
+        ordering            = ['-criado_em']
+
+    def __str__(self):
+        return f'{self.numero} — aditivo ao {self.contrato.numero}'
+
+    @classmethod
+    def proximo_numero(cls):
+        ultimo = cls.objects.order_by('-id').first()
+        if not ultimo:
+            return 'ADT-0001'
+        try:
+            seq = int(ultimo.numero.split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            seq = cls.objects.count() + 1
+        return f'ADT-{seq:04d}'
+
+    @property
+    def diferenca(self):
+        return self.valor_total_novo - self.valor_total_anterior
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Alertas de Evento (pagamento pendente / aviso de entrega) — cron diário
 # ver eventos/management/commands/alertar_eventos.py
 # ─────────────────────────────────────────────────────────────────────────────

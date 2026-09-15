@@ -232,6 +232,7 @@ export const eventosApi = {
   estatisticas:    ()      => api.get('/eventos/estatisticas/'),
   historico:       (id)    => api.get(`/eventos/${id}/historico/`),
   gerarContrato:   (id, data) => api.post(`/eventos/${id}/gerar-contrato/`, data),
+  gerarAditivo:    (id)     => api.post(`/eventos/${id}/gerar-aditivo/`),
   resumoCozinha:   (id, incluirImagens=false) => api.get(`/eventos/${id}/resumo-cozinha/`, {
     params: incluirImagens ? { imagens: 1 } : {}, responseType: 'blob',
   }),
@@ -270,6 +271,15 @@ export const contratosApi = {
   detail:         (id)     => api.get(`/eventos/contratos/${id}/`),
   pdf:            (id)     => api.get(`/eventos/contratos/${id}/pdf/`, { responseType: 'blob' }),
   enviarWhatsApp: (id, data) => api.post(`/eventos/contratos/${id}/enviar-whatsapp/`, data),
+}
+
+// ─── ADITIVOS DE CONTRATO ────────────────────────────────────────────────────
+
+export const aditivosApi = {
+  list:           (params) => api.get('/eventos/aditivos/', { params }),
+  detail:         (id)     => api.get(`/eventos/aditivos/${id}/`),
+  pdf:            (id)     => api.get(`/eventos/aditivos/${id}/pdf/`, { responseType: 'blob' }),
+  enviarWhatsApp: (id, data) => api.post(`/eventos/aditivos/${id}/enviar-whatsapp/`, data),
 }
 
 export const configContratoApi = {

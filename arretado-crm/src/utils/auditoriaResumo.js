@@ -15,6 +15,8 @@ export const ACAO_LABEL = {
   pagamento_removido: 'Pagamento removido',
   contrato_emitido: 'Contrato emitido',
   contrato_enviado: 'Contrato enviado',
+  aditivo_emitido: 'Aditivo de contrato emitido',
+  aditivo_enviado: 'Aditivo de contrato enviado',
   ajuste_linear_aplicado: 'Ajuste linear aplicado',
   ajuste_linear_desfeito: 'Ajuste linear desfeito',
   preco_materia_atualizado: 'Preço de matéria-prima atualizado',
@@ -44,6 +46,8 @@ export const ACAO_COR = {
   pagamento_removido: '#ef4444',
   contrato_emitido: 'var(--verde)',
   contrato_enviado: 'var(--caramelo)',
+  aditivo_emitido: 'var(--verde)',
+  aditivo_enviado: 'var(--caramelo)',
   ajuste_linear_aplicado: 'var(--caramelo)',
   ajuste_linear_desfeito: '#ef4444',
   preco_materia_atualizado: 'var(--caramelo)',
@@ -87,6 +91,10 @@ export function resumo(log) {
       return `${d.contrato_numero ?? '—'} · ${d.cliente ?? '—'} · R$ ${d.valor_total ?? '—'}`
     case 'contrato_enviado':
       return `${d.contrato_numero ?? '—'} · ${d.cliente ?? '—'} · ${d.telefone ?? '—'}`
+    case 'aditivo_emitido':
+      return `${d.aditivo_numero ?? '—'} · R$ ${d.valor_total_anterior ?? '—'} → R$ ${d.valor_total_novo ?? '—'}`
+    case 'aditivo_enviado':
+      return `${d.aditivo_numero ?? '—'} · ${d.cliente ?? '—'} · ${d.telefone ?? '—'}`
     case 'ajuste_linear_aplicado':
       return `${d.descricao ?? '—'} (snapshot #${d.snapshot_id ?? '—'})`
     case 'ajuste_linear_desfeito':

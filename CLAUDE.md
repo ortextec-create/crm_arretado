@@ -83,7 +83,9 @@ arretado/                        ← raiz Django
 ├── eventos/                     ← gestão de eventos/encomendas + orçamentos + contratos
 │   ├── models.py                ← Orcamento, ItemOrcamento (+ natureza), Evento, ItemEvento (+
 │   │                               natureza), LocalEvento, Contrato (snapshot, CTR-0001... — ver
-│   │                               Contrato.md), ConfiguracaoContrato (singleton),
+│   │                               Contrato.md), AditivoContrato (snapshot, ADT-0001..., emitido
+│   │                               quando o Evento muda de valor depois do Contrato já emitido —
+│   │                               ver Contrato.md § 9), ConfiguracaoContrato (singleton),
 │   │                               ConfiguracaoAlertaEvento (singleton), TelefoneAlertaEvento,
 │   │                               AlertaEventoEnviado, ImagemInspiracao (galeria — FK opcional a
 │   │                               Orcamento OU a Evento, exatamente um dos dois via
@@ -104,6 +106,9 @@ arretado/                        ← raiz Django
 │   ├── pdf_contrato.py          ← ReportLab Platypus multi-página — texto/cláusulas sempre de
 │   │                               `ConfiguracaoContrato.get()` + snapshot do Contrato, nunca
 │   │                               hardcoded. Mesmo tratamento de brinde/permuta na tabela "ANEXO 1"
+│   ├── pdf_aditivo.py           ← PDF curto do Termo Aditivo (reaproveita paleta/helpers de
+│   │                               pdf_contrato.py) — lê só do snapshot gravado em AditivoContrato
+│   │                               (itens_snapshot + totais), nunca do Evento ao vivo
 │   ├── pdf_resumo_cozinha.py    ← PDF operacional interno (Platypus, sem timbre) — itens agrupados
 │   │                               por categoria via `itertools.groupby`, nunca reordenar em Python
 │   │                               depois; item sem categoria cai em "Outros", sempre por último.
@@ -115,8 +120,12 @@ arretado/                        ← raiz Django
 │   │                               Evento com saldo pendente perto da data e sobre entrega próxima
 │   └── views.py                 ← OrcamentoViewSet (converter-em-evento, gerar-contrato, imagens/,
 │                                    itens/{id}/editar/, historico/) + EventoViewSet (pagamentos/,
-│                                    historico/) + ContratoViewSet + ConfiguracaoContratoViewSet +
-│                                    ConfiguracaoAlertaEventoViewSet + TelefoneAlertaEventoViewSet
+│                                    gerar-contrato — reemite com dados atuais do evento, diferente do
+│                                    de Orçamento —, gerar-aditivo, historico/) + ContratoViewSet +
+│                                    AditivoContratoViewSet (só leitura + pdf/enviar-whatsapp, mesmo
+│                                    padrão de ContratoViewSet — ver Contrato.md § 9) +
+│                                    ConfiguracaoContratoViewSet + ConfiguracaoAlertaEventoViewSet +
+│                                    TelefoneAlertaEventoViewSet
 ├── usuarios/                    ← gestão de usuários + RBAC + autenticação real por token +
 │   │                               vínculo multi-empresa (ver MULTIEMPRESA.md)
 │   ├── models.py                ← Usuario (auth_token, gerar_token(), `empresas` M2M →
@@ -230,7 +239,8 @@ arretado-crm/                    ← raiz React
     ├── api/
     │   ├── client.js            ← axios base
     │   └── services.js          ← clientesApi, tagsApi, ifoodApi, pdvApi, pedidosApi, eventosApi,
-    │                               locaisEventoApi, orcamentosApi, contratosApi, configContratoApi,
+    │                               locaisEventoApi, orcamentosApi, contratosApi, aditivosApi,
+    │                               configContratoApi,
     │                               alertasEventoApi, notificacoesApi, usuariosApi (inclui
     │                               definirEmpresaAtiva/preferenciaTema), authApi (login/logout/me
     │                               + atualizarCache), fichasApi, taxasEntregaApi, configEntregaApi,
@@ -273,7 +283,8 @@ arretado-crm/                    ← raiz React
     │   │                           `useAuth().empresaAtiva`/`empresas` (mesmo contexto global da
     │   │                           Sidebar — diferente do seletor local de IFood.jsx, anterior à
     │   │                           Fase 2 do multi-empresa)
-    │   ├── Eventos.jsx / Orcamentos.jsx (botão "Emitir Contrato")
+    │   ├── Eventos.jsx / Orcamentos.jsx (botão "Emitir Contrato"; Eventos.jsx também tem "Emitir
+    │   │                               Aditivo", só visível quando `evento.aditivo_disponivel`)
     │   ├── Locais.jsx           ← cadastro de LocalEvento
     │   ├── TaxasEntrega.jsx     ← taxas por bairro + frete padrão (ver FRETE.md)
     │   ├── Notificacoes.jsx / Configuracoes.jsx / Vinculacoes.jsx
@@ -332,7 +343,8 @@ arretado-crm/                    ← raiz React
 - **`eventos.ConfiguracaoContrato` é singleton** — sempre via `.get()`. Nunca hardcodar cláusula numérica no gerador de PDF — ver `Contrato.md`. `PATCH` exige login e audita
 - **`eventos.Contrato`** é snapshot gravado na emissão — valores nunca recalculados ao reabrir
 - **Alertas de Evento** (`ConfiguracaoAlertaEvento.get()`, `TelefoneAlertaEvento`, `AlertaEventoEnviado`) — cron diário `alertar_eventos`: (1) pagamento pendente a partir de `dias_antes_pagamento` dias antes (usa `F()` em queryset, não a property Python `saldo_restante`); (2) aviso de entrega a partir de `dias_antes_entrega`, só `tipo_entrega='entrega_local'`. Repetem por `repetir_*_dias`, controlado por `AlertaEventoEnviado`. Texto fixo no código, só dias/intervalo/telefones configuráveis. Nunca notificar o cliente, só a equipe
-- **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente — ver `Contrato.md`. Exige login e audita `contrato_emitido`
+- **Emissão de contrato** (`POST /eventos/orcamentos/{id}/gerar-contrato/`) só com `Orcamento.status == 'aprovado'` e exige CPF/RG/nacionalidade/profissão/estado civil do cliente — ver `Contrato.md`. Exige login e audita `contrato_emitido`. `POST /eventos/{id}/gerar-contrato/` (`EventoViewSet`) reemite um Contrato NOVO com os dados ATUAIS do evento (nunca substitui o existente) — útil quando o evento já divergiu do orçamento que o gerou
+- **`eventos.AditivoContrato`** (spec completa em `Contrato.md` § 9) — snapshot imutável emitido quando um Evento com Contrato já emitido tem valor/itens alterados a pedido do cliente antes do evento acontecer (`POST /eventos/{id}/gerar-aditivo/`, exige login, audita `aditivo_emitido`). Rejeita (400) evento sem contrato, evento `cancelado`/`entregue`, ou quando `Evento.valor_total` não mudou desde o contrato/último aditivo (`_valor_referencia_contrato()` — nunca comparar direto contra `Contrato.valor_total`, tem que considerar o último aditivo já emitido). Nunca reler itens/totais ao vivo do Evento pra reimprimir um aditivo já emitido — sempre do `itens_snapshot`/campos `*_novo` gravados nele. `AditivoContratoViewSet` só leitura + `pdf/`/`enviar-whatsapp/` (audita `aditivo_enviado`), mesmo padrão de `ContratoViewSet`
 - **`eventos.ImagemInspiracao`** — galeria interna (nunca no PDF/WhatsApp), FK opcional a `Orcamento` OU `Evento` (`CheckConstraint` garante exatamente um). Quando o Evento tem `orcamento_origem`, imagem nova vai pro **Orçamento** de origem, nunca duplica a galeria — `EventoViewSet.adicionar_imagens`/`EventoDetailSerializer.get_imagens_inspiracao` resolvem a mesma regra
 - **`MEDIA_URL`/`MEDIA_ROOT`** configurados em `config/settings.py` (`/media/`). Nginx tem `location /media/` próprio — qualquer novo `ImageField`/`FileField` já reaproveita essa infra
 - **Cuidado com `prefetch_related` + criação de objeto relacionado na mesma request**: se uma view faz `get_object()` sobre queryset com `prefetch_related('algo')` e cria/deleta relacionado via `Model.objects.create(fk=obj, ...)` (sem passar pelo manager `obj.algo`), o cache do prefetch fica stale e `recalcular_totais()`/serializer leem o valor velho — **persistindo** total errado no banco, não só exibindo errado. Sempre chamar `obj.refresh_from_db()` antes de serializar (já corrigido em várias actions de item/imagem/pagamento — bug real recorrente, checar sempre que criar endpoint novo que recalcula total a partir de coleção prefetched)
@@ -415,6 +427,7 @@ arretado-crm/                    ← raiz React
 | Relatórios | Relatório consolidado iFood (resumo, agrupamento, export) | ✅ Concluída (só iFood por enquanto) |
 | Produtos Mais Vendidos | Ranking cross-canal por quantidade/valor | ✅ Concluída (só JSON) |
 | Contrato | Emissão a partir de Orçamento aprovado + reenvio WhatsApp | ✅ Concluída (ver `Contrato.md`) |
+| Aditivo de Contrato | Documenta alteração de valor/itens de Evento com Contrato já emitido, antes do evento acontecer | ✅ Concluída (14/set/2026, ver `Contrato.md` § 9) |
 | Imagens de Inspiração | Galeria anexada ao Orçamento OU Evento | ✅ Concluída |
 | Pagamentos Parciais de Evento | `PagamentoEvento`, `sinal_pago` derivado | ✅ Concluída |
 | Dashboard Multi-Canal | App `dashboard/` (só leitura) | ✅ Concluída |
@@ -510,7 +523,15 @@ GET           /api/v1/eventos/contratos/
 GET           /api/v1/eventos/contratos/{id}/
 GET           /api/v1/eventos/contratos/{id}/pdf/
 POST          /api/v1/eventos/contratos/{id}/enviar-whatsapp/    ← não trava por status (envio inicial e reenvio)
+POST          /api/v1/eventos/{id}/gerar-contrato/               ← EventoViewSet — reemite com dados atuais do evento
 GET/PATCH     /api/v1/eventos/configuracao-contrato/1/           ← singleton
+
+# Aditivo de Contrato (ver Contrato.md § 9)
+POST          /api/v1/eventos/{id}/gerar-aditivo/                ← exige login · 400 sem_contrato/evento_cancelado/evento_entregue/sem_alteracao
+GET           /api/v1/eventos/aditivos/
+GET           /api/v1/eventos/aditivos/{id}/
+GET           /api/v1/eventos/aditivos/{id}/pdf/
+POST          /api/v1/eventos/aditivos/{id}/enviar-whatsapp/     ← exige login
 
 # Alertas de Evento
 GET/PATCH             /api/v1/eventos/configuracao-alertas/1/       ← singleton
@@ -737,6 +758,9 @@ Infra já configurada em produção (não precisa recriar):
 - Bairro do **Local de Evento** tem prioridade sobre bairro do cliente pra sugerir taxa de entrega — nunca inverter (ver `FRETE.md`)
 - Não criar `ItemContrato` — o PDF lê os itens direto de `contrato.orcamento.itens`
 - Não permitir `gerar-contrato/` sem `status == 'aprovado'` e CPF/RG/nacionalidade/profissão/estado civil preenchidos
+- Não emitir `AditivoContrato` sem checar `_valor_referencia_contrato()` (último aditivo do contrato, senão `Contrato.valor_total`) — comparar direto contra `Contrato.valor_total` ignora aditivos anteriores e permite gerar um aditivo "sem alteração real" depois do primeiro
+- Não reler itens/totais ao vivo do Evento pra reimprimir um `AditivoContrato` já emitido — sempre do snapshot gravado nele (`itens_snapshot`, `*_novo`), senão o documento muda de conteúdo se o evento for editado de novo depois
+- Não pedir CPF/RG/endereço do CONTRATANTE de novo no fluxo de aditivo — já estão no `Contrato` original, aditivo só documenta a mudança de valor/itens
 - Ao mesclar o PDF do contrato com o timbre, reler o `PdfReader` do timbre a cada página — reutilizar o objeto duplica a 1ª página em PDFs multi-página
 - Ao ajustar a lista `condicoes` em `pdf_orcamento.py`, ajustar o piso `cond_y` na mesma proporção (±11pt por linha) — senão a última linha sobrepõe a área de assinatura em orçamento longo
 - Não criar `ImagemInspiracao` por item de Orçamento — a galeria pertence ao registro inteiro

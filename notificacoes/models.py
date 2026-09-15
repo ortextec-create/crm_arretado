@@ -64,6 +64,7 @@ class HistoricoMensagem(models.Model):
         ('lembrete',      'Lembrete'),
         ('orcamento',     'Orçamento PDF'),
         ('contrato',      'Contrato PDF'),
+        ('aditivo_contrato', 'Aditivo de Contrato PDF'),
         ('alerta_pagamento', 'Alerta de Pagamento Pendente'),
         ('alerta_entrega',   'Alerta de Entrega Próxima'),
         ('alerta_estoque_baixo', 'Alerta de Estoque Baixo'),

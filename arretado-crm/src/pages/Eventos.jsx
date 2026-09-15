@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
-import { eventosApi, locaisEventoApi, clientesApi, contratosApi } from '../api/services'
+import { eventosApi, locaisEventoApi, clientesApi, contratosApi, aditivosApi } from '../api/services'
 import { pdvApi, taxasEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast, Empty, NaturezaBadge, SeletorNatureza } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
@@ -93,6 +93,7 @@ export default function Eventos() {
   const [eventoAtivo, setEventoAtivo] = useState(null)
   const [reenviarInfo, setReenviarInfo] = useState(null) // { contrato, nomeCliente, telefoneDisplay }
   const [emitirEvento, setEmitirEvento] = useState(null) // evento ativo pro modal de Emitir Contrato
+  const [aditivoEvento, setAditivoEvento] = useState(null) // evento ativo pro modal de Emitir Aditivo
 
   // ── Carregamento ──────────────────────────────────────────────────────────
 
@@ -178,6 +179,19 @@ export default function Eventos() {
   const abrirEmitirContrato = (ev) => {
     if (!ev.tem_orcamento_origem) return
     setEmitirEvento(ev)
+  }
+
+  const abrirEmitirAditivo = (ev) => {
+    if (!ev.aditivo_disponivel) return
+    setAditivoEvento(ev)
+  }
+
+  const handleAditivoEmitido = () => {
+    loadEventos()
+    if (eventoAtivo) {
+      eventosApi.detail(eventoAtivo.id).then(r => setEventoAtivo(r.data)).catch(() => {})
+    }
+    setToast({ message: 'Aditivo de contrato emitido com sucesso!', type: 'success' })
   }
 
   const handleResumoCozinha = async (eventoId, temImagens) => {
@@ -385,6 +399,15 @@ export default function Eventos() {
                             <i className="ti ti-brand-whatsapp" /> Contrato
                           </button>
                         )}
+                        {ev.aditivo_disponivel && (
+                          <button
+                            className={styles.linkContrato}
+                            onClick={() => abrirEmitirAditivo(ev)}
+                            title="Emitir aditivo — o valor do evento mudou desde o contrato"
+                          >
+                            <i className="ti ti-file-diff" /> Aditivo
+                          </button>
+                        )}
                       </td>
                     </tr>
                     )
@@ -433,6 +456,7 @@ export default function Eventos() {
           onEditar={() => setShowEditar(true)}
           onReenviarContrato={() => abrirReenviarContrato(eventoAtivo)}
           onEmitirContrato={() => abrirEmitirContrato(eventoAtivo)}
+          onEmitirAditivo={() => abrirEmitirAditivo(eventoAtivo)}
           onResumoCozinha={() => handleResumoCozinha(eventoAtivo.id, (eventoAtivo.imagens_inspiracao?.length ?? 0) > 0)}
         />
       )}
@@ -450,6 +474,14 @@ export default function Eventos() {
           evento={emitirEvento}
           onClose={() => setEmitirEvento(null)}
           onGerado={handleContratoEmitido}
+        />
+      )}
+
+      {aditivoEvento && (
+        <ModalEmitirAditivo
+          evento={aditivoEvento}
+          onClose={() => setAditivoEvento(null)}
+          onGerado={handleAditivoEmitido}
         />
       )}
 
@@ -1051,7 +1083,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
-function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato, onEmitirContrato, onResumoCozinha }) {
+function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato, onEmitirContrato, onEmitirAditivo, onResumoCozinha }) {
   const [abaAtiva,    setAbaAtiva]    = useState('itens')
   const [addingItem,  setAddingItem]  = useState(false)
   const [produtos,    setProdutos]    = useState([])
@@ -1367,6 +1399,11 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             {evento.contrato && (
               <Btn variant="secondary" onClick={onReenviarContrato} title={`Reenviar contrato ${evento.contrato.numero} por WhatsApp`}>
                 <i className="ti ti-brand-whatsapp" /> Reenviar Contrato
+              </Btn>
+            )}
+            {evento.aditivo_disponivel && (
+              <Btn onClick={onEmitirAditivo} style={{ background: 'var(--caramelo)' }} title="Emitir aditivo — o valor do evento mudou desde o contrato">
+                <i className="ti ti-file-diff" /> Emitir Aditivo
               </Btn>
             )}
             {ACOES.filter(a => a.show).map(a => (
@@ -2231,6 +2268,121 @@ function ModalEmitirContratoEvento({ evento, onClose, onGerado }) {
         <Btn variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Btn>
         <Btn onClick={handleGerar} disabled={saving}>
           {saving ? <Spinner size={14} /> : <i className="ti ti-file-signature" />} Gerar contrato
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Modal: Emitir Aditivo de Contrato ─────────────────────────────────────────
+// Aparece só quando evento.aditivo_disponivel (valor do evento divergiu do
+// contrato/último aditivo já emitido) — documenta a alteração pedida pelo
+// cliente antes do evento acontecer, com os novos valores. Diferente do
+// "Emitir Contrato", não pede dados do CONTRATANTE de novo (já estão no
+// contrato original) — é só confirmar e gerar.
+
+function ModalEmitirAditivo({ evento, onClose, onGerado }) {
+  const [saving, setSaving] = useState(false)
+  const [erro,   setErro]   = useState('')
+  const [aditivo, setAditivo] = useState(null)
+
+  const [mensagem,   setMensagem]   = useState('')
+  const [sendingWpp, setSendingWpp] = useState(false)
+  const [erroWpp,    setErroWpp]    = useState('')
+  const [enviado,    setEnviado]    = useState(false)
+
+  async function handleGerar() {
+    setSaving(true); setErro('')
+    try {
+      const res = await eventosApi.gerarAditivo(evento.id)
+      setAditivo(res.data)
+      onGerado?.(res.data)
+    } catch (e) {
+      const data = e?.response?.data
+      setErro(data?.mensagem || data?.detail || 'Erro ao emitir aditivo.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleVerPdf() {
+    try {
+      const res = await aditivosApi.pdf(aditivo.id)
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+    } catch {
+      setErroWpp('Erro ao gerar PDF do aditivo.')
+    }
+  }
+
+  async function handleEnviarWpp() {
+    if (!window.confirm(`Enviar o aditivo ${aditivo.numero} por WhatsApp para ${evento.nome_cliente_display} (${evento.telefone_display})?`)) return
+    setSendingWpp(true); setErroWpp('')
+    try {
+      await aditivosApi.enviarWhatsApp(aditivo.id, { mensagem })
+      setEnviado(true)
+    } catch (e) {
+      const data = e?.response?.data
+      setErroWpp(data?.mensagem || data?.detail || 'Erro ao enviar via WhatsApp.')
+    } finally {
+      setSendingWpp(false)
+    }
+  }
+
+  if (aditivo) {
+    return (
+      <Modal open title={`Aditivo ${aditivo.numero}`} onClose={onClose}>
+        <p>Aditivo gerado com sucesso, referente ao contrato <strong>{aditivo.contrato_numero}</strong>.</p>
+        <div className={styles.financeiroCard} style={{ marginBottom: 14 }}>
+          <div className={styles.financeiroLinha}><span>Valor anterior</span><span>{fmt(aditivo.valor_total_anterior)}</span></div>
+          <div className={`${styles.financeiroLinha} ${styles.financeiroTotal}`}><span>Novo valor total</span><span>{fmt(aditivo.valor_total_novo)}</span></div>
+        </div>
+        <div className={styles.wppDocCard}>
+          <i className="ti ti-file-type-pdf" style={{ color: '#DC2626', fontSize: 18 }} />
+          <span>{aditivo.numero}.pdf — Aditivo Contratual</span>
+        </div>
+        <div className={styles.formGroup} style={{ marginTop: 14 }}>
+          <label>Mensagem que acompanha o PDF (opcional)</label>
+          <textarea
+            rows={3}
+            value={mensagem}
+            onChange={e => setMensagem(e.target.value)}
+            placeholder="Segue o aditivo com os novos valores do pedido. Qualquer dúvida, é só chamar!"
+          />
+        </div>
+        {erroWpp && <p className={styles.error}><i className="ti ti-alert-circle" /> {erroWpp}</p>}
+        <div className={styles.stepNav}>
+          <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+          <Btn variant="secondary" onClick={handleVerPdf}>
+            <i className="ti ti-file-type-pdf" /> Ver PDF
+          </Btn>
+          {enviado ? (
+            <span style={{ background: '#05966922', color: '#059669', padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>Enviado</span>
+          ) : (
+            <Btn onClick={handleEnviarWpp} disabled={sendingWpp} className={styles.btnWppSend}>
+              {sendingWpp ? <Spinner size={14} /> : <i className="ti ti-brand-whatsapp" />} Enviar por WhatsApp
+            </Btn>
+          )}
+        </div>
+      </Modal>
+    )
+  }
+
+  return (
+    <Modal open title="Emitir Aditivo de Contrato" onClose={onClose}>
+      <p>
+        O valor do evento <strong>{evento.numero}</strong> mudou desde o contrato (ou último aditivo)
+        já emitido. Gerar um aditivo documenta essa alteração para o cliente, com os itens e o valor
+        atuais do evento.
+      </p>
+      <div className={styles.financeiroCard}>
+        <div className={styles.financeiroLinha}><span>Valor atual do evento</span><span>{fmt(evento.valor_total)}</span></div>
+      </div>
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Btn>
+        <Btn onClick={handleGerar} disabled={saving}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-file-diff" />} Gerar aditivo
         </Btn>
       </div>
     </Modal>

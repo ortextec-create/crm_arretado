@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
-    ImagemInspiracao, Contrato, ConfiguracaoContrato,
+    ImagemInspiracao, Contrato, AditivoContrato, ConfiguracaoContrato,
     ConfiguracaoAlertaEvento, TelefoneAlertaEvento,
 )
 from auditoria.models import LogAuditoria
@@ -59,6 +59,23 @@ class ContratoResumoSerializer(serializers.ModelSerializer):
         fields = ['id', 'numero', 'status', 'status_display', 'contratante_nome']
 
 
+class AditivoContratoResumoSerializer(serializers.ModelSerializer):
+    """Versão enxuta de AditivoContrato para a aba/lista de histórico do
+    Evento — não confundir com o AditivoContratoSerializer completo."""
+    class Meta:
+        model  = AditivoContrato
+        fields = ['id', 'numero', 'valor_total_anterior', 'valor_total_novo', 'criado_em']
+        read_only_fields = fields
+
+
+def _valor_referencia_contrato(contrato):
+    """Valor a comparar com o Evento.valor_total atual pra decidir se cabe
+    emitir um aditivo novo — o valor_total_novo do último aditivo já emitido
+    pra este contrato, senão o valor_total congelado do próprio contrato."""
+    ultimo_aditivo = next(iter(contrato.aditivos.all()), None)
+    return ultimo_aditivo.valor_total_novo if ultimo_aditivo else contrato.valor_total
+
+
 # ─── Evento ───────────────────────────────────────────────────────────────────
 
 class EventoListSerializer(serializers.ModelSerializer):
@@ -74,6 +91,7 @@ class EventoListSerializer(serializers.ModelSerializer):
     contrato             = serializers.SerializerMethodField()
     tem_orcamento_origem = serializers.SerializerMethodField()
     n_imagens_inspiracao = serializers.SerializerMethodField()
+    aditivo_disponivel   = serializers.SerializerMethodField()
 
     class Meta:
         model  = Evento
@@ -90,7 +108,7 @@ class EventoListSerializer(serializers.ModelSerializer):
             'pode_confirmar', 'pode_iniciar_producao', 'pode_marcar_pronto',
             'pode_entregar', 'pode_cancelar',
             'criado_em', 'atualizado_em', 'ultima_modificacao', 'contrato', 'tem_orcamento_origem',
-            'n_imagens_inspiracao',
+            'n_imagens_inspiracao', 'aditivo_disponivel',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -114,6 +132,17 @@ class EventoListSerializer(serializers.ModelSerializer):
         # de imprimir o resumo de cozinha — ver eventosApi.resumoCozinha.
         return obj.galeria_imagens_inspiracao().count()
 
+    def get_aditivo_disponivel(self, obj):
+        # Botão "Emitir Aditivo" só aparece quando o Evento já tem contrato
+        # emitido E o valor atual divergiu do que consta no contrato/último
+        # aditivo — nunca depois de entregue/cancelado (ver CLAUDE.md).
+        if obj.status in ('cancelado', 'entregue'):
+            return False
+        contrato = next(iter(obj.contratos.all()), None)
+        if not contrato:
+            return False
+        return obj.valor_total != _valor_referencia_contrato(contrato)
+
 
 class PagamentoEventoSerializer(serializers.ModelSerializer):
     forma_pagamento_display = serializers.CharField(source='get_forma_pagamento_display', read_only=True)
@@ -132,15 +161,19 @@ class EventoDetailSerializer(EventoListSerializer):
     local_detalhe = LocalEventoSerializer(source='local', read_only=True)
     pagamentos = PagamentoEventoSerializer(many=True, read_only=True)
     imagens_inspiracao = serializers.SerializerMethodField()
+    aditivos = serializers.SerializerMethodField()
 
     class Meta(EventoListSerializer.Meta):
         fields = EventoListSerializer.Meta.fields + [
             'itens', 'local_detalhe', 'pagamentos',
-            'imagens_inspiracao', 'observacoes', 'observacoes_cozinha',
+            'imagens_inspiracao', 'observacoes', 'observacoes_cozinha', 'aditivos',
         ]
 
     def get_imagens_inspiracao(self, obj):
         return ImagemInspiracaoSerializer(obj.galeria_imagens_inspiracao(), many=True).data
+
+    def get_aditivos(self, obj):
+        return AditivoContratoResumoSerializer(obj.aditivos.all(), many=True).data
 
 
 class EventoCreateSerializer(serializers.ModelSerializer):
@@ -421,6 +454,23 @@ class ContratoSerializer(serializers.ModelSerializer):
             'valor_entrada_pago', 'forma_pagamento_entrada', 'data_pagamento_entrada',
             'observacao_entrada',
             'criado_em', 'atualizado_em',
+        ]
+        read_only_fields = fields
+
+
+class AditivoContratoSerializer(serializers.ModelSerializer):
+    contrato_numero = serializers.CharField(source='contrato.numero', read_only=True)
+    evento_numero   = serializers.CharField(source='evento.numero', read_only=True)
+    cliente_nome    = serializers.CharField(source='cliente.nome', read_only=True, default=None)
+    diferenca       = serializers.ReadOnlyField()
+
+    class Meta:
+        model  = AditivoContrato
+        fields = [
+            'id', 'numero', 'contrato', 'contrato_numero', 'evento', 'evento_numero',
+            'cliente', 'cliente_nome',
+            'valor_total_anterior', 'subtotal_novo', 'desconto_novo', 'taxa_entrega_novo',
+            'valor_total_novo', 'diferenca', 'itens_snapshot', 'criado_em',
         ]
         read_only_fields = fields
 

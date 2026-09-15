@@ -14,11 +14,12 @@ from auditoria.models import LogAuditoria
 from usuarios.models import Usuario
 from usuarios.views import UsuarioViewSet
 from .models import (
-    Orcamento, ItemOrcamento, ImagemInspiracao, Contrato, Evento, ItemEvento,
+    Orcamento, ItemOrcamento, ImagemInspiracao, Contrato, AditivoContrato, Evento, ItemEvento,
     LocalEvento, PagamentoEvento, ConfiguracaoContrato,
 )
 from .views import (
-    OrcamentoViewSet, ContratoViewSet, EventoViewSet, LocalEventoViewSet, ConfiguracaoContratoViewSet,
+    OrcamentoViewSet, ContratoViewSet, AditivoContratoViewSet, EventoViewSet, LocalEventoViewSet,
+    ConfiguracaoContratoViewSet,
 )
 from pedidos.models import PedidoUnificado
 
@@ -455,6 +456,240 @@ class GerarContratoEventoTests(TestCase):
         resp = view(req, pk=self.orc.id)
         resp.render()
         return Evento.objects.get(id=resp.data['evento']['id'])
+
+
+class GerarAditivoContratoTests(TestCase):
+    """
+    Aditivo de Contrato — emitido quando o Evento (já com Contrato emitido)
+    tem seus valores alterados a pedido do cliente antes do evento acontecer
+    (ver Contrato.md e CLAUDE.md).
+    """
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.admin = Usuario(name='Admin Teste', email='admin@teste.com', role='admin')
+        self.admin.set_password('senha-123')
+        self.admin.save()
+
+        self.cliente = Cliente.objects.create(nome='Maria Teste', telefone_principal='86999998888')
+        self.orc = Orcamento.objects.create(
+            numero=Orcamento.proximo_numero(), cliente=self.cliente,
+            tipo_evento='aniversario', data_evento=datetime.date.today() + datetime.timedelta(days=30),
+            status='aprovado',
+        )
+        ItemOrcamento.objects.create(
+            orcamento=self.orc, nome='Bolo teste', preco_unit=100, quantidade=2, preco_total=200,
+        )
+        self.orc.recalcular_totais()
+        self.orc.refresh_from_db()
+
+    def _token(self):
+        resp = UsuarioViewSet.as_view({'post': 'login'})(self.factory.post(
+            '/api/v1/usuarios/login/', {'email': 'admin@teste.com', 'password': 'senha-123'}, format='json',
+        ))
+        return resp.data['token']
+
+    def _converter(self):
+        token = self._token()
+        view = OrcamentoViewSet.as_view({'post': 'converter_em_evento'})
+        req = self.factory.post(
+            f'/api/v1/eventos/orcamentos/{self.orc.id}/converter-em-evento/', {}, format='json',
+            HTTP_AUTHORIZATION=f'Token {token}',
+        )
+        resp = view(req, pk=self.orc.id)
+        resp.render()
+        return Evento.objects.get(id=resp.data['evento']['id'])
+
+    def _gerar_contrato(self, evento):
+        view = EventoViewSet.as_view({'post': 'gerar_contrato'})
+        payload = {
+            'cpf': '123.456.789-00', 'rg': '1234567', 'rg_orgao_emissor': 'SSP-PI',
+            'nacionalidade': 'brasileira', 'profissao': 'Professora', 'estado_civil': 'solteiro',
+            'endereco_avulso': 'Rua das Flores, 100 - Centro, Teresina/PI',
+        }
+        req = self.factory.post(
+            f'/api/v1/eventos/{evento.id}/gerar-contrato/', payload, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=evento.id)
+        resp.render()
+        return Contrato.objects.get(id=resp.data['id'])
+
+    def _post_aditivo(self, evento, autenticado=True):
+        view = EventoViewSet.as_view({'post': 'gerar_aditivo'})
+        extra = {'HTTP_AUTHORIZATION': f'Token {self._token()}'} if autenticado else {}
+        req = self.factory.post(
+            f'/api/v1/eventos/{evento.id}/gerar-aditivo/', {}, format='json', **extra,
+        )
+        return view(req, pk=evento.id)
+
+    def _alterar_valor_evento(self, evento):
+        ItemEvento.objects.create(
+            evento=evento, nome='Docinho extra', preco_unit=10, quantidade=5, preco_total=50,
+        )
+        evento.refresh_from_db()
+        evento.recalcular_totais()
+        evento.refresh_from_db()
+
+    def test_bloqueia_sem_token_401(self):
+        evento = self._converter()
+        self._gerar_contrato(evento)
+        resp = self._post_aditivo(evento, autenticado=False)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_bloqueia_evento_sem_contrato(self):
+        evento = self._converter()
+        resp = self._post_aditivo(evento)
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['detail'], 'sem_contrato')
+
+    def test_bloqueia_sem_alteracao_de_valor(self):
+        evento = self._converter()
+        self._gerar_contrato(evento)
+        resp = self._post_aditivo(evento)
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['detail'], 'sem_alteracao')
+        self.assertFalse(AditivoContrato.objects.exists())
+
+    def test_bloqueia_evento_cancelado(self):
+        evento = self._converter()
+        self._gerar_contrato(evento)
+        self._alterar_valor_evento(evento)
+        evento.status = 'cancelado'
+        evento.save(update_fields=['status'])
+        resp = self._post_aditivo(evento)
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['detail'], 'evento_cancelado')
+
+    def test_bloqueia_evento_entregue(self):
+        evento = self._converter()
+        self._gerar_contrato(evento)
+        self._alterar_valor_evento(evento)
+        evento.status = 'entregue'
+        evento.save(update_fields=['status'])
+        resp = self._post_aditivo(evento)
+        resp.render()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['detail'], 'evento_entregue')
+
+    def test_gera_aditivo_com_snapshot_correto(self):
+        evento = self._converter()
+        contrato = self._gerar_contrato(evento)
+        self._alterar_valor_evento(evento)
+
+        resp = self._post_aditivo(evento)
+        resp.render()
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+        aditivo = AditivoContrato.objects.get(id=resp.data['id'])
+        self.assertEqual(aditivo.contrato_id, contrato.id)
+        self.assertEqual(aditivo.evento_id, evento.id)
+        self.assertEqual(aditivo.valor_total_anterior, contrato.valor_total)
+        self.assertEqual(aditivo.valor_total_novo, evento.valor_total)
+        self.assertNotEqual(aditivo.valor_total_anterior, aditivo.valor_total_novo)
+        self.assertEqual(len(aditivo.itens_snapshot), 2)
+        nomes = {i['nome'] for i in aditivo.itens_snapshot}
+        self.assertIn('Docinho extra', nomes)
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_ADITIVO_EMITIDO).latest('id')
+        self.assertEqual(log.detalhes['evento_id'], evento.id)
+
+        from .pdf_aditivo import gerar_pdf_aditivo
+        pdf_bytes = gerar_pdf_aditivo(aditivo)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+
+    def test_segundo_aditivo_usa_valor_do_primeiro_como_referencia(self):
+        # Depois de um primeiro aditivo, uma nova alteração deve comparar
+        # contra o valor_total_novo do aditivo anterior, não contra o
+        # contrato original — encadeamento do histórico de alterações.
+        evento = self._converter()
+        self._gerar_contrato(evento)
+        self._alterar_valor_evento(evento)
+        resp1 = self._post_aditivo(evento)
+        resp1.render()
+        self.assertEqual(resp1.status_code, 201, resp1.data)
+        primeiro = AditivoContrato.objects.get(id=resp1.data['id'])
+
+        # Sem nova alteração, o segundo aditivo é bloqueado (mesmo valor).
+        resp_bloqueado = self._post_aditivo(evento)
+        resp_bloqueado.render()
+        self.assertEqual(resp_bloqueado.status_code, 400)
+
+        # Nova alteração de valor — agora sim gera um segundo aditivo.
+        ItemEvento.objects.create(
+            evento=evento, nome='Mais um docinho', preco_unit=5, quantidade=4, preco_total=20,
+        )
+        evento.refresh_from_db()
+        evento.recalcular_totais()
+        evento.refresh_from_db()
+
+        resp2 = self._post_aditivo(evento)
+        resp2.render()
+        self.assertEqual(resp2.status_code, 201, resp2.data)
+        segundo = AditivoContrato.objects.get(id=resp2.data['id'])
+        self.assertEqual(segundo.valor_total_anterior, primeiro.valor_total_novo)
+        self.assertEqual(segundo.valor_total_novo, evento.valor_total)
+
+    def test_historico_do_evento_inclui_aditivo(self):
+        evento = self._converter()
+        self._gerar_contrato(evento)
+        self._alterar_valor_evento(evento)
+        self._post_aditivo(evento)
+
+        view = EventoViewSet.as_view({'get': 'historico'})
+        req = self.factory.get(
+            f'/api/v1/eventos/{evento.id}/historico/', HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=evento.id)
+        resp.render()
+        acoes = [log['acao'] for log in resp.data]
+        self.assertIn(LogAuditoria.ACAO_ADITIVO_EMITIDO, acoes)
+
+    @patch('notificacoes.servico.zapi.enviar_documento')
+    def test_enviar_whatsapp_grava_historico(self, mock_enviar):
+        mock_enviar.return_value = {'messageId': 'abc123'}
+        evento = self._converter()
+        self._gerar_contrato(evento)
+        self._alterar_valor_evento(evento)
+        resp = self._post_aditivo(evento)
+        resp.render()
+        aditivo = AditivoContrato.objects.get(id=resp.data['id'])
+
+        view = AditivoContratoViewSet.as_view({'post': 'enviar_whatsapp'})
+        req = self.factory.post(
+            f'/api/v1/eventos/aditivos/{aditivo.id}/enviar-whatsapp/', {}, format='json',
+            HTTP_AUTHORIZATION=f'Token {self._token()}',
+        )
+        resp = view(req, pk=aditivo.id)
+        resp.render()
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        msg = HistoricoMensagem.objects.filter(cliente=self.cliente, tipo='aditivo_contrato').first()
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.status, 'enviado')
+
+        log = LogAuditoria.objects.filter(acao=LogAuditoria.ACAO_ADITIVO_ENVIADO).latest('id')
+        self.assertEqual(log.detalhes['aditivo_numero'], aditivo.numero)
+
+    def test_evento_serializer_expoe_aditivo_disponivel(self):
+        evento = self._converter()
+        self._gerar_contrato(evento)
+
+        view = EventoViewSet.as_view({'get': 'retrieve'})
+        req = self.factory.get(f'/api/v1/eventos/{evento.id}/')
+        resp = view(req, pk=evento.id)
+        resp.render()
+        self.assertFalse(resp.data['aditivo_disponivel'])
+
+        self._alterar_valor_evento(evento)
+
+        req = self.factory.get(f'/api/v1/eventos/{evento.id}/')
+        resp = view(req, pk=evento.id)
+        resp.render()
+        self.assertTrue(resp.data['aditivo_disponivel'])
 
 
 class PagamentoEventoAuditoriaTests(TestCase):

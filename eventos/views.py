@@ -12,7 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
-    ImagemInspiracao, Contrato, ConfiguracaoContrato,
+    ImagemInspiracao, Contrato, AditivoContrato, ConfiguracaoContrato,
     ConfiguracaoAlertaEvento, TelefoneAlertaEvento,
 )
 from notificacoes.servico import notificar, _fone_pedido
@@ -68,6 +68,8 @@ from .serializers import (
     OrcamentoCreateSerializer,
     ItemOrcamentoCreateSerializer,
     ContratoSerializer,
+    AditivoContratoSerializer,
+    _valor_referencia_contrato,
     ConfiguracaoContratoSerializer,
     ConfiguracaoAlertaEventoSerializer,
     TelefoneAlertaEventoSerializer,
@@ -112,7 +114,7 @@ class EventoViewSet(
 ):
     queryset           = Evento.objects.prefetch_related(
         'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
-        'imagens_inspiracao_diretas', 'contratos',
+        'imagens_inspiracao_diretas', 'contratos__aditivos', 'aditivos',
     ).select_related('cliente', 'local', 'orcamento_origem').all()
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['data_evento', 'criado_em', 'valor_total']
@@ -135,7 +137,7 @@ class EventoViewSet(
             'adicionar_pagamento', 'remover_pagamento', 'destroy', 'remover_item',
             'create', 'update', 'partial_update',
             'confirmar', 'iniciar_producao', 'marcar_pronto', 'entregar', 'cancelar',
-            'adicionar_item', 'historico', 'gerar_contrato', 'remover_imagem',
+            'adicionar_item', 'historico', 'gerar_contrato', 'gerar_aditivo', 'remover_imagem',
         ):
             return [IsAuthenticated()]
         return [AllowAny()]
@@ -515,6 +517,88 @@ class EventoViewSet(
 
         return Response(ContratoSerializer(contrato).data, status=status.HTTP_201_CREATED)
 
+    # ── Aditivo de Contrato (alteração de valores após contrato emitido) ────
+
+    @action(detail=True, methods=['post'], url_path='gerar-aditivo')
+    def gerar_aditivo(self, request, pk=None):
+        """
+        Emite um Termo Aditivo documentando alteração de valor/itens do
+        Evento depois que o Contrato já foi emitido (cliente pediu mudança
+        no pedido antes do evento acontecer) — ver Contrato.md. Snapshot
+        imutável (itens + totais), mesma filosofia do Contrato: nunca
+        recalculado depois, mesmo que o Evento mude de novo.
+        """
+        evento = self.get_object()
+
+        contrato = next(iter(evento.contratos.all()), None)
+        if not contrato:
+            return Response(
+                {
+                    'detail': 'sem_contrato',
+                    'mensagem': 'Este evento ainda não tem contrato emitido — não há o que aditivar.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if evento.status in ('cancelado', 'entregue'):
+            return Response(
+                {
+                    'detail': f'evento_{evento.status}',
+                    'mensagem': 'Não é possível emitir aditivo de um evento cancelado ou já entregue.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        valor_referencia = _valor_referencia_contrato(contrato)
+        if evento.valor_total == valor_referencia:
+            return Response(
+                {
+                    'detail': 'sem_alteracao',
+                    'mensagem': (
+                        'O valor do evento não mudou desde o contrato/último aditivo — nada para documentar.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        itens_snapshot = [
+            {
+                'nome': item.nome,
+                'quantidade': item.quantidade,
+                'preco_unit': str(item.preco_unit),
+                'preco_total': str(item.preco_total),
+                'natureza': item.natureza,
+                'observacao': item.observacao,
+            }
+            for item in evento.itens.all()
+        ]
+
+        aditivo = AditivoContrato.objects.create(
+            contrato=contrato,
+            evento=evento,
+            cliente=evento.cliente,
+            numero=AditivoContrato.proximo_numero(),
+            valor_total_anterior=valor_referencia,
+            subtotal_novo=evento.subtotal,
+            desconto_novo=evento.desconto,
+            taxa_entrega_novo=evento.taxa_entrega,
+            valor_total_novo=evento.valor_total,
+            itens_snapshot=itens_snapshot,
+        )
+
+        registrar(
+            request.user, LogAuditoria.ACAO_ADITIVO_EMITIDO,
+            detalhes={
+                'aditivo_numero': aditivo.numero, 'contrato_numero': contrato.numero,
+                'evento_id': evento.id, 'evento_numero': evento.numero,
+                'valor_total_anterior': str(aditivo.valor_total_anterior),
+                'valor_total_novo': str(aditivo.valor_total_novo),
+            },
+            request=request,
+        )
+
+        return Response(AditivoContratoSerializer(aditivo).data, status=status.HTTP_201_CREATED)
+
     # ── Pagamentos ────────────────────────────────────────────────────────
 
     @action(detail=True, methods=['post'], url_path='pagamentos')
@@ -579,6 +663,10 @@ class EventoViewSet(
             ) |
             Q(
                 acao__in=[LogAuditoria.ACAO_CONTRATO_EMITIDO, LogAuditoria.ACAO_CONTRATO_ENVIADO],
+                detalhes__evento_id=evento.id,
+            ) |
+            Q(
+                acao__in=[LogAuditoria.ACAO_ADITIVO_EMITIDO, LogAuditoria.ACAO_ADITIVO_ENVIADO],
                 detalhes__evento_id=evento.id,
             )
         ).select_related('usuario').order_by('-criado_em')
@@ -1360,6 +1448,84 @@ class ContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListMod
         )
 
         return Response(ContratoSerializer(contrato).data)
+
+
+# ─── Aditivo de Contrato ───────────────────────────────────────────────────────
+
+class AditivoContratoViewSet(CsrfExemptMixin, mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Somente leitura via API — AditivoContrato só é criado através de
+    EventoViewSet.gerar_aditivo (nunca via POST direto neste ViewSet)."""
+    queryset           = AditivoContrato.objects.select_related('contrato', 'evento', 'cliente').all()
+    serializer_class   = AditivoContratoSerializer
+    filter_backends    = [filters.OrderingFilter]
+    ordering           = ['-criado_em']
+    # Mesmo padrão de ContratoViewSet — list/retrieve/pdf continuam AllowAny,
+    # só enviar-whatsapp exige login (pra sempre ter um ator no log).
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action == 'enviar_whatsapp':
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        aditivo = self.get_object()
+        from .pdf_aditivo import gerar_pdf_aditivo
+        pdf_bytes = gerar_pdf_aditivo(aditivo)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{aditivo.numero}.pdf"'
+        return response
+
+    @action(detail=True, methods=['post'], url_path='enviar-whatsapp')
+    def enviar_whatsapp(self, request, pk=None):
+        aditivo = self.get_object()
+
+        telefone = aditivo.cliente.telefone_principal if aditivo.cliente else ''
+        if not telefone:
+            return Response(
+                {
+                    'detail': 'sem_telefone',
+                    'mensagem': 'Este aditivo não tem telefone de contato vinculado.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        caption = request.data.get('mensagem', '').strip()
+
+        from .pdf_aditivo import gerar_pdf_aditivo
+        from notificacoes.servico import notificar_documento
+
+        pdf_bytes    = gerar_pdf_aditivo(aditivo)
+        nome_arquivo = f'{aditivo.numero}.pdf'
+
+        ok = notificar_documento(
+            telefone=telefone,
+            pdf_bytes=pdf_bytes,
+            nome_arquivo=nome_arquivo,
+            caption=caption,
+            cliente=aditivo.cliente,
+            tipo='aditivo_contrato',
+        )
+
+        if not ok:
+            return Response(
+                {'detail': 'Falha ao enviar via WhatsApp. Verifique as credenciais Z-API em Configurações.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        registrar(
+            request.user, LogAuditoria.ACAO_ADITIVO_ENVIADO,
+            detalhes={
+                'aditivo_numero': aditivo.numero, 'contrato_numero': aditivo.contrato.numero,
+                'evento_id': aditivo.evento_id,
+                'cliente': aditivo.cliente.nome if aditivo.cliente else None,
+                'telefone': telefone,
+            },
+            request=request,
+        )
+
+        return Response(AditivoContratoSerializer(aditivo).data)
 
 
 # ─── Configuração de Contrato (singleton) ─────────────────────────────────────

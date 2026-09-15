@@ -16,6 +16,8 @@ class LogAuditoria(models.Model):
     ACAO_PAGAMENTO_REMOVIDO   = 'pagamento_removido'
     ACAO_CONTRATO_EMITIDO = 'contrato_emitido'
     ACAO_CONTRATO_ENVIADO = 'contrato_enviado'
+    ACAO_ADITIVO_EMITIDO = 'aditivo_emitido'
+    ACAO_ADITIVO_ENVIADO = 'aditivo_enviado'
     ACAO_AJUSTE_LINEAR_APLICADO = 'ajuste_linear_aplicado'
     ACAO_AJUSTE_LINEAR_DESFEITO = 'ajuste_linear_desfeito'
     ACAO_PRECO_MATERIA_ATUALIZADO = 'preco_materia_atualizado'
@@ -61,6 +63,8 @@ class LogAuditoria(models.Model):
         (ACAO_PAGAMENTO_REMOVIDO,   'Pagamento removido'),
         (ACAO_CONTRATO_EMITIDO, 'Contrato emitido'),
         (ACAO_CONTRATO_ENVIADO, 'Contrato enviado'),
+        (ACAO_ADITIVO_EMITIDO, 'Aditivo de contrato emitido'),
+        (ACAO_ADITIVO_ENVIADO, 'Aditivo de contrato enviado'),
         (ACAO_AJUSTE_LINEAR_APLICADO, 'Ajuste linear de preços aplicado'),
         (ACAO_AJUSTE_LINEAR_DESFEITO, 'Ajuste linear de preços desfeito'),
         (ACAO_PRECO_MATERIA_ATUALIZADO, 'Preço de matéria-prima atualizado'),
