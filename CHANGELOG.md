@@ -5,6 +5,18 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.5.5] - 2026-09-15
+
+### Adicionado
+- **Eventos — Aditivo de Contrato**: Evento com Contrato já emitido pode ser alterado pelo
+  cliente (itens/valores) antes do evento acontecer — a própria Cláusula 19ª do contrato já
+  previa "aditivo contratual por escrito" nesse caso. Novo model `AditivoContrato` (snapshot
+  imutável, `ADT-0001...`) documenta cada alteração de valor com os itens/totais atualizados,
+  encadeado ao contrato ou ao aditivo anterior. Botão "Emitir Aditivo" em `Eventos.jsx`
+  (listagem + detalhe) só aparece quando o valor do evento divergiu do que já foi documentado.
+  PDF dedicado (`pdf_aditivo.py`) reaproveita a identidade visual do contrato; envio por
+  WhatsApp segue o mesmo padrão do Contrato. Ver `Contrato.md` § 9.
+
 ## [v1.5.4] - 2026-09-10
 
 ### Adicionado
