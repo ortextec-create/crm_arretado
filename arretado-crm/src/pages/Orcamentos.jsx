@@ -1633,6 +1633,13 @@ const FORMA_PAGAMENTO_ENTRADA_OPTS = [
   ['outro',    'Outro'],
 ]
 
+function formatarCpf(v) {
+  return v.replace(/\D/g, '').slice(0, 11)
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+}
+
 function ModalEmitirContrato({ orc, onClose, onGerado }) {
   const [loadingCliente,       setLoadingCliente]       = useState(true)
   const [temEnderecoPrincipal, setTemEnderecoPrincipal] = useState(false)
@@ -1680,6 +1687,10 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
       setErro('Preencha CPF, RG, nacionalidade, profissão e estado civil do CONTRATANTE.')
       return
     }
+    if (!/^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(form.cpf)) {
+      setErro('CPF em formato inválido. Use 000.000.000-00.')
+      return
+    }
     if (!temEnderecoPrincipal && !form.endereco_avulso) {
       setErro('O cliente não tem endereço principal cadastrado — informe um endereço para o contrato.')
       return
@@ -1692,7 +1703,10 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
       onGerado?.(res.data)
     } catch (e) {
       const data = e?.response?.data
-      const msg = data?.mensagem || (data?.campos_faltando ? `Faltam: ${data.campos_faltando.join(', ')}` : data?.detail)
+      const msg = data?.mensagem
+        || (data?.campos_faltando ? `Faltam: ${data.campos_faltando.join(', ')}` : null)
+        || data?.detail
+        || (Array.isArray(data?.cpf) ? `CPF: ${data.cpf[0]}` : null)
       setErro(msg || 'Erro ao emitir contrato.')
     } finally {
       setSaving(false)
@@ -1776,7 +1790,7 @@ function ModalEmitirContrato({ orc, onClose, onGerado }) {
       <div className={styles.formGrid}>
         <div className={styles.formGroup}>
           <label>CPF *</label>
-          <input value={form.cpf} onChange={e => set('cpf', e.target.value)} placeholder="000.000.000-00" />
+          <input value={form.cpf} onChange={e => set('cpf', formatarCpf(e.target.value))} placeholder="000.000.000-00" maxLength={14} />
         </div>
         <div className={styles.formGroup}>
           <label>RG *</label>
