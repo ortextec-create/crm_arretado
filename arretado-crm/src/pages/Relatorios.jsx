@@ -40,9 +40,17 @@ export default function Relatorios() {
         >
           <i className="ti ti-trophy" /> Produtos Mais Vendidos
         </button>
+        <button
+          className={`${styles.tabBtn} ${aba === 'eventos' ? styles.tabBtnActive : ''}`}
+          onClick={() => setAba('eventos')}
+        >
+          <i className="ti ti-calendar-event" /> Eventos
+        </button>
       </div>
 
-      {aba === 'canal' ? <RelatorioCanal /> : <RelatorioProdutos />}
+      {aba === 'canal' && <RelatorioCanal />}
+      {aba === 'produtos' && <RelatorioProdutos />}
+      {aba === 'eventos' && <RelatorioEventos />}
     </div>
   )
 }
@@ -526,6 +534,292 @@ function RelatorioProdutos() {
                             : <span className={styles.muted}>—</span>}
                         </td>
                       ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  )
+}
+
+// ── Aba: Eventos ────────────────────────────────────────────────────────────
+
+const STATUS_LABEL_EVENTO = {
+  orcamento: 'Orçamento', confirmado: 'Confirmado', em_producao: 'Em produção',
+  pronto: 'Pronto', entregue: 'Entregue', cancelado: 'Cancelado',
+}
+
+function RelatorioEventos() {
+  const { empresaAtiva, empresas } = useAuth()
+  const multiEmpresa = (empresas?.length || 0) > 1
+  const [todas, setTodas] = useState(false)
+  const empresaParam = todas ? 'todas' : empresaAtiva?.id
+
+  const [dataInicio, setDataInicio]   = useState(mesPasado)
+  const [dataFim, setDataFim]         = useState(hoje)
+  const [agrupamento, setAgrupamento] = useState('dia')
+  const [dados, setDados]             = useState(null)
+  const [loading, setLoading]         = useState(false)
+  const [erro, setErro]               = useState(null)
+
+  const buscar = useCallback(async () => {
+    setLoading(true)
+    setErro(null)
+    try {
+      const res = await relatoriosApi.eventos({ data_inicio: dataInicio, data_fim: dataFim, agrupamento, empresa: empresaParam })
+      setDados(res.data)
+    } catch (e) {
+      setErro('Falha ao carregar relatório.')
+    } finally {
+      setLoading(false)
+    }
+  }, [dataInicio, dataFim, agrupamento, empresaParam])
+
+  const exportar = (formato) => {
+    const p = new URLSearchParams({ formato, data_inicio: dataInicio, data_fim: dataFim, agrupamento })
+    if (empresaParam) p.set('empresa', empresaParam)
+    window.open(`/api/v1/relatorios/eventos/?${p}`, '_blank')
+  }
+
+  const r = dados?.resumo
+  const agrupado = dados?.agrupado || []
+  const eventos  = dados?.eventos || []
+
+  return (
+    <>
+      {dados && (
+        <div className={styles.exportRow}>
+          <div className={styles.exportBtns}>
+            <button className={styles.btnExcel} onClick={() => exportar('excel')}>
+              <i className="ti ti-table-export" /> Excel
+            </button>
+            <button className={styles.btnPdf} onClick={() => exportar('pdf')}>
+              <i className="ti ti-file-type-pdf" /> PDF
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Filtros ── */}
+      <div className={styles.filtros}>
+        <div className={styles.filtroGrupo}>
+          <label>Canal</label>
+          <div className={styles.canalChip}>
+            <i className="ti ti-calendar-event" /> Eventos
+          </div>
+        </div>
+
+        {multiEmpresa && (
+          <div className={styles.filtroGrupo}>
+            <label>Empresa</label>
+            <div className={styles.segControl}>
+              <button
+                className={`${styles.segBtn} ${!todas ? styles.segBtnActive : ''}`}
+                onClick={() => setTodas(false)}
+              >
+                {empresaAtiva?.nome || 'Empresa ativa'}
+              </button>
+              <button
+                className={`${styles.segBtn} ${todas ? styles.segBtnActive : ''}`}
+                onClick={() => setTodas(true)}
+              >
+                Todas
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className={styles.filtroGrupo}>
+          <label>Período</label>
+          <div className={styles.dateRange}>
+            <input
+              type="date"
+              value={dataInicio}
+              max={dataFim}
+              onChange={e => setDataInicio(e.target.value)}
+              className={styles.dateInput}
+            />
+            <span className={styles.dateSep}>até</span>
+            <input
+              type="date"
+              value={dataFim}
+              min={dataInicio}
+              onChange={e => setDataFim(e.target.value)}
+              className={styles.dateInput}
+            />
+          </div>
+        </div>
+
+        <div className={styles.filtroGrupo}>
+          <label>Agrupamento</label>
+          <div className={styles.segControl}>
+            {[['dia', 'Por dia'], ['mes', 'Por mês']].map(([v, l]) => (
+              <button
+                key={v}
+                className={`${styles.segBtn} ${agrupamento === v ? styles.segBtnActive : ''}`}
+                onClick={() => setAgrupamento(v)}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button
+          className={styles.btnBuscar}
+          onClick={buscar}
+          disabled={loading}
+        >
+          {loading ? <i className="ti ti-loader-2 spin" /> : <i className="ti ti-search" />}
+          {loading ? 'Buscando…' : 'Buscar'}
+        </button>
+      </div>
+
+      {erro && <div className={styles.erro}><i className="ti ti-alert-circle" /> {erro}</div>}
+
+      {!dados && !loading && (
+        <div className={styles.vazio}>
+          <i className="ti ti-calendar-event" />
+          <p>Configure o período e clique em <strong>Buscar</strong> para gerar o relatório. Datas consideram a <strong>data do evento</strong>, não a data de criação.</p>
+        </div>
+      )}
+
+      {loading && (
+        <div className={styles.vazio}>
+          <i className="ti ti-loader-2 spin" style={{ fontSize: 32 }} />
+          <p>Carregando dados…</p>
+        </div>
+      )}
+
+      {dados && !loading && (
+        <>
+          {/* Cards de resumo */}
+          <div className={styles.cards}>
+            <div className={styles.card}>
+              <div className={styles.cardIcon} style={{ background: 'rgba(201,122,58,.12)', color: 'var(--caramelo)' }}>
+                <i className="ti ti-calendar-event" />
+              </div>
+              <div>
+                <p className={styles.cardLabel}>Total de Eventos</p>
+                <p className={styles.cardVal}>{r.total_eventos}</p>
+              </div>
+            </div>
+
+            <div className={styles.card}>
+              <div className={styles.cardIcon} style={{ background: 'rgba(34,197,94,.12)', color: '#16a34a' }}>
+                <i className="ti ti-currency-dollar" />
+              </div>
+              <div>
+                <p className={styles.cardLabel}>Valor Total</p>
+                <p className={styles.cardVal}>{BRL(r.valor_total)}</p>
+              </div>
+            </div>
+
+            <div className={styles.card}>
+              <div className={styles.cardIcon} style={{ background: 'rgba(59,130,246,.12)', color: '#2563eb' }}>
+                <i className="ti ti-cash" />
+              </div>
+              <div>
+                <p className={styles.cardLabel}>Valor Recebido</p>
+                <p className={styles.cardVal}>{BRL(r.valor_recebido)}</p>
+              </div>
+            </div>
+
+            <div className={styles.card}>
+              <div className={styles.cardIcon} style={{ background: 'rgba(239,68,68,.12)', color: '#dc2626' }}>
+                <i className="ti ti-hourglass" />
+              </div>
+              <div>
+                <p className={styles.cardLabel}>Saldo a Receber</p>
+                <p className={styles.cardVal}>{BRL(r.saldo_a_receber)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.tipoRow}>
+            <span className={styles.tipoChip}>
+              <i className="ti ti-receipt" /> Ticket médio: <strong>{BRL(r.ticket_medio)}</strong>
+            </span>
+            {r.cancelados > 0 && (
+              <span className={styles.tipoChip}>
+                <i className="ti ti-x" /> Cancelados: <strong>{r.cancelados}</strong>
+              </span>
+            )}
+          </div>
+
+          {/* Tabela por período */}
+          {agrupado.length > 0 && (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>{agrupamento === 'mes' ? 'Mês' : 'Data'}</th>
+                    <th className={styles.num}>Eventos</th>
+                    <th className={styles.num}>Valor Total</th>
+                    <th className={styles.num}>Valor Recebido</th>
+                    <th className={styles.num}>Saldo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agrupado.map((row) => (
+                    <tr key={row.periodo}>
+                      <td className={styles.label}>{row.label}</td>
+                      <td className={styles.num}>{row.eventos}</td>
+                      <td className={styles.num}>{BRL(row.valor_total)}</td>
+                      <td className={styles.num}>{BRL(row.valor_recebido)}</td>
+                      <td className={styles.num}>{BRL(row.saldo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className={styles.totalRow}>
+                    <td>TOTAL</td>
+                    <td className={styles.num}>{r.total_eventos}</td>
+                    <td className={styles.num}>{BRL(r.valor_total)}</td>
+                    <td className={styles.num}>{BRL(r.valor_recebido)}</td>
+                    <td className={styles.num}>{BRL(r.saldo_a_receber)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Lista de eventos */}
+          {eventos.length === 0 ? (
+            <div className={styles.vazio}>
+              <i className="ti ti-inbox" />
+              <p>Nenhum evento encontrado no período selecionado.</p>
+            </div>
+          ) : (
+            <div className={styles.tableWrap} style={{ marginTop: 16 }}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    <th>Cliente</th>
+                    <th>Data</th>
+                    <th>Status</th>
+                    <th className={styles.num}>Valor Total</th>
+                    <th className={styles.num}>Valor Recebido</th>
+                    <th className={styles.num}>Saldo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventos.map((e) => (
+                    <tr key={e.id}>
+                      <td className={styles.label}>{e.numero}</td>
+                      <td>{e.cliente}</td>
+                      <td>{e.data_evento_label}</td>
+                      <td className={e.status === 'cancelado' ? styles.cancel : ''}>
+                        {STATUS_LABEL_EVENTO[e.status] || e.status_label}
+                      </td>
+                      <td className={styles.num}>{BRL(e.valor_total)}</td>
+                      <td className={styles.num}>{BRL(e.valor_recebido)}</td>
+                      <td className={styles.num}>{BRL(e.saldo)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from empresas.models import Empresa
 from ifood.models import PedidoIFood, ItemPedidoIFood
 from pdv.models import ItemPedidoPDV
-from eventos.models import ItemEvento
+from eventos.models import Evento, ItemEvento
 from usuarios.authentication import TokenAuthentication
 
 
@@ -395,6 +395,419 @@ class RelatorioIFoodView(CsrfExemptMixin, views.APIView):
         buf.seek(0)
 
         fname = f'relatorio_ifood_{dados["periodo"]["inicio"]}_{dados["periodo"]["fim"]}.pdf'
+        response = HttpResponse(buf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
+
+
+class RelatorioEventosView(CsrfExemptMixin, views.APIView):
+    """
+    Lista de Eventos num período + resumo (ver CLAUDE.md — pendência de
+    expandir relatório de canal pra Eventos/Orçamentos, parte de Eventos).
+    Eventos é mono-empresa (sem FK própria) — só retorna dado quando a
+    empresa resolvida é a matriz ou 'todas' (mesma regra de
+    ProdutosMaisVendidosView/dashboard). Filtra por Evento.data_evento (não
+    criado_em). "Valor recebido" é sempre Evento.sinal_pago (campo já
+    derivado via recalcular_sinal_pago(), nunca Evento.valor_total nem soma
+    ao vivo de PagamentoEvento aqui).
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        params = request.query_params
+        formato = params.get('formato', 'json')
+        agrupamento = params.get('agrupamento', 'dia')
+        empresa = _resolver_empresa(request)
+
+        hoje = timezone.localtime(timezone.now()).date()
+        try:
+            data_inicio = date.fromisoformat(params['data_inicio']) if params.get('data_inicio') else hoje - timedelta(days=29)
+        except ValueError:
+            data_inicio = hoje - timedelta(days=29)
+        try:
+            data_fim = date.fromisoformat(params['data_fim']) if params.get('data_fim') else hoje
+        except ValueError:
+            data_fim = hoje
+
+        if data_inicio > data_fim:
+            data_inicio, data_fim = data_fim, data_inicio
+
+        mono_empresa_habilitado = empresa is None or empresa.padrao
+        if mono_empresa_habilitado:
+            qs = Evento.objects.select_related('cliente').filter(
+                data_evento__gte=data_inicio,
+                data_evento__lte=data_fim,
+            ).order_by('data_evento', 'numero')
+        else:
+            qs = Evento.objects.none()
+
+        resumo = self._calc_resumo(qs)
+        agrupado = self._calc_agrupado(qs, agrupamento)
+        eventos = self._listar_eventos(qs)
+
+        dados = {
+            'periodo': {'inicio': str(data_inicio), 'fim': str(data_fim)},
+            'agrupamento': agrupamento,
+            'resumo': resumo,
+            'agrupado': agrupado,
+            'eventos': eventos,
+        }
+
+        if formato == 'excel':
+            return self._export_excel(dados)
+        if formato == 'pdf':
+            return self._export_pdf(dados)
+
+        return Response(dados)
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _listar_eventos(self, qs):
+        result = []
+        for e in qs:
+            valor_total = float(e.valor_total or 0)
+            recebido = float(e.sinal_pago or 0)
+            result.append({
+                'id': e.id,
+                'numero': e.numero,
+                'cliente': e.nome_cliente_display,
+                'data_evento': str(e.data_evento),
+                'data_evento_label': e.data_evento.strftime('%d/%m/%Y') if e.data_evento else '',
+                'status': e.status,
+                'status_label': e.get_status_display(),
+                'valor_total': round(valor_total, 2),
+                'valor_recebido': round(recebido, 2),
+                'saldo': round(max(valor_total - recebido, 0), 2),
+            })
+        return result
+
+    def _calc_resumo(self, qs):
+        agg = qs.aggregate(
+            total=Count('id'),
+            valor_total=Sum('valor_total'),
+            valor_recebido=Sum('sinal_pago'),
+            cancelados=Count('id', filter=Q(status='cancelado')),
+        )
+        total = agg['total'] or 0
+        valor_total = float(agg['valor_total'] or 0)
+        valor_recebido = float(agg['valor_recebido'] or 0)
+        return {
+            'total_eventos': total,
+            'valor_total': round(valor_total, 2),
+            'valor_recebido': round(valor_recebido, 2),
+            'saldo_a_receber': round(max(valor_total - valor_recebido, 0), 2),
+            'ticket_medio': round(valor_total / total, 2) if total else 0,
+            'cancelados': agg['cancelados'] or 0,
+        }
+
+    def _calc_agrupado(self, qs, agrupamento):
+        trunc_fn = TruncMonth('data_evento') if agrupamento == 'mes' else TruncDate('data_evento')
+
+        rows = (
+            qs
+            .annotate(periodo=trunc_fn)
+            .values('periodo')
+            .annotate(
+                eventos=Count('id'),
+                valor_total=Sum('valor_total'),
+                valor_recebido=Sum('sinal_pago'),
+            )
+            .order_by('periodo')
+        )
+
+        result = []
+        for row in rows:
+            p = row['periodo']
+            if hasattr(p, 'date'):
+                p = p.date()
+            label = p.strftime('%b/%Y') if agrupamento == 'mes' else p.strftime('%d/%m/%Y')
+
+            valor_total = float(row['valor_total'] or 0)
+            valor_recebido = float(row['valor_recebido'] or 0)
+            result.append({
+                'periodo': str(p),
+                'label': label,
+                'eventos': row['eventos'] or 0,
+                'valor_total': round(valor_total, 2),
+                'valor_recebido': round(valor_recebido, 2),
+                'saldo': round(max(valor_total - valor_recebido, 0), 2),
+            })
+
+        return result
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _export_excel(self, dados):
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+
+        CARAMELO = 'C97A3A'
+        CINZA    = 'F5F5F5'
+
+        def hfont(): return Font(bold=True, color='FFFFFF', size=11)
+        def hfill(): return PatternFill('solid', fgColor=CARAMELO)
+        def center(): return Alignment(horizontal='center', vertical='center')
+        def tfont(): return Font(bold=True, color='FFFFFF')
+
+        wb = openpyxl.Workbook()
+
+        # ── Sheet 1: Resumo ────────────────────────────────────────────────────
+        ws1 = wb.active
+        ws1.title = 'Resumo'
+
+        ws1.merge_cells('A1:B1')
+        t = ws1['A1']
+        t.value = (
+            f'Relatório de Eventos  —  '
+            f'{dados["periodo"]["inicio"]} a {dados["periodo"]["fim"]}'
+        )
+        t.font = Font(bold=True, size=13, color=CARAMELO)
+        t.alignment = center()
+        ws1.row_dimensions[1].height = 28
+        ws1.append([])
+
+        r = dados['resumo']
+        summary = [
+            ('Total de Eventos',      r['total_eventos']),
+            ('Valor Total (R$)',      r['valor_total']),
+            ('Valor Recebido (R$)',   r['valor_recebido']),
+            ('Saldo a Receber (R$)',  r['saldo_a_receber']),
+            ('Ticket Médio (R$)',     r['ticket_medio']),
+            ('Cancelados',            r['cancelados']),
+        ]
+
+        ws1.append(['Indicador', 'Valor'])
+        hr = ws1.max_row
+        for col in range(1, 3):
+            c = ws1.cell(hr, col)
+            c.font, c.fill, c.alignment = hfont(), hfill(), center()
+
+        for i, (label, val) in enumerate(summary, 1):
+            ws1.append([label, val])
+            rn = ws1.max_row
+            ws1.cell(rn, 1).alignment = Alignment(horizontal='left', vertical='center')
+            ws1.cell(rn, 2).alignment = Alignment(horizontal='right', vertical='center')
+            if i % 2 == 0:
+                for col in range(1, 3):
+                    ws1.cell(rn, col).fill = PatternFill('solid', fgColor=CINZA)
+
+        ws1.column_dimensions['A'].width = 28
+        ws1.column_dimensions['B'].width = 20
+
+        # ── Sheet 2: Por Período ───────────────────────────────────────────────
+        ws2 = wb.create_sheet('Por Período')
+        agrup = 'Mês' if dados['agrupamento'] == 'mes' else 'Data'
+        headers2 = [agrup, 'Eventos', 'Valor Total (R$)', 'Valor Recebido (R$)', 'Saldo (R$)']
+        ws2.append(headers2)
+        hr2 = ws2.max_row
+        for col in range(1, len(headers2) + 1):
+            c = ws2.cell(hr2, col)
+            c.font, c.fill, c.alignment = hfont(), hfill(), center()
+
+        for i, row in enumerate(dados['agrupado'], 1):
+            ws2.append([row['label'], row['eventos'], row['valor_total'], row['valor_recebido'], row['saldo']])
+            rn = ws2.max_row
+            for col in (3, 4, 5):
+                ws2.cell(rn, col).number_format = '#,##0.00'
+            if i % 2 == 0:
+                for col in range(1, len(headers2) + 1):
+                    ws2.cell(rn, col).fill = PatternFill('solid', fgColor=CINZA)
+
+        if dados['agrupado']:
+            te = sum(x['eventos']         for x in dados['agrupado'])
+            tt = sum(x['valor_total']     for x in dados['agrupado'])
+            tr = sum(x['valor_recebido']  for x in dados['agrupado'])
+            ts = sum(x['saldo']           for x in dados['agrupado'])
+            ws2.append(['TOTAL', te, round(tt, 2), round(tr, 2), round(ts, 2)])
+            rn = ws2.max_row
+            for col in range(1, len(headers2) + 1):
+                c = ws2.cell(rn, col)
+                c.font, c.fill, c.alignment = tfont(), hfill(), center()
+            for col in (3, 4, 5):
+                ws2.cell(rn, col).number_format = '#,##0.00'
+
+        for w, col in zip([18, 12, 18, 20, 16], 'ABCDE'):
+            ws2.column_dimensions[col].width = w
+        ws2.auto_filter.ref = f'A1:E{ws2.max_row}'
+
+        # ── Sheet 3: Eventos ────────────────────────────────────────────────────
+        ws3 = wb.create_sheet('Eventos')
+        headers3 = ['Evento', 'Cliente', 'Data', 'Status', 'Valor Total (R$)', 'Valor Recebido (R$)', 'Saldo (R$)']
+        ws3.append(headers3)
+        hr3 = ws3.max_row
+        for col in range(1, len(headers3) + 1):
+            c = ws3.cell(hr3, col)
+            c.font, c.fill, c.alignment = hfont(), hfill(), center()
+
+        for i, e in enumerate(dados['eventos'], 1):
+            ws3.append([
+                e['numero'], e['cliente'], e['data_evento_label'], e['status_label'],
+                e['valor_total'], e['valor_recebido'], e['saldo'],
+            ])
+            rn = ws3.max_row
+            for col in (5, 6, 7):
+                ws3.cell(rn, col).number_format = '#,##0.00'
+            if i % 2 == 0:
+                for col in range(1, len(headers3) + 1):
+                    ws3.cell(rn, col).fill = PatternFill('solid', fgColor=CINZA)
+
+        for w, col in zip([14, 26, 12, 14, 18, 20, 16], 'ABCDEFG'):
+            ws3.column_dimensions[col].width = w
+        ws3.auto_filter.ref = f'A1:G{ws3.max_row}'
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        fname = f'relatorio_eventos_{dados["periodo"]["inicio"]}_{dados["periodo"]["fim"]}.xlsx'
+        response = HttpResponse(buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _export_pdf(self, dados):
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.lib.units import cm
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+            from reportlab.platypus import (
+                SimpleDocTemplate, Table, TableStyle,
+                Paragraph, Spacer, HRFlowable,
+            )
+        except ImportError:
+            return HttpResponse(
+                'Dependência reportlab não instalada. Execute: pip install reportlab',
+                status=500,
+            )
+
+        CARAMELO = colors.HexColor('#C97A3A')
+        CINZA    = colors.HexColor('#F5F5F5')
+        CINZA_BD = colors.HexColor('#E7E5E4')
+
+        title_s  = ParagraphStyle('t',  fontName='Helvetica-Bold', fontSize=15, textColor=CARAMELO, alignment=TA_CENTER, spaceAfter=4)
+        sub_s    = ParagraphStyle('s',  fontName='Helvetica',      fontSize=9,  textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)
+        sec_s    = ParagraphStyle('sc', fontName='Helvetica-Bold', fontSize=11, textColor=CARAMELO, spaceBefore=14, spaceAfter=6)
+        footer_s = ParagraphStyle('f',  fontName='Helvetica',      fontSize=7,  textColor=colors.grey, alignment=TA_RIGHT)
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+
+        story = []
+        story.append(Paragraph('Arretado Doces — Relatório de Eventos', title_s))
+        agrup_txt = 'Mensal' if dados['agrupamento'] == 'mes' else 'Diário'
+        story.append(Paragraph(
+            f'Período: {dados["periodo"]["inicio"]} a {dados["periodo"]["fim"]} &nbsp;|&nbsp; Agrupamento: {agrup_txt}',
+            sub_s,
+        ))
+        story.append(HRFlowable(width='100%', thickness=2, color=CARAMELO, spaceAfter=8))
+
+        # Resumo
+        story.append(Paragraph('Resumo do Período', sec_s))
+        r = dados['resumo']
+        resumo_rows = [
+            ['Indicador', 'Valor'],
+            ['Total de Eventos',    str(r['total_eventos'])],
+            ['Valor Total',         f'R$ {r["valor_total"]:.2f}'],
+            ['Valor Recebido',      f'R$ {r["valor_recebido"]:.2f}'],
+            ['Saldo a Receber',     f'R$ {r["saldo_a_receber"]:.2f}'],
+            ['Ticket Médio',        f'R$ {r["ticket_medio"]:.2f}'],
+            ['Cancelados',          str(r['cancelados'])],
+        ]
+        t_resumo = Table(resumo_rows, colWidths=[9*cm, 6*cm])
+        t_resumo.setStyle(TableStyle([
+            ('BACKGROUND',   (0, 0), (-1, 0), CARAMELO),
+            ('TEXTCOLOR',    (0, 0), (-1, 0), colors.white),
+            ('FONTNAME',     (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',     (0, 0), (-1, 0), 10),
+            ('FONTSIZE',     (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, CINZA]),
+            ('GRID',         (0, 0), (-1, -1), 0.5, CINZA_BD),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING',   (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 5),
+            ('ALIGN',        (1, 0), (1, -1), 'RIGHT'),
+        ]))
+        story.append(t_resumo)
+
+        # Por Período
+        story.append(Paragraph('Por Período', sec_s))
+        agrup_col = 'Mês' if dados['agrupamento'] == 'mes' else 'Data'
+        per_rows = [[agrup_col, 'Eventos', 'Valor Total (R$)', 'Valor Recebido (R$)', 'Saldo (R$)']]
+        for row in dados['agrupado']:
+            per_rows.append([
+                row['label'], str(row['eventos']),
+                f'{row["valor_total"]:.2f}', f'{row["valor_recebido"]:.2f}', f'{row["saldo"]:.2f}',
+            ])
+        if dados['agrupado']:
+            te = sum(x['eventos']        for x in dados['agrupado'])
+            tt = sum(x['valor_total']    for x in dados['agrupado'])
+            tr = sum(x['valor_recebido'] for x in dados['agrupado'])
+            tsl = sum(x['saldo']         for x in dados['agrupado'])
+            per_rows.append(['TOTAL', str(te), f'{tt:.2f}', f'{tr:.2f}', f'{tsl:.2f}'])
+
+        last_per = len(per_rows) - 1
+        t_per = Table(per_rows, colWidths=[3.5*cm, 2.5*cm, 3.5*cm, 3.5*cm, 3*cm])
+        ts_per = [
+            ('BACKGROUND',   (0, 0),  (-1, 0),  CARAMELO),
+            ('TEXTCOLOR',    (0, 0),  (-1, 0),  colors.white),
+            ('FONTNAME',     (0, 0),  (-1, 0),  'Helvetica-Bold'),
+            ('FONTSIZE',     (0, 0),  (-1, 0),  9),
+            ('FONTSIZE',     (0, 1),  (-1, -1), 8),
+            ('ALIGN',        (0, 0),  (-1, -1), 'CENTER'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, last_per - 1), [colors.white, CINZA]),
+            ('GRID',         (0, 0),  (-1, -1), 0.5, CINZA_BD),
+            ('TOPPADDING',   (0, 0),  (-1, -1), 4),
+            ('BOTTOMPADDING',(0, 0),  (-1, -1), 4),
+        ]
+        if len(per_rows) > 1:
+            ts_per += [
+                ('BACKGROUND', (0, last_per), (-1, last_per), CARAMELO),
+                ('TEXTCOLOR',  (0, last_per), (-1, last_per), colors.white),
+                ('FONTNAME',   (0, last_per), (-1, last_per), 'Helvetica-Bold'),
+            ]
+        t_per.setStyle(TableStyle(ts_per))
+        story.append(t_per)
+
+        # Lista de Eventos
+        story.append(Paragraph('Lista de Eventos', sec_s))
+        ev_rows = [['Evento', 'Cliente', 'Data', 'Status', 'Valor Total', 'Recebido', 'Saldo']]
+        for e in dados['eventos']:
+            ev_rows.append([
+                e['numero'], e['cliente'], e['data_evento_label'], e['status_label'],
+                f'{e["valor_total"]:.2f}', f'{e["valor_recebido"]:.2f}', f'{e["saldo"]:.2f}',
+            ])
+
+        t_ev = Table(ev_rows, colWidths=[2.2*cm, 4.3*cm, 2.2*cm, 2.3*cm, 2.6*cm, 2.4*cm, 2*cm], repeatRows=1)
+        t_ev.setStyle(TableStyle([
+            ('BACKGROUND',   (0, 0), (-1, 0), CARAMELO),
+            ('TEXTCOLOR',    (0, 0), (-1, 0), colors.white),
+            ('FONTNAME',     (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',     (0, 0), (-1, 0), 8),
+            ('FONTSIZE',     (0, 1), (-1, -1), 7.5),
+            ('ALIGN',        (2, 0), (-1, -1), 'CENTER'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, CINZA]),
+            ('GRID',         (0, 0), (-1, -1), 0.5, CINZA_BD),
+            ('TOPPADDING',   (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 3),
+        ]))
+        story.append(t_ev)
+
+        story.append(Spacer(1, 0.5*cm))
+        story.append(HRFlowable(width='100%', thickness=1, color=CINZA_BD))
+        story.append(Paragraph(
+            f'Gerado em {timezone.now().strftime("%d/%m/%Y às %H:%M")} — Arretado Doces CRM',
+            footer_s,
+        ))
+
+        doc.build(story)
+        buf.seek(0)
+
+        fname = f'relatorio_eventos_{dados["periodo"]["inicio"]}_{dados["periodo"]["fim"]}.pdf'
         response = HttpResponse(buf, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{fname}"'
         return response
