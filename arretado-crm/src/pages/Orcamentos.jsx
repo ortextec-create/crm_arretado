@@ -502,7 +502,21 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
     const id = e.target.value
     if (!id) { setNovoItem(i => ({ ...i, produto: '', nome: '', preco_unit: '' })); return }
     const p = produtos.find(p => String(p.id) === id)
-    if (p) setNovoItem(i => ({ ...i, produto: id, nome: p.nome, preco_unit: String(p.preco) }))
+    if (!p) return
+    setNovoItem(i => ({ ...i, produto: id, nome: p.nome, preco_unit: String(p.preco) }))
+    pdvApi.precoPara(id, { quantidade: parseInt(novoItem.quantidade) || 1 })
+      .then(r => setNovoItem(i => (i.produto === id ? { ...i, preco_unit: String(r.data.preco) } : i)))
+      .catch(() => {})
+  }
+
+  function handleQtdItem(e) {
+    const quantidade = e.target.value
+    setNovoItem(i => ({ ...i, quantidade }))
+    const produtoId = novoItem.produto
+    if (!produtoId) return
+    pdvApi.precoPara(produtoId, { quantidade: parseInt(quantidade) || 1 })
+      .then(r => setNovoItem(i => (i.produto === produtoId ? { ...i, preco_unit: String(r.data.preco) } : i)))
+      .catch(() => {})
   }
 
   function addItem() {
@@ -726,7 +740,7 @@ function ModalNovoOrcamento({ onClose, onSalvo }) {
               type="number" placeholder="Qtd"
               min="1"
               value={novoItem.quantidade}
-              onChange={e => setNovoItem(i => ({ ...i, quantidade: e.target.value }))}
+              onChange={handleQtdItem}
               className={styles.inputQtd}
             />
             <SeletorNatureza
@@ -822,7 +836,30 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
     const id = e.target.value
     if (!id) { setNovoItem(i => ({ ...i, produto: '', nome: '', preco_unit: '' })); return }
     const p = produtos.find(p => String(p.id) === id)
-    if (p) setNovoItem(i => ({ ...i, produto: id, nome: p.nome, preco_unit: String(p.preco) }))
+    if (!p) return
+    setNovoItem(i => ({ ...i, produto: id, nome: p.nome, preco_unit: String(p.preco) }))
+    pdvApi.precoPara(id, { quantidade: parseInt(novoItem.quantidade) || 1 })
+      .then(r => setNovoItem(i => (i.produto === id ? { ...i, preco_unit: String(r.data.preco) } : i)))
+      .catch(() => {})
+  }
+
+  function handleQtdItem(e) {
+    const quantidade = e.target.value
+    setNovoItem(i => ({ ...i, quantidade }))
+    const produtoId = novoItem.produto
+    if (!produtoId) return
+    pdvApi.precoPara(produtoId, { quantidade: parseInt(quantidade) || 1 })
+      .then(r => setNovoItem(i => (i.produto === produtoId ? { ...i, preco_unit: String(r.data.preco) } : i)))
+      .catch(() => {})
+  }
+
+  function handleEditQtdItem(e, item) {
+    const quantidade = e.target.value
+    setEditItemForm(f => ({ ...f, quantidade }))
+    if (!item.produto) return
+    pdvApi.precoPara(item.produto, { quantidade: parseInt(quantidade) || 1 })
+      .then(r => setEditItemForm(f => (f.quantidade === quantidade ? { ...f, preco_unit: String(r.data.preco) } : f)))
+      .catch(() => {})
   }
 
   async function handleAddItem() {
@@ -961,7 +998,7 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
                         <input
                           type="number" min="1"
                           value={editItemForm.quantidade}
-                          onChange={e => setEditItemForm(f => ({ ...f, quantidade: e.target.value }))}
+                          onChange={e => handleEditQtdItem(e, item)}
                           className={styles.inputQtd}
                         />
                       </td>
@@ -1040,7 +1077,7 @@ function ModalDetalheOrcamento({ orc, onClose, onAcao, onPdf, onEnviarWpp, onRem
                 type="number" placeholder="Qtd"
                 min="1"
                 value={novoItem.quantidade}
-                onChange={e => setNovoItem(i => ({ ...i, quantidade: e.target.value }))}
+                onChange={handleQtdItem}
                 className={styles.inputQtd}
               />
               <SeletorNatureza

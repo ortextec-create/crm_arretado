@@ -691,18 +691,27 @@ function ModalNovoEvento({ onClose, onSaved }) {
     return okCat && okBusca
   })
 
+  const atualizarPrecoItem = (produtoId, quantidade) => {
+    pdvApi.precoPara(produtoId, { quantidade })
+      .then(r => setCarrinho(c => c.map(i => (i.produto === produtoId ? { ...i, preco_unit: r.data.preco } : i))))
+      .catch(() => {})
+  }
+
   const addCarrinho = (prod) => {
+    let novaQtd = 1
     setCarrinho(c => {
       const idx = c.findIndex(i => i.produto === prod.id)
       if (idx >= 0) {
-        const n = [...c]; n[idx] = { ...n[idx], quantidade: n[idx].quantidade + 1 }; return n
+        const n = [...c]; novaQtd = n[idx].quantidade + 1; n[idx] = { ...n[idx], quantidade: novaQtd }; return n
       }
       return [...c, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '', natureza: 'venda' }]
     })
+    atualizarPrecoItem(prod.id, novaQtd)
   }
   const setQty = (prodId, qty) => {
     if (qty <= 0) { setCarrinho(c => c.filter(i => i.produto !== prodId)); return }
     setCarrinho(c => c.map(i => i.produto === prodId ? { ...i, quantidade: qty } : i))
+    atualizarPrecoItem(prodId, qty)
   }
   const setObs = (prodId, obs) => {
     setCarrinho(c => c.map(i => i.produto === prodId ? { ...i, observacao: obs } : i))
@@ -1155,16 +1164,25 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
     return okCat && okBusca
   })
 
+  const atualizarPrecoItem = (produtoId, quantidade) => {
+    pdvApi.precoPara(produtoId, { quantidade })
+      .then(r => setCarrinho(c => c.map(i => (i.produto === produtoId ? { ...i, preco_unit: r.data.preco } : i))))
+      .catch(() => {})
+  }
+
   const addCarrinho = (prod) => {
+    let novaQtd = 1
     setCarrinho(c => {
       const idx = c.findIndex(i => i.produto === prod.id)
-      if (idx >= 0) { const n = [...c]; n[idx] = { ...n[idx], quantidade: n[idx].quantidade + 1 }; return n }
+      if (idx >= 0) { const n = [...c]; novaQtd = n[idx].quantidade + 1; n[idx] = { ...n[idx], quantidade: novaQtd }; return n }
       return [...c, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, observacao: '', natureza: 'venda' }]
     })
+    atualizarPrecoItem(prod.id, novaQtd)
   }
   const setQty = (id, qty) => {
     if (qty <= 0) { setCarrinho(c => c.filter(i => i.produto !== id)); return }
     setCarrinho(c => c.map(i => i.produto === id ? { ...i, quantidade: qty } : i))
+    atualizarPrecoItem(id, qty)
   }
   const setNatureza = (id, natureza) => {
     setCarrinho(c => c.map(i => i.produto === id ? { ...i, natureza } : i))

@@ -175,16 +175,25 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
     (!search || p.nome.toLowerCase().includes(search.toLowerCase()))
   )
 
+  const atualizarPrecoItem = (produtoId, quantidade) => {
+    pdvApi.precoPara(produtoId, { quantidade })
+      .then(r => setItens(prev => prev.map(i => (i.produto === produtoId ? { ...i, preco_unit: r.data.preco } : i))))
+      .catch(() => {})
+  }
+
   const adicionarItem = (prod) => {
+    let novaQtd = 1
     setItens(prev => {
       const idx = prev.findIndex(i => i.produto === prod.id)
       if (idx >= 0) {
         const novo = [...prev]
-        novo[idx] = { ...novo[idx], quantidade: novo[idx].quantidade + 1 }
+        novaQtd = novo[idx].quantidade + 1
+        novo[idx] = { ...novo[idx], quantidade: novaQtd }
         return novo
       }
       return [...prev, { produto: prod.id, nome: prod.nome, preco_unit: prod.preco, quantidade: 1, natureza: 'venda' }]
     })
+    atualizarPrecoItem(prod.id, novaQtd)
   }
 
   const setNaturezaItem = (idx, natureza) => setItens(prev => {
@@ -222,13 +231,20 @@ function ModalNovoPedido({ produtos, categorias, clientes, onClose, onSaved, sho
 
   const removerItem = (idx) => setItens(prev => prev.filter((_, i) => i !== idx))
 
-  const alterarQtd = (idx, delta) => setItens(prev => {
-    const novo = [...prev]
-    const nova = novo[idx].quantidade + delta
-    if (nova <= 0) return prev.filter((_, i) => i !== idx)
-    novo[idx] = { ...novo[idx], quantidade: nova }
-    return novo
-  })
+  const alterarQtd = (idx, delta) => {
+    let produtoAtualizado = null
+    let qtdAtualizada = null
+    setItens(prev => {
+      const novo = [...prev]
+      const nova = novo[idx].quantidade + delta
+      if (nova <= 0) return prev.filter((_, i) => i !== idx)
+      novo[idx] = { ...novo[idx], quantidade: nova }
+      produtoAtualizado = novo[idx].produto
+      qtdAtualizada = nova
+      return novo
+    })
+    if (produtoAtualizado != null) atualizarPrecoItem(produtoAtualizado, qtdAtualizada)
+  }
 
   const subtotal = itens.reduce((s, i) => s + (i.natureza !== 'venda' ? 0 : Number(i.preco_unit) * i.quantidade), 0)
   const total    = subtotal - Number(form.desconto || 0) + Number(form.taxa_entrega || 0)
