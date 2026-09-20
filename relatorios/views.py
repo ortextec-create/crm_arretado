@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from empresas.models import Empresa
 from ifood.models import PedidoIFood, ItemPedidoIFood
-from pdv.models import ItemPedidoPDV
+from pdv.models import ItemPedidoPDV, Produto
 from eventos.models import Evento, ItemEvento
 from usuarios.authentication import TokenAuthentication
 
@@ -955,3 +955,201 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
             bucket = agregados[chave]['canais'].setdefault(canal, {'quantidade': 0, 'valor': 0.0})
             bucket['quantidade'] += row['quantidade'] or 0
             bucket['valor'] += float(row['valor'] or 0)
+
+
+def _fmt_estoque(valor):
+    """Remove zeros à direita do DecimalField(3 casas) sem cair em notação científica."""
+    texto = f'{valor:.3f}'.rstrip('0').rstrip('.')
+    return texto or '0'
+
+
+class RelatorioCatalogoView(CsrfExemptMixin, views.APIView):
+    """
+    Catálogo de produtos (pdv.Produto) com preço e saldo de estoque atual —
+    vive no menu Catálogo (Catalogo.jsx), não em Relatorios.jsx.
+    `quantidade_estoque` é campo denormalizado do próprio Produto (mantido só
+    via estoque.MovimentoEstoque.registrar(), ver CLAUDE.md) — lido direto,
+    nunca somado do ledger aqui. Mesmos filtros de ProdutoViewSet.get_queryset
+    (duplicado a propósito — ver _resolver_empresa acima) pra o export bater
+    com o que está em tela.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        params = request.query_params
+        formato = params.get('formato', 'json')
+
+        qs = Produto.objects.select_related('categoria').all()
+
+        search = params.get('search', '').strip()
+        if search:
+            qs = qs.filter(Q(nome__icontains=search) | Q(descricao__icontains=search))
+
+        categoria = params.get('categoria')
+        if categoria:
+            qs = qs.filter(categoria_id=categoria)
+
+        ativo = params.get('ativo')
+        if ativo == 'true':
+            qs = qs.filter(ativo=True)
+        elif ativo == 'false':
+            qs = qs.filter(ativo=False)
+
+        tipo = params.get('tipo')
+        if tipo:
+            qs = qs.filter(tipo=tipo)
+
+        qs = qs.order_by('categoria__ordem', 'nome')
+
+        produtos = [
+            {
+                'nome': p.nome,
+                'categoria': p.categoria.nome if p.categoria_id else '— sem categoria —',
+                'tipo': p.get_tipo_display(),
+                'preco': float(p.preco),
+                'quantidade_estoque': float(p.quantidade_estoque),
+                'ativo': p.ativo,
+            }
+            for p in qs
+        ]
+
+        dados = {
+            'gerado_em': timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M'),
+            'total_produtos': len(produtos),
+            'produtos': produtos,
+        }
+
+        if formato == 'excel':
+            return self._export_excel(dados)
+        if formato == 'pdf':
+            return self._export_pdf(dados)
+
+        return Response(dados)
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _export_excel(self, dados):
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+
+        CARAMELO = 'C97A3A'
+        CINZA    = 'F5F5F5'
+
+        def hfont(): return Font(bold=True, color='FFFFFF', size=11)
+        def hfill(): return PatternFill('solid', fgColor=CARAMELO)
+        def center(): return Alignment(horizontal='center', vertical='center')
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Catálogo'
+
+        headers = ['Produto', 'Categoria', 'Tipo', 'Preço (R$)', 'Estoque']
+
+        ws.merge_cells(f'A1:{chr(64 + len(headers))}1')
+        t = ws['A1']
+        t.value = f'Catálogo de Produtos — Arretado Doces  ({dados["total_produtos"]} produtos)'
+        t.font = Font(bold=True, size=13, color=CARAMELO)
+        t.alignment = center()
+        ws.row_dimensions[1].height = 28
+        ws.append([])
+
+        ws.append(headers)
+        hr = ws.max_row
+        for col in range(1, len(headers) + 1):
+            c = ws.cell(hr, col)
+            c.font, c.fill, c.alignment = hfont(), hfill(), center()
+
+        for i, p in enumerate(dados['produtos'], 1):
+            ws.append([p['nome'], p['categoria'], p['tipo'], p['preco'], p['quantidade_estoque']])
+            rn = ws.max_row
+            ws.cell(rn, 4).number_format = '#,##0.00'
+            ws.cell(rn, 5).number_format = '#,##0.###'
+            if i % 2 == 0:
+                for col in range(1, len(headers) + 1):
+                    ws.cell(rn, col).fill = PatternFill('solid', fgColor=CINZA)
+
+        for w, col in zip([32, 20, 14, 14, 12], 'ABCDE'):
+            ws.column_dimensions[col].width = w
+        ws.auto_filter.ref = f'A{hr}:E{ws.max_row}'
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        fname = f'catalogo_produtos_{timezone.localtime(timezone.now()).strftime("%Y%m%d")}.xlsx'
+        response = HttpResponse(buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _export_pdf(self, dados):
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.lib.units import cm
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+            from reportlab.platypus import (
+                SimpleDocTemplate, Table, TableStyle,
+                Paragraph, Spacer, HRFlowable,
+            )
+        except ImportError:
+            return HttpResponse(
+                'Dependência reportlab não instalada. Execute: pip install reportlab',
+                status=500,
+            )
+
+        CARAMELO = colors.HexColor('#C97A3A')
+        CINZA    = colors.HexColor('#F5F5F5')
+        CINZA_BD = colors.HexColor('#E7E5E4')
+
+        title_s  = ParagraphStyle('t',  fontName='Helvetica-Bold', fontSize=15, textColor=CARAMELO, alignment=TA_CENTER, spaceAfter=4)
+        sub_s    = ParagraphStyle('s',  fontName='Helvetica',      fontSize=9,  textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)
+        footer_s = ParagraphStyle('f',  fontName='Helvetica',      fontSize=7,  textColor=colors.grey, alignment=TA_RIGHT)
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+
+        story = []
+        story.append(Paragraph('Arretado Doces — Catálogo de Produtos', title_s))
+        story.append(Paragraph(f'{dados["total_produtos"]} produtos', sub_s))
+        story.append(HRFlowable(width='100%', thickness=2, color=CARAMELO, spaceAfter=8))
+
+        rows = [['Produto', 'Categoria', 'Tipo', 'Preço', 'Estoque']]
+        for p in dados['produtos']:
+            rows.append([
+                p['nome'], p['categoria'], p['tipo'],
+                f'R$ {p["preco"]:.2f}', _fmt_estoque(p['quantidade_estoque']),
+            ])
+
+        t = Table(rows, colWidths=[6.5*cm, 4*cm, 2.5*cm, 2.7*cm, 2.3*cm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND',   (0, 0), (-1, 0), CARAMELO),
+            ('TEXTCOLOR',    (0, 0), (-1, 0), colors.white),
+            ('FONTNAME',     (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',     (0, 0), (-1, 0), 9),
+            ('FONTSIZE',     (0, 1), (-1, -1), 8),
+            ('ALIGN',        (3, 0), (-1, -1), 'RIGHT'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, CINZA]),
+            ('GRID',         (0, 0), (-1, -1), 0.5, CINZA_BD),
+            ('TOPPADDING',   (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 4),
+        ]))
+        story.append(t)
+
+        story.append(Spacer(1, 0.5*cm))
+        story.append(HRFlowable(width='100%', thickness=1, color=CINZA_BD))
+        story.append(Paragraph(
+            f'Gerado em {timezone.now().strftime("%d/%m/%Y às %H:%M")} — Arretado Doces CRM',
+            footer_s,
+        ))
+
+        doc.build(story)
+        buf.seek(0)
+
+        fname = f'catalogo_produtos_{timezone.localtime(timezone.now()).strftime("%Y%m%d")}.pdf'
+        response = HttpResponse(buf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response

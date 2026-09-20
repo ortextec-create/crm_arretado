@@ -103,6 +103,15 @@ export default function Catalogo() {
 
   const totalAtivos = produtos.filter(p => p.ativo).length
 
+  function handleExportar(formato) {
+    const params = new URLSearchParams({ formato })
+    if (search.trim()) params.set('search', search.trim())
+    if (tipoFiltro) params.set('tipo', tipoFiltro)
+    if (categoriaFiltro) params.set('categoria', categoriaFiltro)
+    if (!showInativos) params.set('ativo', 'true')
+    window.open(`/api/v1/relatorios/catalogo/?${params}`, '_blank')
+  }
+
   return (
     <div className={styles.page}>
       {/* Header */}
@@ -111,9 +120,17 @@ export default function Catalogo() {
           <h1 className={`serif ${styles.title}`}>Catálogo</h1>
           <p className={styles.subtitle}>{totalAtivos} produto{totalAtivos !== 1 ? 's' : ''} ativos · fabricados, revenda e kits</p>
         </div>
-        <Btn onClick={() => setEditProd('novo')}>
-          <i className="ti ti-plus" /> Novo produto
-        </Btn>
+        <div className={styles.headerActions}>
+          <button className={styles.btnExcel} onClick={() => handleExportar('excel')}>
+            <i className="ti ti-table-export" /> Excel
+          </button>
+          <button className={styles.btnPdf} onClick={() => handleExportar('pdf')}>
+            <i className="ti ti-file-type-pdf" /> PDF
+          </button>
+          <Btn onClick={() => setEditProd('novo')}>
+            <i className="ti ti-plus" /> Novo produto
+          </Btn>
+        </div>
       </div>
 
       {/* Filtros */}

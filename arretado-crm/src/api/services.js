@@ -380,6 +380,7 @@ export const relatoriosApi = {
   ifood: (params = {}) => api.get('/relatorios/ifood/', { params }),
   produtosMaisVendidos: (params = {}) => api.get('/relatorios/produtos-mais-vendidos/', { params }),
   eventos: (params = {}) => api.get('/relatorios/eventos/', { params }),
+  catalogo: (params = {}) => api.get('/relatorios/catalogo/', { params }),
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
