@@ -444,6 +444,17 @@
 .ajusteField { display: flex; flex-direction: column; gap: 6px; }
 .ajusteField label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-muted); }
 
+.categoriaSelect {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--texto);
+  font-size: 13px;
+  max-width: 260px;
+}
+.categoriaSelect:focus { outline: none; border-color: var(--caramelo); }
+
 .chipGroup {
   display: flex;
   gap: 6px;
@@ -521,6 +532,39 @@
 }
 
 .previewDesc { color: var(--texto-muted); }
+
+.previewActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btnExcel,
+.btnPdf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btnExcel {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+.btnExcel:hover { background: #dcfce7; }
+
+.btnPdf {
+  background: #fff7ed;
+  color: var(--caramelo);
+  border-color: #fed7aa;
+}
+.btnPdf:hover { background: #ffedd5; }
 
 /* Histórico */
 .historicoCard {

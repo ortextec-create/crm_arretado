@@ -326,6 +326,9 @@ export const fichasApi = {
   previewAjuste:  (data) => api.post('/fichas/ajuste-linear/', { ...data, confirmar: false }),
   aplicarAjuste:  (data) => api.post('/fichas/ajuste-linear/', { ...data, confirmar: true }),
   desfazerAjuste: (id)   => api.post(`/fichas/desfazer-ajuste/${id}/`),
+  exportarPreviewAjuste: (data, formato) => api.post(
+    '/fichas/ajuste-linear/', { ...data, confirmar: false, formato }, { responseType: 'blob' },
+  ),
 
   // Snapshots
   listarSnapshots: (params) => api.get('/fichas/snapshots/', { params }),

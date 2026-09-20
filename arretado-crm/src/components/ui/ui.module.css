@@ -19,6 +19,12 @@
 }
 .ghost:hover:not(:disabled) { background: var(--bg-alt); color: var(--texto); border-color: var(--border-strong); }
 
+.secondary {
+  background: var(--surface); color: var(--caramelo);
+  border: 1.5px solid var(--caramelo); padding: 7.5px 14px;
+}
+.secondary:hover:not(:disabled) { background: var(--caramelo-pale); }
+
 .danger-btn {
   background: var(--danger-pale); color: var(--danger);
   border: 1px solid rgba(var(--danger-rgb),0.2); padding: 8px 14px;

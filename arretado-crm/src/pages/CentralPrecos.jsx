@@ -1,10 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fichasApi } from '../api/services'
+import { fichasApi, pdvApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast } from '../components/ui'
 import styles from './CentralPrecos.module.css'
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtPct = (v) => v != null ? `${(Number(v) * 100).toFixed(1)}%` : '—'
+
+// Aceita vírgula ou ponto como separador decimal — input type="number" rejeita
+// vírgula (padrão do teclado pt-BR) e zera o value silenciosamente, travando o form.
+function sanitizarDecimal(raw) {
+  let v = raw.replace(',', '.').replace(/[^0-9.]/g, '')
+  const partes = v.split('.')
+  if (partes.length > 2) v = partes[0] + '.' + partes.slice(1).join('')
+  return v
+}
 
 const SEGMENTO_LABELS = {
   unidade_pequena: 'Un. Pequena',
@@ -358,16 +367,9 @@ function ModalIngrediente({ item, onClose, onSalvo }) {
 
 // ─── Aba 2: Ajuste em Lote ────────────────────────────────────────────────────
 
-const SEGMENTOS_AJUSTE = [
-  { key: 'todos',           label: 'Todos' },
-  { key: 'unidade_pequena', label: 'Un. Pequena' },
-  { key: 'unidade_media',   label: 'Un. Média' },
-  { key: 'bem_casado',      label: 'Bem Casado' },
-  { key: 'bolo_encomenda',  label: 'Bolos / Enc.' },
-]
-
 function AbaAjusteLote({ onToast }) {
-  const [segmento,  setSegmento]  = useState('todos')
+  const [categorias,setCategorias]= useState([])
+  const [categoria, setCategoria] = useState('todos')
   const [operacao,  setOperacao]  = useState('aumento')
   const [tipo,      setTipo]      = useState('percentual')
   const [valor,     setValor]     = useState('')
@@ -376,6 +378,16 @@ function AbaAjusteLote({ onToast }) {
   const [confirming,setConfirming]= useState(false)
   const [ultimoSnap,setUltimoSnap]= useState(null)
   const [snapshots, setSnapshots] = useState([])
+  const [exportando,setExportando]= useState(false)
+
+  const categoriasAjuste = [
+    { key: 'todos', label: 'Todos' },
+    ...categorias.map(c => ({ key: String(c.id), label: c.nome })),
+  ]
+
+  useEffect(() => {
+    pdvApi.listCategorias().then(r => setCategorias(r.data.results ?? r.data)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     fichasApi.listarSnapshots({ page_size: 10 }).then(r => setSnapshots(r.data.results ?? r.data)).catch(() => {})
@@ -385,7 +397,7 @@ function AbaAjusteLote({ onToast }) {
     if (!valor) return
     setLoading(true)
     try {
-      const res = await fichasApi.previewAjuste({ segmento, operacao, tipo, valor: Number(valor) })
+      const res = await fichasApi.previewAjuste({ categoria, operacao, tipo, valor: Number(valor) })
       setPreview(res.data)
     } catch { onToast('Erro ao gerar preview.', 'error') }
     finally { setLoading(false) }
@@ -394,13 +406,27 @@ function AbaAjusteLote({ onToast }) {
   async function handleConfirmar() {
     setConfirming(true)
     try {
-      const res = await fichasApi.aplicarAjuste({ segmento, operacao, tipo, valor: Number(valor) })
+      const res = await fichasApi.aplicarAjuste({ categoria, operacao, tipo, valor: Number(valor) })
       onToast(`Ajuste aplicado em ${res.data.total_produtos} produtos.`)
       setUltimoSnap(res.data.snapshot_id)
       setPreview(null)
       setValor('')
     } catch { onToast('Erro ao aplicar ajuste.', 'error') }
     finally { setConfirming(false) }
+  }
+
+  async function handleExportarPreview(formato) {
+    if (!valor) return
+    setExportando(true)
+    try {
+      const res = await fichasApi.exportarPreviewAjuste({ categoria, operacao, tipo, valor: Number(valor) }, formato)
+      const mime = formato === 'excel'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/pdf'
+      const url = URL.createObjectURL(new Blob([res.data], { type: mime }))
+      window.open(url, '_blank')
+    } catch { onToast('Erro ao exportar preview.', 'error') }
+    finally { setExportando(false) }
   }
 
   async function handleDesfazer(id) {
@@ -419,20 +445,12 @@ function AbaAjusteLote({ onToast }) {
         <h3 className={styles.cardTitle}>Ajuste de Preços em Lote</h3>
 
         <div className={styles.ajusteGrid}>
-          {/* Segmento */}
+          {/* Categoria */}
           <div className={styles.ajusteField}>
             <label>Aplicar em</label>
-            <div className={styles.chipGroup}>
-              {SEGMENTOS_AJUSTE.map(s => (
-                <button
-                  key={s.key}
-                  className={`${styles.chip} ${segmento === s.key ? styles.chipActive : ''}`}
-                  onClick={() => setSegmento(s.key)}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
+            <select className={styles.categoriaSelect} value={categoria} onChange={e => setCategoria(e.target.value)}>
+              {categoriasAjuste.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
           </div>
 
           {/* Operação */}
@@ -458,12 +476,11 @@ function AbaAjusteLote({ onToast }) {
               </div>
               <div className={styles.valorInputWrap}>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   className={styles.valorInput}
                   value={valor}
-                  onChange={e => { setValor(e.target.value); setPreview(null) }}
+                  onChange={e => { setValor(sanitizarDecimal(e.target.value)); setPreview(null) }}
                   placeholder={tipo === 'percentual' ? '10' : '0,50'}
                 />
                 <span className={styles.valorSufixo}>{tipo === 'percentual' ? '%' : 'R$'}</span>
@@ -485,18 +502,26 @@ function AbaAjusteLote({ onToast }) {
           <div className={styles.previewHeader}>
             <div>
               <strong>{preview.total_produtos} produtos</strong> serão atualizados
-              <span className={styles.previewDesc}> — {SEGMENTOS_AJUSTE.find(s => s.key === segmento)?.label} | {operacao === 'aumento' ? '+' : '-'}{valor}{tipo === 'percentual' ? '%' : ' R$'}</span>
+              <span className={styles.previewDesc}> — {categoriasAjuste.find(c => c.key === categoria)?.label} | {operacao === 'aumento' ? '+' : '-'}{valor}{tipo === 'percentual' ? '%' : ' R$'}</span>
             </div>
-            <Btn onClick={handleConfirmar} loading={confirming}>
-              <i className="ti ti-check" /> Confirmar ajuste
-            </Btn>
+            <div className={styles.previewActions}>
+              <button className={styles.btnExcel} disabled={exportando} onClick={() => handleExportarPreview('excel')}>
+                <i className="ti ti-table-export" /> Excel
+              </button>
+              <button className={styles.btnPdf} disabled={exportando} onClick={() => handleExportarPreview('pdf')}>
+                <i className="ti ti-file-type-pdf" /> PDF
+              </button>
+              <Btn onClick={handleConfirmar} loading={confirming}>
+                <i className="ti ti-check" /> Confirmar ajuste
+              </Btn>
+            </div>
           </div>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
                 <tr>
                   <th>Produto</th>
-                  <th>Segmento</th>
+                  <th>Categoria</th>
                   <th className={styles.thRight}>Preço atual</th>
                   <th className={styles.thRight}>Preço novo</th>
                   <th className={styles.thRight}>Variação</th>
@@ -506,7 +531,7 @@ function AbaAjusteLote({ onToast }) {
                 {preview.preview.map(p => (
                   <tr key={p.id}>
                     <td>{p.nome}</td>
-                    <td className={styles.tdMuted}>{SEGMENTO_LABELS[p.segmento] || p.segmento}</td>
+                    <td className={styles.tdMuted}>{p.categoria}</td>
                     <td className={styles.tdRight}>{fmt(p.preco_atual)}</td>
                     <td className={`${styles.tdRight} ${styles.tdDestaque}`}>{fmt(p.preco_novo)}</td>
                     <td className={`${styles.tdRight} ${p.variacao >= 0 ? styles.tdVerde : styles.tdVermelho}`}>

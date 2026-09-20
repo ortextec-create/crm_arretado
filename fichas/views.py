@@ -1,5 +1,10 @@
-from decimal import Decimal
+import io
+from decimal import Decimal, ROUND_HALF_EVEN
 
+from django.db import transaction
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
@@ -221,7 +226,24 @@ class SnapshotPrecosViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
 
 # ─── Ajuste Linear ────────────────────────────────────────────────────────────
 
+_PASSO_ARREDONDAMENTO = Decimal('0.10')
+
+
+def arredondar_preco_mercado(preco):
+    """Arredonda pro múltiplo de R$0,10 mais próximo (ROUND_HALF_EVEN nos empates exatos,
+    ex: R$2,85 -> R$2,80). Nunca deixa o preço zerar."""
+    passos = (preco / _PASSO_ARREDONDAMENTO).quantize(Decimal('1'), rounding=ROUND_HALF_EVEN)
+    return max(passos * _PASSO_ARREDONDAMENTO, _PASSO_ARREDONDAMENTO)
+
+
 class AjusteLinearView(CsrfExemptMixin, APIView):
+    """
+    Ajuste em lote por categoria (pdv.CategoriaProduto) — 'todos' (sem filtro)
+    continua a única opção especial, o resto é sempre uma categoria de verdade
+    (nunca mais o campo Produto.segmento). Aplicação do ajuste (snapshot +
+    update em massa + auditoria) é sempre atômica — tudo ou nada, ver
+    transaction.atomic() abaixo.
+    """
     authentication_classes = [TokenAuthentication]
 
     def get_permissions(self):
@@ -231,16 +253,21 @@ class AjusteLinearView(CsrfExemptMixin, APIView):
         return [AllowAny()]
 
     def post(self, request):
-        segmento  = request.data.get('segmento', 'todos')
+        categoria = request.data.get('categoria', 'todos')
         tipo      = request.data.get('tipo', 'percentual')
         operacao  = request.data.get('operacao', 'aumento')
         valor     = Decimal(str(request.data.get('valor', 0)))
         confirmar = request.data.get('confirmar', False)
+        formato   = request.data.get('formato', 'json')
 
-        from pdv.models import Produto
-        qs = Produto.objects.filter(ativo=True)
-        if segmento and segmento != 'todos':
-            qs = qs.filter(segmento=segmento)
+        from pdv.models import Produto, CategoriaProduto
+        qs = Produto.objects.select_related('categoria').filter(ativo=True)
+        categoria_obj = None
+        if categoria and categoria != 'todos':
+            categoria_obj = get_object_or_404(CategoriaProduto, pk=categoria)
+            qs = qs.filter(categoria_id=categoria_obj.id)
+
+        cat_label = categoria_obj.nome if categoria_obj else 'Todos'
 
         preview = []
         for produto in qs:
@@ -248,40 +275,47 @@ class AjusteLinearView(CsrfExemptMixin, APIView):
             if operacao == 'desconto':
                 delta = -delta
             novo_preco = max(produto.preco + delta, Decimal('0.01'))
+            novo_preco = arredondar_preco_mercado(novo_preco)
             preview.append({
                 'id':          produto.id,
                 'nome':        produto.nome,
-                'segmento':    produto.segmento,
+                'categoria':   produto.categoria.nome if produto.categoria_id else '— sem categoria —',
                 'preco_atual': float(produto.preco),
-                'preco_novo':  float(round(novo_preco, 2)),
-                'variacao':    float(round(novo_preco - produto.preco, 2)),
+                'preco_novo':  float(novo_preco),
+                'variacao':    float(novo_preco - produto.preco),
             })
 
         if not confirmar:
+            # Export do preview (nunca aplica nada — mesma exigência de login do preview em si, ou seja nenhuma).
+            if formato == 'excel':
+                return self._export_preview_excel(preview, cat_label, tipo, operacao, valor)
+            if formato == 'pdf':
+                return self._export_preview_pdf(preview, cat_label, tipo, operacao, valor)
             return Response({'preview': preview, 'total_produtos': len(preview)})
 
-        # Salvar snapshot antes de aplicar
-        snapshot_dados = {str(p['id']): p['preco_atual'] for p in preview}
-        sinal     = '+' if operacao == 'aumento' else '-'
-        sufixo    = '%' if tipo == 'percentual' else 'R$'
-        seg_label = segmento if segmento != 'todos' else 'Todos'
-        snapshot  = SnapshotPrecos.objects.create(
-            descricao=f"{sinal}{valor}{sufixo} em {seg_label} ({len(preview)} produtos)",
-            dados=snapshot_dados,
-        )
+        sinal = '+' if operacao == 'aumento' else '-'
+        sufixo = '%' if tipo == 'percentual' else 'R$'
 
-        for item in preview:
-            Produto.objects.filter(pk=item['id']).update(preco=Decimal(str(item['preco_novo'])))
+        with transaction.atomic():
+            # Salvar snapshot antes de aplicar
+            snapshot_dados = {str(p['id']): p['preco_atual'] for p in preview}
+            snapshot = SnapshotPrecos.objects.create(
+                descricao=f"{sinal}{valor}{sufixo} em {cat_label} ({len(preview)} produtos)",
+                dados=snapshot_dados,
+            )
 
-        registrar(
-            request.user, LogAuditoria.ACAO_AJUSTE_LINEAR_APLICADO,
-            detalhes={
-                'snapshot_id': snapshot.id, 'descricao': snapshot.descricao,
-                'total_produtos': len(preview), 'segmento': segmento, 'tipo': tipo,
-                'operacao': operacao, 'valor': str(valor),
-            },
-            request=request,
-        )
+            for item in preview:
+                Produto.objects.filter(pk=item['id']).update(preco=Decimal(str(item['preco_novo'])))
+
+            registrar(
+                request.user, LogAuditoria.ACAO_AJUSTE_LINEAR_APLICADO,
+                detalhes={
+                    'snapshot_id': snapshot.id, 'descricao': snapshot.descricao,
+                    'total_produtos': len(preview), 'categoria': categoria, 'tipo': tipo,
+                    'operacao': operacao, 'valor': str(valor),
+                },
+                request=request,
+            )
 
         return Response({
             'aplicado':            True,
@@ -289,6 +323,138 @@ class AjusteLinearView(CsrfExemptMixin, APIView):
             'snapshot_id':         snapshot.id,
             'snapshot_descricao':  snapshot.descricao,
         })
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _export_preview_excel(self, preview, cat_label, tipo, operacao, valor):
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+
+        CARAMELO = 'C97A3A'
+        CINZA    = 'F5F5F5'
+
+        def hfont(): return Font(bold=True, color='FFFFFF', size=11)
+        def hfill(): return PatternFill('solid', fgColor=CARAMELO)
+        def center(): return Alignment(horizontal='center', vertical='center')
+
+        sinal  = '+' if operacao == 'aumento' else '-'
+        sufixo = '%' if tipo == 'percentual' else 'R$'
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Preview Ajuste'
+
+        headers = ['Produto', 'Categoria', 'Preço Atual (R$)', 'Preço Novo (R$)', 'Variação (R$)']
+
+        ws.merge_cells(f'A1:{chr(64 + len(headers))}1')
+        t = ws['A1']
+        t.value = f'Preview de Ajuste de Preços — {cat_label} ({sinal}{valor}{sufixo}) · {len(preview)} produtos'
+        t.font = Font(bold=True, size=13, color=CARAMELO)
+        t.alignment = center()
+        ws.row_dimensions[1].height = 28
+        ws.append([])
+
+        ws.append(headers)
+        hr = ws.max_row
+        for col in range(1, len(headers) + 1):
+            c = ws.cell(hr, col)
+            c.font, c.fill, c.alignment = hfont(), hfill(), center()
+
+        for i, p in enumerate(preview, 1):
+            ws.append([p['nome'], p['categoria'], p['preco_atual'], p['preco_novo'], p['variacao']])
+            rn = ws.max_row
+            for col in (3, 4, 5):
+                ws.cell(rn, col).number_format = '#,##0.00'
+            if i % 2 == 0:
+                for col in range(1, len(headers) + 1):
+                    ws.cell(rn, col).fill = PatternFill('solid', fgColor=CINZA)
+
+        for w, col in zip([32, 20, 16, 16, 14], 'ABCDE'):
+            ws.column_dimensions[col].width = w
+        ws.auto_filter.ref = f'A{hr}:E{ws.max_row}'
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        fname = f'preview_ajuste_precos_{timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M")}.xlsx'
+        response = HttpResponse(buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
+
+    def _export_preview_pdf(self, preview, cat_label, tipo, operacao, valor):
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.lib.units import cm
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+            from reportlab.platypus import (
+                SimpleDocTemplate, Table, TableStyle,
+                Paragraph, Spacer, HRFlowable,
+            )
+        except ImportError:
+            return HttpResponse(
+                'Dependência reportlab não instalada. Execute: pip install reportlab',
+                status=500,
+            )
+
+        CARAMELO = colors.HexColor('#C97A3A')
+        CINZA    = colors.HexColor('#F5F5F5')
+        CINZA_BD = colors.HexColor('#E7E5E4')
+
+        title_s  = ParagraphStyle('t',  fontName='Helvetica-Bold', fontSize=15, textColor=CARAMELO, alignment=TA_CENTER, spaceAfter=4)
+        sub_s    = ParagraphStyle('s',  fontName='Helvetica',      fontSize=9,  textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)
+        footer_s = ParagraphStyle('f',  fontName='Helvetica',      fontSize=7,  textColor=colors.grey, alignment=TA_RIGHT)
+
+        sinal  = '+' if operacao == 'aumento' else '-'
+        sufixo = '%' if tipo == 'percentual' else 'R$'
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+
+        story = []
+        story.append(Paragraph('Arretado Doces — Preview de Ajuste de Preços', title_s))
+        story.append(Paragraph(f'{cat_label} &nbsp;|&nbsp; {sinal}{valor}{sufixo} &nbsp;|&nbsp; {len(preview)} produtos', sub_s))
+        story.append(HRFlowable(width='100%', thickness=2, color=CARAMELO, spaceAfter=8))
+
+        rows = [['Produto', 'Categoria', 'Preço Atual', 'Preço Novo', 'Variação']]
+        for p in preview:
+            rows.append([
+                p['nome'], p['categoria'],
+                f'R$ {p["preco_atual"]:.2f}', f'R$ {p["preco_novo"]:.2f}',
+                f'{"+" if p["variacao"] >= 0 else ""}{p["variacao"]:.2f}',
+            ])
+
+        t = Table(rows, colWidths=[6*cm, 4*cm, 2.8*cm, 2.8*cm, 2.4*cm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND',   (0, 0), (-1, 0), CARAMELO),
+            ('TEXTCOLOR',    (0, 0), (-1, 0), colors.white),
+            ('FONTNAME',     (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',     (0, 0), (-1, 0), 9),
+            ('FONTSIZE',     (0, 1), (-1, -1), 8),
+            ('ALIGN',        (2, 0), (-1, -1), 'RIGHT'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, CINZA]),
+            ('GRID',         (0, 0), (-1, -1), 0.5, CINZA_BD),
+            ('TOPPADDING',   (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 4),
+        ]))
+        story.append(t)
+
+        story.append(Spacer(1, 0.5*cm))
+        story.append(HRFlowable(width='100%', thickness=1, color=CINZA_BD))
+        story.append(Paragraph(
+            f'Gerado em {timezone.now().strftime("%d/%m/%Y às %H:%M")} — Arretado Doces CRM',
+            footer_s,
+        ))
+
+        doc.build(story)
+        buf.seek(0)
+
+        fname = f'preview_ajuste_precos_{timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M")}.pdf'
+        response = HttpResponse(buf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
 
 
 # ─── Desfazer Ajuste ──────────────────────────────────────────────────────────
@@ -307,22 +473,23 @@ class DesfazerAjusteView(CsrfExemptMixin, APIView):
             return Response({'detail': 'Este ajuste já foi desfeito.'}, status=status.HTTP_400_BAD_REQUEST)
 
         from pdv.models import Produto
-        revertidos = 0
-        for produto_id_str, preco_anterior in snapshot.dados.items():
-            revertidos += Produto.objects.filter(pk=int(produto_id_str)).update(
-                preco=Decimal(str(preco_anterior))
+        with transaction.atomic():
+            revertidos = 0
+            for produto_id_str, preco_anterior in snapshot.dados.items():
+                revertidos += Produto.objects.filter(pk=int(produto_id_str)).update(
+                    preco=Decimal(str(preco_anterior))
+                )
+
+            snapshot.revertido = True
+            snapshot.save(update_fields=['revertido'])
+
+            registrar(
+                request.user, LogAuditoria.ACAO_AJUSTE_LINEAR_DESFEITO,
+                detalhes={
+                    'snapshot_id': snapshot.id, 'descricao': snapshot.descricao,
+                    'produtos_restaurados': revertidos,
+                },
+                request=request,
             )
-
-        snapshot.revertido = True
-        snapshot.save(update_fields=['revertido'])
-
-        registrar(
-            request.user, LogAuditoria.ACAO_AJUSTE_LINEAR_DESFEITO,
-            detalhes={
-                'snapshot_id': snapshot.id, 'descricao': snapshot.descricao,
-                'produtos_restaurados': revertidos,
-            },
-            request=request,
-        )
 
         return Response({'revertido': True, 'produtos_restaurados': revertidos})
