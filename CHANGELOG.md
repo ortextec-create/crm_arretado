@@ -5,6 +5,28 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.5.6] - 2026-09-20
+
+### Adicionado
+- **PDV, Eventos e Orçamentos — preço dinâmico por faixa de quantidade**: ao adicionar um
+  item ao carrinho ou alterar a quantidade, o preço unitário passa a ser recalculado na
+  hora via `Produto.preco_para()`, refletindo `FaixaPreco` configurada por quantidade
+  mínima/canal — antes ficava travado no preço de tabela do produto.
+- **Central de Preços — Ajuste em Lote por categoria real**: o filtro do ajuste em lote
+  passa a usar `pdv.CategoriaProduto` de verdade em vez do campo `Produto.segmento`
+  (removido desse fluxo). Preview do ajuste pode ser exportado em Excel/PDF antes de
+  confirmar. Preço final passa por arredondamento de mercado — múltiplo de R$0,10 mais
+  próximo (`ROUND_HALF_EVEN` nos empates exatos) — em vez de arredondamento matemático puro.
+- **Catálogo — export em Excel/PDF**: novo `GET /api/v1/relatorios/catalogo/`
+  (`RelatorioCatalogoView`) lista produtos com preço e saldo de estoque atual, com os
+  mesmos filtros da tela (busca, categoria, tipo, ativo/inativo).
+
+### Corrigido
+- **UI**: `Btn variant="secondary"` estava sem classe CSS correspondente em
+  `ui.module.css` — botão renderizava sem estilo em toda a aplicação.
+- **Central de Preços**: campo de valor do ajuste em lote rejeitava vírgula (padrão do
+  teclado pt-BR) e zerava silenciosamente por causa do `type="number"`.
+
 ## [v1.5.5] - 2026-09-15
 
 ### Adicionado
