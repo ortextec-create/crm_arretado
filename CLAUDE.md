@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 14/set/2026 — reduzido de ~200KB para enxuto. O histórico de implementação
+> Última atualização: 20/set/2026 (v1.5.6) — reduzido de ~200KB para enxuto. O histórico de implementação
 > de cada feature grande (fases, decisões, bugs encontrados, datas de deploy) vive nos specs
 > dedicados (`MULTIEMPRESA.md`, `FINANCEIRO.md`, `BRINDES_PERMUTAS.md`, `Contrato.md`, `FRETE.md`,
 > `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`) e na memória do Claude Code (`MEMORY.md` e arquivos
@@ -161,7 +161,15 @@ arretado/                        ← raiz Django
 │   │                               (singleton), SnapshotPrecos
 │   ├── views.py                 ← MateriaPrimaViewSet, FichaTecnicaViewSet,
 │   │                               ParametrosNegocioViewSet, SnapshotPrecosViewSet,
-│   │                               AjusteLinearView, DesfazerAjusteView
+│   │                               AjusteLinearView (ajuste em lote filtra por
+│   │                               `pdv.CategoriaProduto` de verdade, nunca mais
+│   │                               `Produto.segmento` — parâmetro `categoria`, `'todos'` é a única
+│   │                               opção especial; `arredondar_preco_mercado()` arredonda o preço
+│   │                               final pro múltiplo de R$0,10 mais próximo, `ROUND_HALF_EVEN` nos
+│   │                               empates exatos; preview com `?formato=excel|pdf` antes de
+│   │                               confirmar, nunca aplica nada; aplicação — snapshot + update em
+│   │                               massa + auditoria — sempre dentro de `transaction.atomic()`),
+│   │                               DesfazerAjusteView
 │   ├── urls.py                  ← router + ajuste-linear/ + desfazer-ajuste/<id>/
 │   └── management/commands/importar_planilha.py  ← popula BD a partir do .xlsx
 ├── estoque/                     ← controle de estoque de insumos e produtos + produção + alertas +
@@ -191,9 +199,15 @@ arretado/                        ← raiz Django
 │   │                               (lista de Eventos no período + resumo + agrupado por dia/mês,
 │   │                               export Excel/PDF — mono-empresa, só retorna dado quando a
 │   │                               empresa resolvida é a matriz ou 'todas', mesmo gate de
-│   │                               `mono_empresa_habilitado` de `ProdutosMaisVendidosView`) · todas
-│   │                               aceitam `?empresa=<id>`/`?empresa=todas`
-│   └── urls.py                  ← ifood/, produtos-mais-vendidos/, eventos/
+│   │                               `mono_empresa_habilitado` de `ProdutosMaisVendidosView`) +
+│   │                               RelatorioCatalogoView (lista `pdv.Produto` com preço e
+│   │                               `quantidade_estoque` atual — lido direto do campo denormalizado,
+│   │                               nunca somado do ledger; mesmos filtros de tela — busca,
+│   │                               categoria, tipo, ativo/inativo —, export Excel/PDF, vive no menu
+│   │                               Catálogo, não em Relatorios.jsx) · as 3 de export aceitam
+│   │                               `?empresa=<id>`/`?empresa=todas`, exceto Catálogo (sem FK
+│   │                               empresa, é catálogo único)
+│   └── urls.py                  ← ifood/, produtos-mais-vendidos/, eventos/, catalogo/
 ├── dashboard/                    ← dashboard multi-canal (só leitura, sem models próprios) —
 │   │                               multi-empresa desde a Fase 5 do MULTIEMPRESA.md
 │   ├── views.py                 ← DashboardResumoView (agrega PedidoUnificado + PagamentoEvento/
@@ -275,9 +289,13 @@ arretado-crm/                    ← raiz React
     │   ├── Usuarios.jsx         ← CRUD + permissões + checkbox de vínculo de empresa
     │   ├── IFood.jsx / PDV.jsx
     │   ├── CatalogoPDV.jsx      ← catálogo do PDV (gestão de produtos para venda)
-    │   ├── Catalogo.jsx         ← catálogo geral (grid de cards, foto, segmento, canais)
+    │   ├── Catalogo.jsx         ← catálogo geral (grid de cards, foto, segmento, canais) · botões de
+    │   │                           export Excel/PDF no header (`relatoriosApi.catalogo()`), mesmos
+    │   │                           filtros da tela
     │   ├── FichasTecnicas.jsx   ← composição de ingredientes por produto
-    │   ├── CentralPrecos.jsx    ← precificação (matérias, ajuste linear, semáforo, parâmetros)
+    │   ├── CentralPrecos.jsx    ← precificação (matérias, ajuste linear, semáforo, parâmetros) ·
+    │   │                           ajuste em lote filtra por `CategoriaProduto` real (não mais
+    │   │                           `segmento`), preview exportável em Excel/PDF antes de confirmar
     │   ├── Estoque.jsx          ← 4 abas: Insumos, Produtos, Produção, Movimentações + modais
     │   │                           Registrar Compra, Ajuste de Inventário, Configurações
     │   ├── Relatorios.jsx       ← 2 abas: "Por Canal (iFood)" (export Excel/PDF) e "Produtos Mais
@@ -334,7 +352,7 @@ arretado-crm/                    ← raiz React
 - **`pdv.TaxaEntregaBairro`** é a tabela configurável de bairro→taxa usada por PDV e Orçamentos/Eventos. Nunca hardcodar frete — ver `FRETE.md`
 - **`pdv.Produto.tipo`** (`fabricado`/`revenda`/`kit`) define de onde vem o custo (propriedade polimórfica): `fabricado` ← `FichaTecnica.custo_total_unitario`; `revenda` ← `materia_prima_origem.custo_unitario` (só preenchível se `tipo == 'revenda'`); `kit` soma `custo * quantidade` de cada `ItemKit`. `margem_desejada_pct` só sugere preço, nunca substitui `preco`
 - **`pdv.ItemKit`** não pode conter kit-de-kit (`componente.tipo == 'kit'` rejeitado no model e no serializer)
-- **`pdv.FaixaPreco`** guarda preço por quantidade mínima e canal opcional. `Produto.preco_para(quantidade, canal)` resolve: faixa do canal > faixa geral > `preco` base. Nunca hardcodar desconto no frontend
+- **`pdv.FaixaPreco`** guarda preço por quantidade mínima e canal opcional. `Produto.preco_para(quantidade, canal)` resolve: faixa do canal > faixa geral > `preco` base. Nunca hardcodar desconto no frontend. **Preço dinâmico no carrinho** (PDV, Eventos — novo/detalhe —, Orçamentos — novo item e edição, ver `PDV.jsx`/`Eventos.jsx`/`Orcamentos.jsx`) — item recém-adicionado ou com quantidade alterada busca `preco_para()` de novo em vez de manter o preço de tabela fixo, refletindo a faixa em tempo real
 - **`pdv.DadosFiscaisProduto`** é opcional, aninhado e gravável via `ProdutoSerializer.dados_fiscais` — prepara NFC-e futura, ainda não consumido por integração fiscal real
 - **Estoque** controla saldo físico de 3 naturezas: `MateriaPrima`, `Produto` fabricado (`modo_estoque`: `'estoque'` mantém saldo via `Producao`, `'sob_encomenda'` debita insumo direto na venda) e `Produto` revenda (sempre `'estoque'`). Kit nunca tem saldo próprio — sempre virtual, decrementa `ItemKit` recursivamente. **Política de saldo negativo: sempre permitido** — nenhuma venda/produção/ajuste é bloqueada por saldo insuficiente, o sistema só alerta
 - **`estoque.MovimentoEstoque` é o ledger — fonte única da verdade.** Todo movimento passa por `MovimentoEstoque.registrar()` (nunca `.objects.create()` direto), que valida exatamente 1 de `materia_prima`/`produto`, calcula `saldo_posterior` dentro de `transaction.atomic()` com `select_for_update()`. `tipo_movimento='ajuste_inventario'` é o único caso onde `quantidade` é o saldo absoluto, não delta. `registrar()` quantiza `quantidade` (3 casas) e `custo_unitario_snapshot` (4 casas) antes de gravar — sem isso, `full_clean()` derruba o movimento com `ValidationError` quando o consumo calculado sai com mais casas decimais do que o `DecimalField` aceita
@@ -428,6 +446,9 @@ arretado-crm/                    ← raiz React
 | Usuários | Gestão de usuários + RBAC | ✅ Concluída |
 | Catálogo & Precificação | App `fichas/` + 3 telas | ✅ Concluída · dados importados em prod |
 | Catálogo — Revenda/Kit/Faixas de Preço | `Produto.tipo`, `ItemKit`, `FaixaPreco`, `DadosFiscaisProduto` | ✅ Concluída |
+| Preço Dinâmico no Carrinho | PDV/Eventos/Orçamentos recalculam via `preco_para()` ao montar item | ✅ Concluída (v1.5.6) |
+| Central de Preços — Ajuste em Lote por Categoria | Filtro por `CategoriaProduto` real, arredondamento de mercado, export do preview | ✅ Concluída (v1.5.6) |
+| Catálogo — Export Excel/PDF | `RelatorioCatalogoView` | ✅ Concluída (v1.5.6) |
 | Frete por Bairro | Taxa por bairro no PDV/Orçamentos/Eventos + Locais de Evento | ✅ Concluída (ver `FRETE.md`) |
 | Relatórios | Relatório consolidado iFood (resumo, agrupamento, export) | ✅ Concluída (só iFood por enquanto) |
 | Produtos Mais Vendidos | Ranking cross-canal por quantidade/valor | ✅ Concluída (só JSON) |
@@ -595,7 +616,7 @@ GET              /api/v1/fichas/fichas/{id}/resumo/
 POST             /api/v1/fichas/fichas/{id}/adicionar-item/
 DELETE           /api/v1/fichas/fichas/{id}/remover-item/{item_id}/
 GET/PATCH        /api/v1/fichas/parametros/1/
-POST             /api/v1/fichas/ajuste-linear/                         ← exige login só quando "confirmar":true
+POST             /api/v1/fichas/ajuste-linear/                         ← body "categoria" (id de CategoriaProduto ou "todos"), "formato" (json|excel|pdf, só no preview) · exige login só quando "confirmar":true
 POST             /api/v1/fichas/desfazer-ajuste/{snapshot_id}/
 GET              /api/v1/fichas/snapshots/
 
@@ -621,6 +642,7 @@ POST          /api/v1/estoque/notas/{id}/descartar/
 GET /api/v1/relatorios/ifood/                    ← data_inicio, data_fim, agrupamento (dia|mes), formato (json|excel|pdf), empresa
 GET /api/v1/relatorios/produtos-mais-vendidos/   ← canal (repetível), data_inicio, data_fim, ordenar (quantidade|valor), limit (1-200), empresa · só JSON
 GET /api/v1/relatorios/eventos/                  ← data_inicio, data_fim (filtram Evento.data_evento), agrupamento (dia|mes), formato (json|excel|pdf), empresa
+GET /api/v1/relatorios/catalogo/                 ← search, categoria, tipo, ativo, formato (json|excel|pdf) — sem filtro de empresa
 
 # Dashboard
 GET /api/v1/dashboard/resumo/                    ← aceita ?empresa=<id>/?empresa=todas
@@ -761,6 +783,9 @@ Infra já configurada em produção (não precisa recriar):
 - Não preencher `materia_prima_origem`/`margem_desejada_pct` fora de `tipo == 'revenda'`
 - Não permitir kit-de-kit em `ItemKit.componente`
 - Não hardcodar desconto por quantidade/canal no frontend — sempre `Produto.preco_para()`
+- Não filtrar o ajuste em lote de preços por `Produto.segmento` — sempre `pdv.CategoriaProduto` real
+- Não aplicar o preço final do ajuste em lote sem passar por `arredondar_preco_mercado()`
+- Não aplicar (`confirmar: true`) o ajuste em lote fora de `transaction.atomic()` — snapshot + update em massa + auditoria são tudo ou nada
 - Bairro do **Local de Evento** tem prioridade sobre bairro do cliente pra sugerir taxa de entrega — nunca inverter (ver `FRETE.md`)
 - Não criar `ItemContrato` — o PDF lê os itens direto de `contrato.orcamento.itens`
 - Não permitir `gerar-contrato/` sem `status == 'aprovado'` e CPF/RG/nacionalidade/profissão/estado civil preenchidos
