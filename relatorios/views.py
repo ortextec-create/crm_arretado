@@ -814,6 +814,7 @@ class RelatorioEventosView(CsrfExemptMixin, views.APIView):
 
 
 CANAIS_VALIDOS = ('ifood', 'pdv', 'eventos')
+CANAL_LABEL = {'ifood': 'iFood', 'pdv': 'PDV', 'eventos': 'Eventos'}
 
 
 class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
@@ -838,6 +839,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
 
     def get(self, request):
         params = request.query_params
+        formato = params.get('formato', 'json')
         hoje = timezone.localtime(timezone.now()).date()
         try:
             data_inicio = date.fromisoformat(params['data_inicio']) if params.get('data_inicio') else hoje - timedelta(days=29)
@@ -898,13 +900,20 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
             'valor_total': round(sum(p['valor_total'] for p in produtos), 2),
         }
 
-        return Response({
+        dados = {
             'periodo': {'inicio': str(data_inicio), 'fim': str(data_fim)},
             'canais': canais,
             'ordenar': ordenar,
             'resumo': resumo,
             'produtos': produtos[:limit],
-        })
+        }
+
+        if formato == 'excel':
+            return self._export_excel(dados)
+        if formato == 'pdf':
+            return self._export_pdf(dados)
+
+        return Response(dados)
 
     # ── Querysets por canal ──────────────────────────────────────────────
 
@@ -955,6 +964,231 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
             bucket = agregados[chave]['canais'].setdefault(canal, {'quantidade': 0, 'valor': 0.0})
             bucket['quantidade'] += row['quantidade'] or 0
             bucket['valor'] += float(row['valor'] or 0)
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _export_excel(self, dados):
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+
+        CARAMELO = 'C97A3A'
+        CINZA    = 'F5F5F5'
+
+        def hfont(): return Font(bold=True, color='FFFFFF', size=11)
+        def hfill(): return PatternFill('solid', fgColor=CARAMELO)
+        def center(): return Alignment(horizontal='center', vertical='center')
+        def tfont(): return Font(bold=True, color='FFFFFF')
+
+        canais = dados['canais']
+
+        wb = openpyxl.Workbook()
+
+        # ── Sheet 1: Resumo ────────────────────────────────────────────────────
+        ws1 = wb.active
+        ws1.title = 'Resumo'
+
+        ws1.merge_cells('A1:B1')
+        t = ws1['A1']
+        t.value = (
+            f'Produtos Mais Vendidos  —  '
+            f'{dados["periodo"]["inicio"]} a {dados["periodo"]["fim"]}'
+        )
+        t.font = Font(bold=True, size=13, color=CARAMELO)
+        t.alignment = center()
+        ws1.row_dimensions[1].height = 28
+        ws1.append([])
+
+        r = dados['resumo']
+        summary = [
+            ('Canais',               ', '.join(CANAL_LABEL.get(c, c) for c in canais)),
+            ('Ordenado por',         'Quantidade' if dados['ordenar'] == 'quantidade' else 'Valor'),
+            ('Produtos Distintos',   r['produtos_distintos']),
+            ('Quantidade Total',     r['quantidade_total']),
+            ('Valor Total (R$)',     r['valor_total']),
+        ]
+
+        ws1.append(['Indicador', 'Valor'])
+        hr = ws1.max_row
+        for col in range(1, 3):
+            c = ws1.cell(hr, col)
+            c.font, c.fill, c.alignment = hfont(), hfill(), center()
+
+        for i, (label, val) in enumerate(summary, 1):
+            ws1.append([label, val])
+            rn = ws1.max_row
+            ws1.cell(rn, 1).alignment = Alignment(horizontal='left', vertical='center')
+            ws1.cell(rn, 2).alignment = Alignment(horizontal='right', vertical='center')
+            if i % 2 == 0:
+                for col in range(1, 3):
+                    ws1.cell(rn, col).fill = PatternFill('solid', fgColor=CINZA)
+
+        ws1.column_dimensions['A'].width = 28
+        ws1.column_dimensions['B'].width = 24
+
+        # ── Sheet 2: Produtos ───────────────────────────────────────────────────
+        ws2 = wb.create_sheet('Produtos')
+        headers = ['#', 'Produto', 'Qtd. Total', 'Valor Total (R$)']
+        for c in canais:
+            headers += [f'{CANAL_LABEL.get(c, c)} Qtd.', f'{CANAL_LABEL.get(c, c)} Valor (R$)']
+        ws2.append(headers)
+        hr2 = ws2.max_row
+        for col in range(1, len(headers) + 1):
+            cell = ws2.cell(hr2, col)
+            cell.font, cell.fill, cell.alignment = hfont(), hfill(), center()
+
+        for i, p in enumerate(dados['produtos'], 1):
+            row = [i, p['nome'], p['quantidade_total'], p['valor_total']]
+            for c in canais:
+                info = p['canais'].get(c)
+                row += [info['quantidade'] if info else 0, info['valor'] if info else 0]
+            ws2.append(row)
+            rn = ws2.max_row
+            ws2.cell(rn, 4).number_format = '#,##0.00'
+            for idx in range(len(canais)):
+                ws2.cell(rn, 6 + idx * 2).number_format = '#,##0.00'
+            if i % 2 == 0:
+                for col in range(1, len(headers) + 1):
+                    ws2.cell(rn, col).fill = PatternFill('solid', fgColor=CINZA)
+
+        if dados['produtos']:
+            tq = sum(p['quantidade_total'] for p in dados['produtos'])
+            tv = sum(p['valor_total']      for p in dados['produtos'])
+            total_row = ['', 'TOTAL', tq, round(tv, 2)] + ['' for _ in canais for _ in (0, 1)]
+            ws2.append(total_row)
+            rn = ws2.max_row
+            for col in range(1, len(headers) + 1):
+                c = ws2.cell(rn, col)
+                c.font, c.fill, c.alignment = tfont(), hfill(), center()
+            ws2.cell(rn, 4).number_format = '#,##0.00'
+
+        widths = [6, 34, 12, 16] + [12, 16] * len(canais)
+        for i, w in enumerate(widths, 1):
+            ws2.column_dimensions[get_column_letter(i)].width = w
+        ws2.auto_filter.ref = f'A1:{get_column_letter(len(headers))}{ws2.max_row}'
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        fname = f'produtos_mais_vendidos_{dados["periodo"]["inicio"]}_{dados["periodo"]["fim"]}.xlsx'
+        response = HttpResponse(buf, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
+
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _export_pdf(self, dados):
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.lib.units import cm
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+            from reportlab.platypus import (
+                SimpleDocTemplate, Table, TableStyle,
+                Paragraph, Spacer, HRFlowable,
+            )
+        except ImportError:
+            return HttpResponse(
+                'Dependência reportlab não instalada. Execute: pip install reportlab',
+                status=500,
+            )
+
+        CARAMELO = colors.HexColor('#C97A3A')
+        CINZA    = colors.HexColor('#F5F5F5')
+        CINZA_BD = colors.HexColor('#E7E5E4')
+
+        title_s  = ParagraphStyle('t',  fontName='Helvetica-Bold', fontSize=15, textColor=CARAMELO, alignment=TA_CENTER, spaceAfter=4)
+        sub_s    = ParagraphStyle('s',  fontName='Helvetica',      fontSize=9,  textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)
+        sec_s    = ParagraphStyle('sc', fontName='Helvetica-Bold', fontSize=11, textColor=CARAMELO, spaceBefore=14, spaceAfter=6)
+        footer_s = ParagraphStyle('f',  fontName='Helvetica',      fontSize=7,  textColor=colors.grey, alignment=TA_RIGHT)
+
+        canais = dados['canais']
+        page = landscape(A4) if len(canais) > 1 else A4
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=page, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=2*cm, bottomMargin=2*cm)
+
+        story = []
+        story.append(Paragraph('Arretado Doces — Produtos Mais Vendidos', title_s))
+        canais_txt = ', '.join(CANAL_LABEL.get(c, c) for c in canais)
+        ordenar_txt = 'Quantidade' if dados['ordenar'] == 'quantidade' else 'Valor'
+        story.append(Paragraph(
+            f'Período: {dados["periodo"]["inicio"]} a {dados["periodo"]["fim"]} '
+            f'&nbsp;|&nbsp; Canais: {canais_txt} &nbsp;|&nbsp; Ordenado por: {ordenar_txt}',
+            sub_s,
+        ))
+        story.append(HRFlowable(width='100%', thickness=2, color=CARAMELO, spaceAfter=8))
+
+        # Resumo
+        story.append(Paragraph('Resumo do Período', sec_s))
+        r = dados['resumo']
+        resumo_rows = [
+            ['Indicador', 'Valor'],
+            ['Produtos Distintos',  str(r['produtos_distintos'])],
+            ['Quantidade Total',    str(r['quantidade_total'])],
+            ['Valor Total',         f'R$ {r["valor_total"]:.2f}'],
+        ]
+        t_resumo = Table(resumo_rows, colWidths=[9*cm, 6*cm])
+        t_resumo.setStyle(TableStyle([
+            ('BACKGROUND',   (0, 0), (-1, 0), CARAMELO),
+            ('TEXTCOLOR',    (0, 0), (-1, 0), colors.white),
+            ('FONTNAME',     (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',     (0, 0), (-1, 0), 10),
+            ('FONTSIZE',     (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, CINZA]),
+            ('GRID',         (0, 0), (-1, -1), 0.5, CINZA_BD),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING',   (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 5),
+            ('ALIGN',        (1, 0), (1, -1), 'RIGHT'),
+        ]))
+        story.append(t_resumo)
+
+        # Ranking
+        story.append(Paragraph('Ranking de Produtos', sec_s))
+        headers = ['#', 'Produto', 'Qtd. Total', 'Valor Total'] + [CANAL_LABEL.get(c, c) for c in canais]
+        det_rows = [headers]
+        for i, p in enumerate(dados['produtos'], 1):
+            row = [str(i), p['nome'], str(p['quantidade_total']), f'R$ {p["valor_total"]:.2f}']
+            for c in canais:
+                info = p['canais'].get(c)
+                row.append(str(info['quantidade']) if info else '—')
+            det_rows.append(row)
+
+        col_widths = [1*cm, 6*cm, 2.3*cm, 3*cm] + [2.2*cm] * len(canais)
+        t_det = Table(det_rows, colWidths=col_widths, repeatRows=1)
+        t_det.setStyle(TableStyle([
+            ('BACKGROUND',   (0, 0), (-1, 0), CARAMELO),
+            ('TEXTCOLOR',    (0, 0), (-1, 0), colors.white),
+            ('FONTNAME',     (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',     (0, 0), (-1, 0), 9),
+            ('FONTSIZE',     (0, 1), (-1, -1), 8),
+            ('ALIGN',        (0, 0), (0, -1), 'CENTER'),
+            ('ALIGN',        (2, 0), (-1, -1), 'CENTER'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, CINZA]),
+            ('GRID',         (0, 0), (-1, -1), 0.5, CINZA_BD),
+            ('TOPPADDING',   (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 4),
+        ]))
+        story.append(t_det)
+
+        story.append(Spacer(1, 0.5*cm))
+        story.append(HRFlowable(width='100%', thickness=1, color=CINZA_BD))
+        story.append(Paragraph(
+            f'Gerado em {timezone.now().strftime("%d/%m/%Y às %H:%M")} — Arretado Doces CRM',
+            footer_s,
+        ))
+
+        doc.build(story)
+        buf.seek(0)
+
+        fname = f'produtos_mais_vendidos_{dados["periodo"]["inicio"]}_{dados["periodo"]["fim"]}.pdf'
+        response = HttpResponse(buf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
 
 
 def _fmt_estoque(valor):

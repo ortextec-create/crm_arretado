@@ -363,11 +363,31 @@ function RelatorioProdutos() {
     }
   }, [dataInicio, dataFim, canais, ordenar, empresaParam])
 
+  const exportar = (formato) => {
+    const p = new URLSearchParams({ formato, data_inicio: dataInicio, data_fim: dataFim, ordenar })
+    canais.forEach(c => p.append('canal', c))
+    if (empresaParam) p.set('empresa', empresaParam)
+    window.open(`/api/v1/relatorios/produtos-mais-vendidos/?${p}`, '_blank')
+  }
+
   const produtos = dados?.produtos || []
   const canaisAtivos = dados?.canais || []
 
   return (
     <>
+      {dados && (
+        <div className={styles.exportRow}>
+          <div className={styles.exportBtns}>
+            <button className={styles.btnExcel} onClick={() => exportar('excel')}>
+              <i className="ti ti-table-export" /> Excel
+            </button>
+            <button className={styles.btnPdf} onClick={() => exportar('pdf')}>
+              <i className="ti ti-file-type-pdf" /> PDF
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Filtros ── */}
       <div className={styles.filtros}>
         <div className={styles.filtroGrupo}>
