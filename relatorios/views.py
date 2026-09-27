@@ -817,6 +817,18 @@ CANAIS_VALIDOS = ('ifood', 'pdv', 'eventos')
 CANAL_LABEL = {'ifood': 'iFood', 'pdv': 'PDV', 'eventos': 'Eventos'}
 
 
+def _brl(valor):
+    """Formata número como moeda brasileira em texto puro (PDF não tem
+    locale — reportlab não formata número nenhum sozinho): R$ 1.234,56."""
+    texto = f'{valor:,.2f}'.replace(',', '_').replace('.', ',').replace('_', '.')
+    return f'R$ {texto}'
+
+
+def _data_br(iso):
+    """Converte data ISO (YYYY-MM-DD) para dd/mm/aaaa."""
+    return date.fromisoformat(iso).strftime('%d/%m/%Y') if iso else iso
+
+
 class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
     """
     Ranking de produtos mais vendidos, consolidando iFood + PDV + Eventos.
@@ -992,7 +1004,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
         t = ws1['A1']
         t.value = (
             f'Produtos Mais Vendidos  —  '
-            f'{dados["periodo"]["inicio"]} a {dados["periodo"]["fim"]}'
+            f'{_data_br(dados["periodo"]["inicio"])} a {_data_br(dados["periodo"]["fim"])}'
         )
         t.font = Font(bold=True, size=13, color=CARAMELO)
         t.alignment = center()
@@ -1084,7 +1096,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
             from reportlab.lib.pagesizes import A4, landscape
             from reportlab.lib.styles import ParagraphStyle
             from reportlab.lib.units import cm
-            from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
             from reportlab.platypus import (
                 SimpleDocTemplate, Table, TableStyle,
                 Paragraph, Spacer, HRFlowable,
@@ -1095,6 +1107,8 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
                 status=500,
             )
 
+        from xml.sax.saxutils import escape
+
         CARAMELO = colors.HexColor('#C97A3A')
         CINZA    = colors.HexColor('#F5F5F5')
         CINZA_BD = colors.HexColor('#E7E5E4')
@@ -1103,6 +1117,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
         sub_s    = ParagraphStyle('s',  fontName='Helvetica',      fontSize=9,  textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)
         sec_s    = ParagraphStyle('sc', fontName='Helvetica-Bold', fontSize=11, textColor=CARAMELO, spaceBefore=14, spaceAfter=6)
         footer_s = ParagraphStyle('f',  fontName='Helvetica',      fontSize=7,  textColor=colors.grey, alignment=TA_RIGHT)
+        produto_s = ParagraphStyle('pr', fontName='Helvetica', fontSize=8, leading=9.5, alignment=TA_LEFT)
 
         canais = dados['canais']
         page = landscape(A4) if len(canais) > 1 else A4
@@ -1115,7 +1130,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
         canais_txt = ', '.join(CANAL_LABEL.get(c, c) for c in canais)
         ordenar_txt = 'Quantidade' if dados['ordenar'] == 'quantidade' else 'Valor'
         story.append(Paragraph(
-            f'Período: {dados["periodo"]["inicio"]} a {dados["periodo"]["fim"]} '
+            f'Período: {_data_br(dados["periodo"]["inicio"])} a {_data_br(dados["periodo"]["fim"])} '
             f'&nbsp;|&nbsp; Canais: {canais_txt} &nbsp;|&nbsp; Ordenado por: {ordenar_txt}',
             sub_s,
         ))
@@ -1128,7 +1143,7 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
             ['Indicador', 'Valor'],
             ['Produtos Distintos',  str(r['produtos_distintos'])],
             ['Quantidade Total',    str(r['quantidade_total'])],
-            ['Valor Total',         f'R$ {r["valor_total"]:.2f}'],
+            ['Valor Total',         _brl(r['valor_total'])],
         ]
         t_resumo = Table(resumo_rows, colWidths=[9*cm, 6*cm])
         t_resumo.setStyle(TableStyle([
@@ -1152,13 +1167,13 @@ class ProdutosMaisVendidosView(CsrfExemptMixin, views.APIView):
         headers = ['#', 'Produto', 'Qtd. Total', 'Valor Total'] + [CANAL_LABEL.get(c, c) for c in canais]
         det_rows = [headers]
         for i, p in enumerate(dados['produtos'], 1):
-            row = [str(i), p['nome'], str(p['quantidade_total']), f'R$ {p["valor_total"]:.2f}']
+            row = [str(i), Paragraph(escape(p['nome']), produto_s), str(p['quantidade_total']), _brl(p['valor_total'])]
             for c in canais:
                 info = p['canais'].get(c)
                 row.append(str(info['quantidade']) if info else '—')
             det_rows.append(row)
 
-        col_widths = [1*cm, 6*cm, 2.3*cm, 3*cm] + [2.2*cm] * len(canais)
+        col_widths = [1*cm, 7*cm, 2.3*cm, 2.7*cm] + [2.2*cm] * len(canais)
         t_det = Table(det_rows, colWidths=col_widths, repeatRows=1)
         t_det.setStyle(TableStyle([
             ('BACKGROUND',   (0, 0), (-1, 0), CARAMELO),
