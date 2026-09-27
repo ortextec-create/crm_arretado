@@ -195,7 +195,7 @@ arretado/                        ← raiz Django
 │   │                               do MULTIEMPRESA.md
 │   ├── views.py                 ← RelatorioIFoodView (resumo + agrupado por dia/mês, export
 │   │                               Excel/PDF — só canal iFood) + ProdutosMaisVendidosView (ranking
-│   │                               cross-canal iFood+PDV+Eventos — só JSON) + RelatorioEventosView
+│   │                               cross-canal iFood+PDV+Eventos, export Excel/PDF) + RelatorioEventosView
 │   │                               (lista de Eventos no período + resumo + agrupado por dia/mês,
 │   │                               export Excel/PDF — mono-empresa, só retorna dado quando a
 │   │                               empresa resolvida é a matriz ou 'todas', mesmo gate de
@@ -204,7 +204,7 @@ arretado/                        ← raiz Django
 │   │                               `quantidade_estoque` atual — lido direto do campo denormalizado,
 │   │                               nunca somado do ledger; mesmos filtros de tela — busca,
 │   │                               categoria, tipo, ativo/inativo —, export Excel/PDF, vive no menu
-│   │                               Catálogo, não em Relatorios.jsx) · as 3 de export aceitam
+│   │                               Catálogo, não em Relatorios.jsx) · as 4 de export aceitam
 │   │                               `?empresa=<id>`/`?empresa=todas`, exceto Catálogo (sem FK
 │   │                               empresa, é catálogo único)
 │   └── urls.py                  ← ifood/, produtos-mais-vendidos/, eventos/, catalogo/
@@ -381,7 +381,7 @@ arretado-crm/                    ← raiz React
 - **Resumo de Cozinha** (`GET /eventos/{id}/resumo-cozinha/`) — ver `eventos/pdf_resumo_cozinha.py` acima. `EventoListSerializer.n_imagens_inspiracao` existe só pra o frontend decidir se pergunta "incluir imagens?" antes de imprimir
 - **Criação/edição/status/item de Orçamento e Evento exigem login** — único motivo é garantir que sempre exista um ator no log de auditoria; `converter_em_evento`/`enviar_whatsapp` continuam `AllowAny` (oportunistas)
 - **`dashboard/` é um app só-leitura, sem models** — `DashboardResumoView` só agrega dados que já existem em `pedidos.PedidoUnificado` e `eventos.Evento`/`PagamentoEvento`. A receita de **Eventos** no dia vem exclusivamente de `PagamentoEvento` pago com `data_pagamento` de hoje — nunca de `Evento.valor_total` nem status de entrega. Já `ticket_medio.eventos` é a exceção (usa `valor_total` dos entregues nos últimos 30 dias)
-- **`relatorios.ProdutosMaisVendidosView`** — ranking cross-canal (iFood+PDV+Eventos), só venda de fato concretizada (exclui Orçamentos, que são cotação). Agrupa por nome normalizado (`unicodedata`), nunca por `pdv.Produto` (iFood não tem FK pra Produto). Só JSON, sem export
+- **`relatorios.ProdutosMaisVendidosView`** — ranking cross-canal (iFood+PDV+Eventos), só venda de fato concretizada (exclui Orçamentos, que são cotação). Agrupa por nome normalizado (`unicodedata`), nunca por `pdv.Produto` (iFood não tem FK pra Produto). Export Excel/PDF respeita o mesmo `limit`/`ordenar` da tela; PDF usa página paisagem quando mais de 1 canal selecionado
 - **`relatorios.RelatorioEventosView`** — lista de `Evento` no período (todos os status, sem excluir `cancelado` — o usuário decide o que fazer com eles na tela/export) + resumo + agrupado por dia/mês, mesmo padrão de export Excel/PDF do `RelatorioIFoodView`. Filtra por `Evento.data_evento` (não `criado_em`). "Valor recebido" é sempre `Evento.sinal_pago` (campo já derivado via `recalcular_sinal_pago()`) — nunca soma ao vivo de `PagamentoEvento` nem `Evento.valor_total`. Eventos é mono-empresa (sem FK própria) — usa o mesmo gate `mono_empresa_habilitado = empresa is None or empresa.padrao` de `ProdutosMaisVendidosView`, devolvendo queryset vazia quando a empresa resolvida não é a matriz
 - **Módulo Financeiro** (spec completa em `FINANCEIRO.md`) — `ContaPagar`/`ContaReceber` são obrigação projetada; `MovimentoFinanceiro` é o ledger, fonte única da verdade. **Nenhum valor hardcoded** — `CategoriaFinanceira` nasce vazia
 - **Financeiro por empresa** (ver `MULTIEMPRESA.md`) — `ContaBancaria`/`ContaPagar`/`ContaReceber`/`DespesaRecorrente` têm FK `empresa` (PROTECT). `ConfiguracaoFinanceira.get(empresa)` — argumento obrigatório, não é mais singleton global. `MovimentoFinanceiro.empresa` é property (`self.conta.empresa`), nunca denormalizar. `CategoriaFinanceira`/`Fornecedor`/`TelefoneAlertaFinanceiro` continuam compartilhados. Sinais de venda resolvem a config da empresa certa (PDV/PagamentoEvento sempre `Empresa.get_padrao()`; iFood usa `pedido.empresa`). Todos os ViewSets aceitam `?empresa=<id>`/`?empresa=todas` via `_resolver_empresa()` (duplicado por app, nunca importado entre apps)
@@ -451,7 +451,7 @@ arretado-crm/                    ← raiz React
 | Catálogo — Export Excel/PDF | `RelatorioCatalogoView` | ✅ Concluída (v1.5.6) |
 | Frete por Bairro | Taxa por bairro no PDV/Orçamentos/Eventos + Locais de Evento | ✅ Concluída (ver `FRETE.md`) |
 | Relatórios | Relatório consolidado iFood (resumo, agrupamento, export) | ✅ Concluída (só iFood por enquanto) |
-| Produtos Mais Vendidos | Ranking cross-canal por quantidade/valor | ✅ Concluída (só JSON) |
+| Produtos Mais Vendidos | Ranking cross-canal por quantidade/valor | ✅ Concluída (export Excel/PDF desde 27/set/2026) |
 | Contrato | Emissão a partir de Orçamento aprovado + reenvio WhatsApp | ✅ Concluída (ver `Contrato.md`) |
 | Aditivo de Contrato | Documenta alteração de valor/itens de Evento com Contrato já emitido, antes do evento acontecer | ✅ Concluída (14/set/2026, ver `Contrato.md` § 9) |
 | Imagens de Inspiração | Galeria anexada ao Orçamento OU Evento | ✅ Concluída |
@@ -475,7 +475,7 @@ arretado-crm/                    ← raiz React
 1. **Anota AI (Fase 3-ext-B)** — criar app `anotaai/` seguindo o padrão de `pdv/`
 2. **Fichas técnicas incompletas** — alguns ingredientes com custo zero/sem quantidade na planilha original
 3. **PDV Hardware (roadmap):** impressora térmica ESC/POS + caixa registradora (curto prazo) · NFC-e SEFAZ-PI (médio prazo) · TEF integrado (longo prazo)
-4. **Relatório de canal (`RelatorioIFoodView`) cobre só iFood** — expandir pra PDV. Eventos já ganhou relatório próprio (`RelatorioEventosView`, 17/set/2026). (`ProdutosMaisVendidosView` já cobre os 3 canais — pendência diferente, falta só export Excel/PDF nesse)
+4. **Relatório de canal (`RelatorioIFoodView`) cobre só iFood** — expandir pra PDV. Eventos já ganhou relatório próprio (`RelatorioEventosView`, 17/set/2026). `ProdutosMaisVendidosView` já cobre os 3 canais e ganhou export Excel/PDF em 27/set/2026 — pendência dele encerrada
 5. **Logging/observabilidade rudimentar** — sem `LOGGING` dict/Sentry, sem persistência em arquivo (tudo no stdout do Gunicorn, só via `journalctl`). Considerar `RotatingFileHandler` e/ou Sentry
 6. **Divergência de receita "hoje" entre o card iFood do Dashboard e o menu iFood** — causa raiz identificada, correção pendente de decisão do usuário. Ver `IFOOD_RECEITA_DASHBOARD.md`
 7. **Variáveis de ambiente em prod para WhatsApp (Z-API)** — `ZAPI_INSTANCE_ID`/`ZAPI_TOKEN`/`ZAPI_CLIENT_TOKEN` já configuradas
@@ -640,7 +640,7 @@ POST          /api/v1/estoque/notas/{id}/descartar/
 
 # Relatórios (ver MULTIEMPRESA.md — aceitam ?empresa=<id>/?empresa=todas)
 GET /api/v1/relatorios/ifood/                    ← data_inicio, data_fim, agrupamento (dia|mes), formato (json|excel|pdf), empresa
-GET /api/v1/relatorios/produtos-mais-vendidos/   ← canal (repetível), data_inicio, data_fim, ordenar (quantidade|valor), limit (1-200), empresa · só JSON
+GET /api/v1/relatorios/produtos-mais-vendidos/   ← canal (repetível), data_inicio, data_fim, ordenar (quantidade|valor), limit (1-200), formato (json|excel|pdf), empresa
 GET /api/v1/relatorios/eventos/                  ← data_inicio, data_fim (filtram Evento.data_evento), agrupamento (dia|mes), formato (json|excel|pdf), empresa
 GET /api/v1/relatorios/catalogo/                 ← search, categoria, tipo, ativo, formato (json|excel|pdf) — sem filtro de empresa
 
