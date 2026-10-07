@@ -5,6 +5,20 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.6.0] - 2026-10-07
+
+### Adicionado
+- **Cobrança de Eventos — régua automática de WhatsApp + ligações da equipe**: novo app
+  `cobranca/` (spec completa em `COBRANCA.md`). Eventos com saldo em aberto recebem lembretes
+  e cobranças automáticas por WhatsApp a partir de uma régua configurável (etapas por dia
+  relativo à data do evento, tipo lembrete/cobrança derivado de uma data limite). A equipe
+  pode registrar ligações de cobrança (imutáveis) e pausar a régua com um prazo combinado —
+  pausa gera mensagens próprias no dia do prazo e no dia seguinte se não houver pagamento.
+  Cron diário `enviar_cobrancas` (09:30, com `--dry-run`/`--evento`/`--data`), tela
+  `Cobranca.jsx` (fila de trabalho da equipe + editor da régua com prévia ao vivo) e badge de
+  status nos modais de Evento e no histórico do cliente. Nasce desligado — nenhuma mensagem
+  sai até alguém ligar o envio automático na tela.
+
 ## [v1.5.6] - 2026-09-20
 
 ### Adicionado
