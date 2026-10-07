@@ -1,11 +1,11 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 20/set/2026 (v1.5.6) — reduzido de ~200KB para enxuto. O histórico de implementação
-> de cada feature grande (fases, decisões, bugs encontrados, datas de deploy) vive nos specs
+> Última atualização: 07/out/2026 — módulo de Cobrança implementado (ver `COBRANCA.md`). O histórico de
+> implementação de cada feature grande (fases, decisões, bugs encontrados, datas de deploy) vive nos specs
 > dedicados (`MULTIEMPRESA.md`, `FINANCEIRO.md`, `BRINDES_PERMUTAS.md`, `Contrato.md`, `FRETE.md`,
-> `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`) e na memória do Claude Code (`MEMORY.md` e arquivos
-> `project_*.md`) — este arquivo documenta só o estado atual e as regras vigentes. Se precisar do
+> `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`, `COBRANCA.md`) e na memória do Claude Code (`MEMORY.md` e
+> arquivos `project_*.md`) — este arquivo documenta só o estado atual e as regras vigentes. Se precisar do
 > "porquê" de uma decisão antiga, procure lá antes de perguntar ao usuário.
 
 ---
@@ -30,8 +30,8 @@ Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, cat
 ```
 arretado/                        ← raiz Django
 ├── config/
-│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard, financeiro, manutencao, empresas
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/versao/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/
+│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard, financeiro, manutencao, empresas, cobranca
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/versao/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/, /api/v1/cobranca/
 │   ├── versao.py                ← `obter_versao()` — versão via `git describe --tags --always --dirty`, cacheada por processo (`lru_cache`) — ver "Versão do Sistema"
 │   ├── views.py                 ← `VersaoView` (APIView, AllowAny)
 │   └── wsgi.py
@@ -126,6 +126,47 @@ arretado/                        ← raiz Django
 │                                    padrão de ContratoViewSet — ver Contrato.md § 9) +
 │                                    ConfiguracaoContratoViewSet + ConfiguracaoAlertaEventoViewSet +
 │                                    TelefoneAlertaEventoViewSet
+├── cobranca/                     ← Régua de Cobrança de Eventos — WhatsApp ao cliente + ligações da
+│   │                               equipe (spec completa em `COBRANCA.md`, 7 fases, 0-6 implementadas).
+│   │                               Fala com o CLIENTE; não confundir com `eventos/management/
+│   │                               commands/alertar_eventos.py` (fala com a EQUIPE, independente)
+│   ├── models.py                 ← ConfiguracaoCobranca (singleton, nasce `ativo=False`,
+│   │                                `ativo_desde` read-only — gravado pela view no PATCH que vira
+│   │                                True), EtapaRegua (`dias` relativo a `data_evento`, `tipo`
+│   │                                sempre derivado de `limite_lembrete`, nunca gravado; sem DELETE),
+│   │                                PausaCobranca (`pausado_ate` sempre no futuro, `vigente` é
+│   │                                property derivada, sem PATCH/DELETE — encerrar só via
+│   │                                `encerrar/`), LigacaoCobranca (imutável, sem PATCH/PUT/DELETE),
+│   │                                EnvioCobranca (log imutável — `tipo`/`dias_etapa`/`rotulo_etapa`
+│   │                                são snapshot; `UniqueConstraint` condicional por
+│   │                                evento+etapa+data_evento_referencia garante no máximo 1 envio/
+│   │                                pulo por etapa por data do evento; `falha` nunca ocupa a vaga)
+│   ├── mensagens.py               ← `render()` via `re.sub()` — nunca `str.format()`/`format_map()` ·
+│   │                                `montar_contexto()`/`contexto_ficticio()` · `validar_texto()`
+│   │                                (levanta 400) · `variaveis_invalidas()` (sem efeito colateral,
+│   │                                usada pela prévia AllowAny)
+│   ├── regua.py                   ← motor da régua, funções puras recebendo `hoje` por parâmetro
+│   │                                (nunca `timezone.localdate()` interno — testável) ·
+│   │                                `STATUS_ELEGIVEIS = ('confirmado','em_producao','pronto',
+│   │                                'entregue')` · `decidir_do_dia()` devolve no máximo 1 envio +
+│   │                                lista de pulos, nunca envia/grava nada sozinho ·
+│   │                                `eventos_elegiveis()` usa `annotate(F())`, nunca a property
+│   │                                Python de saldo
+│   ├── management/commands/enviar_cobrancas.py ← cron diário (09:30) · `--dry-run`/`--evento`/
+│   │                                `--data` (`--data` só com `--dry-run`) · no máximo 1 WhatsApp
+│   │                                por evento por dia · `time.sleep(intervalo_envio_segundos)`
+│   │                                entre envios reais
+│   └── views.py                   ← ConfiguracaoCobrancaViewSet (singleton) + EtapaReguaViewSet
+│                                     (sem PUT/DELETE, action `preview/` AllowAny sem efeito
+│                                     colateral) + FilaCobrancaView/LinhaDoTempoView (APIView,
+│                                     presentation-only — reusam `regua.py` pra fase/próxima ação,
+│                                     nunca reimplementam a decisão) + EnvioCobrancaViewSet (só
+│                                     leitura) + LigacaoCobrancaViewSet (sem update/destroy — cria
+│                                     pausa automaticamente quando `atendeu+prazo_pagamento+pausar`,
+│                                     dispara `ligacao_nao_atendida` quando `atendeu=False`) +
+│                                     PausaCobrancaViewSet (sem update/destroy, action `encerrar/`
+│                                     — criar pausa nova sempre encerra a vigente anterior na mesma
+│                                     `transaction.atomic()`)
 ├── usuarios/                    ← gestão de usuários + RBAC + autenticação real por token +
 │   │                               vínculo multi-empresa (ver MULTIEMPRESA.md)
 │   ├── models.py                ← Usuario (auth_token, gerar_token(), `empresas` M2M →
@@ -263,7 +304,7 @@ arretado-crm/                    ← raiz React
     │                               definirEmpresaAtiva/preferenciaTema), authApi (login/logout/me
     │                               + atualizarCache), fichasApi, taxasEntregaApi, configEntregaApi,
     │                               relatoriosApi, dashboardApi, auditoriaApi, presencaApi,
-    │                               estoqueApi, financeiroApi, empresasApi, sistemaApi (versao)
+    │                               estoqueApi, financeiroApi, empresasApi, cobrancaApi, sistemaApi (versao)
     ├── utils/
     │   ├── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — reusado pela aba
     │   │                           "Histórico" no modal de Orçamento/Evento
@@ -306,7 +347,16 @@ arretado-crm/                    ← raiz React
     │   │                           Sidebar — diferente do seletor local de IFood.jsx, anterior à
     │   │                           Fase 2 do multi-empresa)
     │   ├── Eventos.jsx / Orcamentos.jsx (botão "Emitir Contrato"; Eventos.jsx também tem "Emitir
-    │   │                               Aditivo", só visível quando `evento.aditivo_disponivel`)
+    │   │                               Aditivo", só visível quando `evento.aditivo_disponivel`) ·
+    │   │                               Eventos.jsx mostra `CobrancaBadge` no financeiro do modal
+    │   │                               quando há saldo em aberto
+    │   ├── Cobranca.jsx         ← régua de cobrança de Eventos (ver COBRANCA.md), 2 abas: Fila de
+    │   │                           cobrança (resumo + filtros + tabela + modais Ligação/Pausa/
+    │   │                           Retomar + gaveta de linha do tempo) e Régua e mensagens (eixo
+    │   │                           visual, editor de etapa com prévia via `etapas/preview/`,
+    │   │                           mensagens especiais, config geral) · aceita deep-link
+    │   │                           `location.state.openEventoId` (mesmo padrão do `openPedidoId`
+    │   │                           do iFood em ClienteDetail.jsx) pra abrir a gaveta direto
     │   ├── Locais.jsx           ← cadastro de LocalEvento
     │   ├── TaxasEntrega.jsx     ← taxas por bairro + frete padrão (ver FRETE.md)
     │   ├── Notificacoes.jsx / Configuracoes.jsx / Vinculacoes.jsx
@@ -323,8 +373,12 @@ arretado-crm/                    ← raiz React
     │   │   ├── EmpresaSwitcher.jsx  ← pill no rodapé da Sidebar, só com 2+ empresas no contexto
     │   │   └── SeletorTema.jsx      ← segmented control de 3 ícones (empresa/claro/escuro), rodapé
     │   │                              da Sidebar, sempre visível
-    │   └── ui/                  ← Btn, Modal, Spinner, Avatar etc. · PresencaAtiva.jsx (badge
-    │                               "Fulano também está vendo isso agora", heartbeat a cada 15s)
+    │   ├── ui/                  ← Btn, Modal, Spinner, Avatar etc. · PresencaAtiva.jsx (badge
+    │   │                           "Fulano também está vendo isso agora", heartbeat a cada 15s)
+    │   └── cobranca/
+    │       └── CobrancaBadge.jsx ← status leve da régua pra 1 Evento (lê `fila/?evento=<id>`,
+    │                               sem lógica de régua no componente), usado em Eventos.jsx e
+    │                               ClienteDetail.jsx (histórico, canal 'eventos')
     ├── index.css                ← tokens do design system (`:root`) — ver Padrões Obrigatórios
     ├── temas.css                ← blocos `:root[data-theme="neutro-claro"]`/`"neutro-escuro"` —
     │                               identidade do produto Ortex, não de cliente
@@ -396,6 +450,36 @@ arretado-crm/                    ← raiz React
 - **Módulo de Backup** (spec completa em `backup.md`) — cron `fazer_backup` (pg_dump + tarfile + rclone pro B2), cron `verificar_backup` alerta sem dedup (decisão consciente — backup quebrado é o único problema invisível até precisar dele). `fazer_backup` nunca notifica. **Restauração é sempre manual**, nunca management command — ver `backup.md` para os comandos de `pg_restore`/`tar`
 - **Multi-Empresa** (spec completa em `MULTIEMPRESA.md`, 6 fases — 0-5 implementadas e deployadas, falta só cadastrar a MANGAIO) — `empresas.Empresa` é multi-tenant por linha (FK `empresa`, mesmo banco), nunca schema separado. Exatamente uma `Empresa` tem `padrao=True`, sempre via `Empresa.get_padrao()`. `EmpresaViewSet` sem DELETE/PUT. Credencial de ação de pedido iFood sempre resolvida por `ConfiguracaoIFood.objects.filter(empresa=pedido.empresa)`, nunca `.first()`. `Empresa.modulos_ocultos` é puramente cosmético (Sidebar), nunca controle de acesso. Login nunca bloqueia por falta de vínculo de empresa — cai na empresa padrão via `_empresas_efetivas()`
 - **Versão do Sistema** (`config/versao.py`) — sempre derivada do Git (`git describe --tags --always --dirty`), nunca mantida à mão. Cada release: tag anotada `vX.Y.Z` + entrada no `CHANGELOG.md`, sempre juntos. Requer `git config --system --add safe.directory /var/www/crm_arretado` (já aplicado em prod) — sem isso, `obter_versao()` cai silenciosamente no fallback `'desconhecida'`
+- **Régua de Cobrança de Eventos** (spec completa em `COBRANCA.md`) — app `cobranca/`, fala com o
+  **cliente** (WhatsApp), nunca com a equipe (isso é `eventos/management/commands/alertar_eventos.py`,
+  independente). `ConfiguracaoCobranca` é singleton, sempre via `.get()`, nasce `ativo=False` — deploy
+  nunca dispara mensagem sozinho. `ativo_desde` é read-only na API, gravado pela view no PATCH que muda
+  `ativo` de False→True (`timezone.localdate()`) — toda nova ativação (inclusive religar depois de
+  desligar) atualiza `ativo_desde`, pra nunca despejar etapas atrasadas acumuladas durante o período
+  desligado. `EtapaRegua.tipo` é sempre derivado de `ConfiguracaoCobranca.limite_lembrete`
+  (`dias <= limite` → lembrete, senão cobrança) — nunca gravado no model; em listas, resolver o limite
+  uma vez e passar adiante (`cobranca.regua.tipo_da_etapa()`/`rotulos()`), nunca 1 query por etapa.
+  `EnvioCobranca` é o log imutável — `tipo`/`dias_etapa`/`rotulo_etapa` são sempre snapshot do momento
+  do envio, nunca recalculados ao reler. `cobranca.regua.decidir_do_dia()` é função pura (recebe `hoje`
+  por parâmetro, nunca chama `timezone.localdate()` internamente) e só decide — quem envia/grava é o
+  management command `enviar_cobrancas` (cron 09:30) ou as actions síncronas de ligação/pausa. No
+  máximo 1 WhatsApp por evento por dia; atraso acumulado despacha só a etapa mais recente, as demais
+  viram `EnvioCobranca(status='pulada')` — `falha` nunca ocupa a vaga da `UniqueConstraint`, pra ser
+  reenviada no próximo dia. `cobranca.mensagens.render()` usa `re.sub(r'\{(\w+)\}', ...)` — **nunca**
+  `str.format()`/`format_map()` (texto com `{}` literal ou chave com `.`/`[` derruba o envio).
+  `PausaCobranca` sempre com prazo (`pausado_ate`), nunca indefinida; `vigente` é property derivada
+  (`encerrada_em IS NULL AND pausado_ate >= hoje`), nunca uma flag gravada; criar pausa nova sempre
+  encerra a vigente anterior do mesmo evento na mesma `transaction.atomic()` (motivo
+  `'Substituída por nova pausa'`). `LigacaoCobranca` é imutável — sem PATCH/PUT/DELETE, correção é
+  registro novo. Ligação com `atendeu=True` + `prazo_pagamento` + `pausar=true` (default) cria a pausa
+  automaticamente; ligação com `atendeu=False` dispara `msg_ligacao_nao_atendida` na hora só se
+  `ConfiguracaoCobranca.ativo` + `msg_ligacao_nao_atendida_ativo` + saldo > 0 — falha no WhatsApp nunca
+  falha o registro da ligação (`whatsapp_enviado: false` na resposta). `FilaCobrancaView`/
+  `LinhaDoTempoView` são apresentação pura sobre o que `regua.py` já decide — nunca reimplementam a
+  decisão (fase/próxima ação sempre derivados de `pausa_vigente()`/`tipo_da_etapa()`/`data_da_etapa()`).
+  `cobranca.regua.STATUS_ELEGIVEIS = ('confirmado', 'em_producao', 'pronto', 'entregue')` é constante
+  própria do módulo, nunca reaproveitada de outro — orçamento e cancelado ficam fora da régua, entregue
+  com saldo continua recebendo cobrança
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão)*
@@ -467,6 +551,7 @@ arretado-crm/                    ← raiz React
 | Sistema de Backup | App `manutencao/` (ver `backup.md`) | ✅ Concluída (fases 1-5) |
 | Multi-Empresa + Temas | Fases 0-5 de 6 (ver `MULTIEMPRESA.md`) | 🔄 Deployado 24/ago/2026 (v1.5.0) — falta só cadastrar a MANGAIO |
 | Brindes e Permutas | Campo `natureza` por item, 5 de 5 fases (ver `BRINDES_PERMUTAS.md`) | ✅ Concluída (v1.5.1) |
+| Cobrança de Eventos | Régua automática de WhatsApp + ligações da equipe, 7 de 7 fases (ver `COBRANCA.md`) | 🔄 Código completo (07/out/2026) — falta deploy (migrate + restart) e setup manual (Pix/telefone/crontab, ver COBRANCA.md § Setup Manual) |
 
 ---
 
@@ -481,6 +566,7 @@ arretado-crm/                    ← raiz React
 7. **Variáveis de ambiente em prod para WhatsApp (Z-API)** — `ZAPI_INSTANCE_ID`/`ZAPI_TOKEN`/`ZAPI_CLIENT_TOKEN` já configuradas
 8. **`ANTHROPIC_API_KEY` não configurada em produção** — fallback de IA da importação de nota fiscal cai sempre em `metodo_extracao='falhou'` sem ela (key da Ortex, decisão de negócio)
 9. **Cascata "texto de PDF" é heurística best-effort** — sem notas reais de fornecedores pra calibrar o regex, pode não reconhecer DANFEs complexos (cai pra IA automaticamente, nunca trava o fluxo)
+10. **Cobrança de Eventos — falta deploy** — código completo e testado (40 testes próprios + suíte inteira verde), mas ainda não migrado/rodando em prod. Antes de ligar de verdade: `migrate` + `systemctl restart arretado arretado-polling` (models usados pelo polling não mudaram aqui, mas a regra de reiniciar os dois juntos em qualquer `migrate` continua valendo), rodar `enviar_cobrancas --dry-run` pra conferir a fila, preencher Pix/favorecido/telefone em Cobrança → Régua e mensagens, cadastrar crontab (`30 9 * * *`), e só então ligar o toggle "Envio automático" (ver COBRANCA.md § Setup Manual)
 
 ---
 
@@ -681,6 +767,37 @@ GET/PATCH/DELETE      /api/v1/manutencao/telefones-alerta/{id}/
 # Multi-Empresa (ver MULTIEMPRESA.md)
 GET/POST/PATCH        /api/v1/empresas/[{id}/]           ← sem DELETE/PUT
 GET                   /api/v1/empresas/branding-login/   ← AllowAny
+
+# Cobrança (ver COBRANCA.md)
+GET/PATCH        /api/v1/cobranca/configuracao/1/              ← singleton, pk ignorado · PATCH exige login,
+                                                                   audita cobranca_config_alterada · ativo
+                                                                   False→True grava ativo_desde
+GET              /api/v1/cobranca/etapas/                      ← inclui tipo/rotulo derivados por etapa +
+                                                                   limite_lembrete no payload
+POST             /api/v1/cobranca/etapas/                      ← exige login, audita cobranca_etapa_criada
+PATCH            /api/v1/cobranca/etapas/{id}/                 ← exige login, audita cobranca_etapa_alterada
+                                                                   · sem PUT/DELETE
+POST             /api/v1/cobranca/etapas/preview/               ← AllowAny, sem efeito colateral · body
+                                                                   {mensagem, evento_id?, tipo_especial?}
+                                                                   → {texto, variaveis_invalidas, contexto_ficticio}
+GET              /api/v1/cobranca/fila/                         ← filtros: fase (lembrete|cobranca|pausado|
+                                                                   prazo_hoje|pos_evento|sem_ligacao), search,
+                                                                   evento (1 só, usado pelo CobrancaBadge)
+GET              /api/v1/cobranca/eventos/{evento_id}/linha-do-tempo/
+GET              /api/v1/cobranca/envios/                       ← só leitura · filtros: evento, tipo, status,
+                                                                   data_inicio, data_fim
+GET/POST         /api/v1/cobranca/ligacoes/                     ← POST exige login · audita
+                                                                   cobranca_ligacao_registrada (+
+                                                                   cobranca_pausada se criou pausa) · sem
+                                                                   PATCH/PUT/DELETE (imutável) · body {evento,
+                                                                   data_hora?, atendente?, telefone_discado,
+                                                                   atendeu, prazo_pagamento?, pausar?=true,
+                                                                   observacao?}
+GET/POST         /api/v1/cobranca/pausas/                       ← POST exige login, audita cobranca_pausada ·
+                                                                   sem PATCH/DELETE · body {evento, pausado_ate,
+                                                                   motivo}
+POST             /api/v1/cobranca/pausas/{id}/encerrar/         ← exige login, audita cobranca_retomada · body
+                                                                   {motivo} · 400 se já encerrada/vencida
 ```
 
 ---
@@ -706,6 +823,8 @@ python manage.py gerar_contas_recorrentes      # 07:00 — idempotente
 python manage.py alertar_vencimentos           # 08:30 — janelas de ConfiguracaoFinanceira
 python manage.py fazer_backup                  # 03:00
 python manage.py verificar_backup              # 08:00
+python manage.py enviar_cobrancas              # 09:30 — régua de cobrança de Eventos (ver COBRANCA.md)
+                                                #   --dry-run / --evento EV-123 / --data AAAA-MM-DD (só com --dry-run)
 
 # Importar planilha de precificação
 python manage.py importar_planilha --arquivo PLANILHA_DE_PRECIFICACAO_ARRETADO.xlsx
@@ -883,3 +1002,13 @@ Infra já configurada em produção (não precisa recriar):
 - Não esquecer da tag ao fazer um deploy que o usuário considera "versão nova" — perguntar antes de criar
 - Não reiniciar só `arretado.service` num deploy que muda `models.py` de app usado pelo `arretado-polling` (`ifood`, `clientes`, `pedidos`, `empresas`) — sempre reiniciar os dois juntos
 - Não rodar `manage.py test` esperando filesystem isolado igual ao banco — só o banco vira SQLite em memória, `MEDIA_ROOT` precisa isolamento próprio em `settings_test.py`
+- Não gravar `tipo` (lembrete/cobrança) em `EtapaRegua` — é sempre derivado de `ConfiguracaoCobranca.limite_lembrete`; em `EnvioCobranca` ele é snapshot, de propósito
+- Não usar `str.format()`/`format_map()` pra renderizar mensagem de cobrança — sempre `cobranca.mensagens.render()` (regex)
+- Não chamar `timezone.localdate()` dentro de `cobranca.regua.decidir_do_dia()`/funções do motor — `hoje` é sempre parâmetro, pra manter testável
+- Não enviar mais de 1 WhatsApp de cobrança por evento por dia, nem despejar etapas atrasadas acumuladas — só a mais recente sai, as demais viram `pulada`
+- Não enviar etapa de cobrança com data anterior a `ConfiguracaoCobranca.ativo_desde`
+- Não implementar DELETE em `EtapaRegua`/PATCH-PUT-DELETE em `PausaCobranca`/`LigacaoCobranca`/`EnvioCobranca` — imutáveis de propósito (correção = registro novo)
+- Não criar `PausaCobranca` sem prazo (`pausado_ate` obrigatório) nem com prazo no passado
+- Não reaproveitar `AlertaEventoEnviado`/`alertar_eventos` pra cobrança de cliente — aquele é da equipe, `cobranca/` é o cliente, nunca confundir os dois
+- Não hardcodar nome da empresa, Pix ou telefone em texto padrão de cobrança — sempre variável (`{empresa}`/`{chave_pix}`/`{telefone_empresa}`)
+- Não reimplementar fase/próxima ação da régua no frontend (`Cobranca.jsx`/`CobrancaBadge.jsx`) — sempre ler de `fila/`/`linha-do-tempo/`, nunca lógica paralela de decisão em JS
