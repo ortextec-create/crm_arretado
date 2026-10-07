@@ -41,11 +41,15 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         cfg = ConfiguracaoCobranca.get()
-        if not cfg.ativo:
+        dry_run = options['dry_run']
+
+        # --dry-run nunca envia nem grava nada — não há motivo pra bloquear a
+        # simulação só porque o envio automático ainda está desligado (é
+        # exatamente o cenário do checklist de Setup Manual: conferir a fila
+        # ANTES de ligar). Fora do dry-run, ativo=False continua saindo direto.
+        if not cfg.ativo and not dry_run:
             self.stdout.write('Cobrança automática desligada — nada a fazer.')
             return
-
-        dry_run = options['dry_run']
 
         if options['data']:
             if not dry_run:
@@ -54,6 +58,14 @@ class Command(BaseCommand):
             hoje = date.fromisoformat(options['data'])
         else:
             hoje = timezone.localdate()
+
+        if dry_run and cfg.ativo_desde is None:
+            # Nunca foi ligado — simula "se eu ligasse hoje" (só em memória,
+            # nunca salvo: cfg.save() não é chamado neste fluxo).
+            cfg.ativo_desde = hoje
+
+        if not cfg.ativo:
+            self.stdout.write('Cobrança automática desligada — simulação abaixo assume ativação hoje.')
 
         if hoje.weekday() not in (cfg.dias_semana_envio or []):
             self.stdout.write(f'{hoje:%d/%m/%Y} não é dia de envio configurado — nada a fazer.')

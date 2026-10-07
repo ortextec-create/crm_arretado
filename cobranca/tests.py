@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from io import StringIO
 from unittest.mock import patch
 
 from django.core.management import call_command
@@ -214,6 +215,23 @@ class EnviarCobrancasCommandTests(TestCase):
         call_command('enviar_cobrancas', dry_run=True, data=hoje.isoformat(), verbosity=0)
         mock_notificar.assert_not_called()
         self.assertEqual(EnvioCobranca.objects.count(), 0)
+
+    @patch('cobranca.management.commands.enviar_cobrancas.notificar')
+    def test_dry_run_funciona_mesmo_com_ativo_false(self, mock_notificar):
+        self.cfg.ativo = False
+        self.cfg.ativo_desde = None
+        self.cfg.save()
+        hoje = self.evento.data_evento - timedelta(days=12)
+
+        out = StringIO()
+        call_command('enviar_cobrancas', dry_run=True, data=hoje.isoformat(), verbosity=1, stdout=out)
+
+        mock_notificar.assert_not_called()
+        self.assertEqual(EnvioCobranca.objects.count(), 0)
+        self.assertIn('enviaria', out.getvalue())
+        # Simulação é só em memória — nunca grava ativo_desde no banco.
+        self.cfg.refresh_from_db()
+        self.assertIsNone(self.cfg.ativo_desde)
 
 
 def _usuario(**kwargs):
