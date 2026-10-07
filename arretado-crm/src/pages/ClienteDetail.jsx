@@ -4,6 +4,7 @@ import { clientesApi } from '../api/services'
 import Topbar from '../components/layout/Topbar'
 import { Btn, Avatar, StatusBadge, IntBadge, Spinner, Toast, Modal, Field, Input, Select } from '../components/ui'
 import ClienteForm from './ClienteForm'
+import CobrancaBadge from '../components/cobranca/CobrancaBadge'
 import styles from './ClienteDetail.module.css'
 
 // ── Fase 3: Histórico unificado ────────────────────────────────────────────
@@ -115,6 +116,11 @@ function PedidoHistRow({ pedido, onClickPedido }) {
       <div>
         <div style={{ fontFamily: 'monospace', fontSize: 12 }}>#{pedido.numero}</div>
         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtHora(pedido.data)}</div>
+        {pedido.canal === 'eventos' && (
+          <div style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+            <CobrancaBadge eventoId={pedido.origem_id} />
+          </div>
+        )}
       </div>
 
       {/* Data */}

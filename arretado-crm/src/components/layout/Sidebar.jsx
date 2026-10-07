@@ -17,6 +17,7 @@ const NAV = [
       { to: '/vinculacoes', icon: 'link',              label: 'Associações' },
       { to: '/eventos',       icon: 'calendar-event',    label: 'Eventos' },
       { to: '/orcamentos',    icon: 'file-description',  label: 'Orçamentos', sub: true },
+      { to: '/cobranca',      icon: 'coin',              label: 'Cobrança', sub: true },
       { to: '/locais-evento', icon: 'map-pin',           label: 'Locais de Evento', sub: true },
       { to: '/notificacoes', icon: 'brand-whatsapp',    label: 'WhatsApp' },
     ],

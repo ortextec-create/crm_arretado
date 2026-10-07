@@ -20,6 +20,7 @@ const MODULOS_OCULTAVEIS = [
   { slug: 'eventos', label: 'Eventos' },
   { slug: 'orcamentos', label: 'Orçamentos' },
   { slug: 'locais-evento', label: 'Locais de Evento' },
+  { slug: 'cobranca', label: 'Cobrança' },
   { slug: 'catalogo', label: 'Catálogo' },
   { slug: 'fichas-tecnicas', label: 'Fichas Técnicas' },
   { slug: 'central-precos', label: 'Central de Preços' },

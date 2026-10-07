@@ -1,0 +1,868 @@
+<title>Cobrança de Eventos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap">
+<style>
+/* Layout: shell do CRM (sidebar + área de trabalho), página com 2 abas — Fila (tabela operacional + gaveta de linha do tempo) e Régua (linha do tempo editável). Tokens = os do index.css do projeto. */
+:root {
+  --bg:#FAF7F2; --bg-alt:#F4EFE6; --surface:#FFFFFF; --surface-raised:#FFFDF9; --surface-hover:#FBF8F3;
+  --caramelo:#B8730A; --caramelo-light:#D4890F; --caramelo-pale:#FDF3E3; --caramelo-dim:rgba(184,115,10,.10); --caramelo-texto:#FFFFFF;
+  --marrom:#6B3A2A;
+  --texto:#1C1410; --texto-sec:#5C4A38; --texto-muted:#9A8878; --texto-faint:#C4B4A4;
+  --border:#E8DDD0; --border-strong:#D4C4B0;
+  --ok-bg:#E3F3EA; --ok-fg:#1F7A4D;
+  --alerta-bg:#FEF3C7; --alerta-fg:#A85E05;
+  --critico-bg:#FDE7E4; --critico-fg:#B4321F;
+  --info-bg:#EEECFB; --info-fg:#5B53B8;
+  --lembrete-zone:rgba(184,115,10,.07); --cobranca-zone:rgba(180,50,31,.07);
+  --whatsapp:#1FA855; --bolha:#E7F7DC; --bolha-fg:#1C1410;
+  --overlay:rgba(28,20,16,.42);
+  --shadow-md:0 4px 16px rgba(100,60,20,.10),0 2px 6px rgba(100,60,20,.07);
+  --shadow-lg:0 12px 40px rgba(100,60,20,.16),0 4px 12px rgba(100,60,20,.08);
+  --font-display:'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-body:'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --r-sm:6px; --r-md:10px; --r-lg:16px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg:#15100C; --bg-alt:#1B140F; --surface:#211913; --surface-raised:#271D16; --surface-hover:#2C2119;
+  --caramelo:#E0A043; --caramelo-light:#EDB55E; --caramelo-pale:rgba(224,160,67,.14); --caramelo-dim:rgba(224,160,67,.12); --caramelo-texto:#1B1209;
+  --marrom:#C9907A;
+  --texto:#F4EADF; --texto-sec:#CDBBA8; --texto-muted:#957F6B; --texto-faint:#5E4D3F;
+  --border:#3A2C21; --border-strong:#4B392B;
+  --ok-bg:rgba(74,190,128,.15); --ok-fg:#6FD39C;
+  --alerta-bg:rgba(237,181,94,.15); --alerta-fg:#F0BE6E;
+  --critico-bg:rgba(235,105,85,.16); --critico-fg:#F08C7A;
+  --info-bg:rgba(150,140,240,.16); --info-fg:#AFA8F2;
+  --lembrete-zone:rgba(224,160,67,.08); --cobranca-zone:rgba(235,105,85,.08);
+  --whatsapp:#3CCB73; --bolha:#1F3A26; --bolha-fg:#EAF5EC;
+  --overlay:rgba(0,0,0,.55);
+  --shadow-md:0 4px 16px rgba(0,0,0,.35); --shadow-lg:0 12px 40px rgba(0,0,0,.5);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"] {
+  --bg:#15100C; --bg-alt:#1B140F; --surface:#211913; --surface-raised:#271D16; --surface-hover:#2C2119;
+  --caramelo:#E0A043; --caramelo-light:#EDB55E; --caramelo-pale:rgba(224,160,67,.14); --caramelo-dim:rgba(224,160,67,.12); --caramelo-texto:#1B1209;
+  --marrom:#C9907A;
+  --texto:#F4EADF; --texto-sec:#CDBBA8; --texto-muted:#957F6B; --texto-faint:#5E4D3F;
+  --border:#3A2C21; --border-strong:#4B392B;
+  --ok-bg:rgba(74,190,128,.15); --ok-fg:#6FD39C;
+  --alerta-bg:rgba(237,181,94,.15); --alerta-fg:#F0BE6E;
+  --critico-bg:rgba(235,105,85,.16); --critico-fg:#F08C7A;
+  --info-bg:rgba(150,140,240,.16); --info-fg:#AFA8F2;
+  --lembrete-zone:rgba(224,160,67,.08); --cobranca-zone:rgba(235,105,85,.08);
+  --whatsapp:#3CCB73; --bolha:#1F3A26; --bolha-fg:#EAF5EC;
+  --overlay:rgba(0,0,0,.55);
+  --shadow-md:0 4px 16px rgba(0,0,0,.35); --shadow-lg:0 12px 40px rgba(0,0,0,.5);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{background:var(--bg)}
+body{color:var(--texto);font-family:var(--font-body);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--caramelo);outline-offset:2px;border-radius:4px}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.num{font-variant-numeric:tabular-nums}
+
+/* ── Shell ── */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
+.side{background:var(--surface);border-right:1px solid var(--border);padding:20px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--marrom);padding:0 10px 18px;letter-spacing:.2px}
+.brand small{display:block;font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--texto-muted);letter-spacing:.6px;text-transform:uppercase}
+.nav-sec{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--texto-muted);padding:14px 10px 6px;font-weight:600}
+.nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-sm);color:var(--texto-sec);font-weight:500;text-decoration:none}
+.nav.on{background:var(--caramelo-pale);color:var(--caramelo)}
+.nav .novo{margin-left:auto;font-size:10px;font-weight:700;background:var(--caramelo);color:var(--caramelo-texto);padding:1px 6px;border-radius:99px}
+main{min-width:0;padding-block:24px 64px;padding-inline:clamp(16px,3vw,36px)}
+.mock{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--texto-muted);background:var(--bg-alt);border:1px dashed var(--border-strong);padding:3px 10px;border-radius:99px;margin-bottom:14px}
+
+/* ── Header ── */
+.head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:18px}
+h1{font-family:var(--font-display);font-size:28px;font-weight:600;margin:0;letter-spacing:-.2px;text-wrap:balance}
+.head p{margin:2px 0 0;color:var(--texto-sec)}
+.status-auto{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--texto-sec);background:var(--surface);border:1px solid var(--border);padding:6px 12px;border-radius:99px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok-fg)}
+.dot.off{background:var(--texto-faint)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;overflow-x:auto}
+.tab{background:none;border:0;padding:10px 14px;font-weight:600;color:var(--texto-muted);border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;gap:8px;align-items:center;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--caramelo);border-bottom-color:var(--caramelo)}
+
+/* ── Resumo ── */
+.resumo{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:14px 16px;min-width:0}
+.kpi .lb{font-size:12px;color:var(--texto-muted);font-weight:500}
+.kpi .vl{font-family:var(--font-display);font-size:24px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums lining-nums}
+.kpi .sub{font-size:12px;color:var(--texto-sec)}
+.kpi.alerta .vl{color:var(--critico-fg)}
+
+/* ── Filtros ── */
+.filtros{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center}
+.chip{border:1px solid var(--border);background:var(--surface);color:var(--texto-sec);padding:5px 12px;border-radius:99px;font-size:13px;font-weight:500;display:inline-flex;gap:6px;align-items:center}
+.chip .c{font-size:11px;color:var(--texto-muted);font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--caramelo);border-color:var(--caramelo);color:var(--caramelo-texto)}
+.chip[aria-pressed="true"] .c{color:inherit;opacity:.8}
+
+/* ── Tabela ── */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:900px}
+th{text-align:left;font-size:11.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--texto-muted);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface-raised);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:var(--surface-hover)}
+.cli b{display:block;font-weight:600}
+.cli span{font-size:12.5px;color:var(--texto-muted)}
+.data b{display:block;font-weight:600;font-variant-numeric:tabular-nums}
+.d-rel{font-size:12px;color:var(--texto-muted);font-variant-numeric:tabular-nums}
+.saldo{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.saldo span{display:block;font-size:12px;font-weight:400;color:var(--texto-muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill.lembrete{background:var(--caramelo-pale);color:var(--caramelo)}
+.pill.cobranca{background:var(--critico-bg);color:var(--critico-fg)}
+.pill.pausa{background:var(--info-bg);color:var(--info-fg)}
+.pill.aguarda{background:var(--bg-alt);color:var(--texto-sec)}
+.pill.fim{background:var(--alerta-bg);color:var(--alerta-fg)}
+.etapas{display:flex;gap:3px;margin-top:6px}
+.etapas i{width:14px;height:4px;border-radius:2px;background:var(--border)}
+.etapas i.l{background:var(--caramelo)}
+.etapas i.c{background:var(--critico-fg)}
+.etapas i.p{background:repeating-linear-gradient(90deg,var(--texto-faint) 0 2px,transparent 2px 4px)}
+.contato{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.contato .ic{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none}
+.contato .ic.w{background:var(--ok-bg);color:var(--whatsapp)}
+.contato .ic.l{background:var(--info-bg);color:var(--info-fg)}
+.contato .ic.n{background:var(--bg-alt);color:var(--texto-muted)}
+.contato small{display:block;color:var(--texto-muted);font-size:12px}
+.prox{font-size:13px;color:var(--texto-sec)}
+.prox.hoje{color:var(--critico-fg);font-weight:600}
+.acoes{display:flex;gap:4px;justify-content:flex-end}
+.ib{width:32px;height:32px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface);color:var(--texto-sec);display:grid;place-items:center}
+.ib:hover{border-color:var(--caramelo);color:var(--caramelo)}
+.vazio{padding:40px;text-align:center;color:var(--texto-muted)}
+
+/* ── Botões / form ── */
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-sm);padding:8px 14px;font-weight:600;border:1px solid var(--border-strong);background:var(--surface);color:var(--texto)}
+.btn.pri{background:var(--caramelo);border-color:var(--caramelo);color:var(--caramelo-texto)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--texto-sec)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--texto-sec);min-width:0}
+input[type=text],input[type=date],input[type=datetime-local],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-sm);padding:8px 10px;font-size:14px;font-weight:400;color:var(--texto);width:100%;min-width:0}
+textarea{resize:vertical;min-height:120px;line-height:1.5}
+input:disabled{opacity:.55}
+.hint{font-size:12px;color:var(--texto-muted);font-weight:400}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:var(--r-sm);overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:8px 16px;font-weight:600;color:var(--texto-sec);display:flex;gap:6px;align-items:center}
+.seg button+button{border-left:1px solid var(--border-strong)}
+.seg button[aria-pressed="true"].sim{background:var(--ok-bg);color:var(--ok-fg)}
+.seg button[aria-pressed="true"].nao{background:var(--critico-bg);color:var(--critico-fg)}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;color:var(--texto-sec)}
+.check input{margin-top:3px;accent-color:var(--caramelo)}
+.aviso{display:flex;gap:8px;font-size:12.5px;color:var(--texto-sec);background:var(--bg-alt);border-radius:var(--r-sm);padding:9px 12px}
+.aviso svg{margin-top:2px;color:var(--texto-muted)}
+.radios{display:flex;flex-direction:column;gap:6px}
+.radios label{display:flex;gap:8px;align-items:center;font-weight:400;color:var(--texto);font-size:13.5px}
+.radios input{accent-color:var(--caramelo)}
+
+/* ── Modal / gaveta ── */
+.overlay{position:fixed;inset:0;background:var(--overlay);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);width:min(560px,100%);max-height:calc(100vh - 32px);display:flex;flex-direction:column}
+.m-head{padding:18px 22px 12px;display:flex;gap:12px;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--border)}
+.m-head h2{font-family:var(--font-display);font-size:20px;font-weight:600;margin:0}
+.m-head p{margin:2px 0 0;font-size:13px;color:var(--texto-muted)}
+.m-body{padding:18px 22px;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+.m-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.drawer-ov{position:fixed;inset:0;background:var(--overlay);z-index:150;display:flex;justify-content:flex-end}
+.drawer{background:var(--surface);width:min(460px,100%);height:100%;box-shadow:var(--shadow-lg);display:flex;flex-direction:column}
+.dr-body{overflow-y:auto;padding:18px 22px 28px;display:flex;flex-direction:column;gap:18px}
+.dr-fin{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.dr-fin div{background:var(--bg-alt);border-radius:var(--r-sm);padding:8px 10px}
+.dr-fin small{display:block;font-size:11.5px;color:var(--texto-muted)}
+.dr-fin b{font-variant-numeric:tabular-nums}
+.dr-acoes{display:flex;gap:8px;flex-wrap:wrap}
+.sec-t{font-size:11.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--texto-muted);font-weight:600;margin:0 0 8px}
+.mini-regua{display:flex;gap:6px;flex-wrap:wrap}
+.mini-regua span{font-size:12px;font-weight:600;padding:3px 8px;border-radius:var(--r-sm);border:1px solid var(--border);color:var(--texto-muted);font-variant-numeric:tabular-nums;display:inline-flex;gap:4px;align-items:center}
+.mini-regua span.env.l{background:var(--caramelo-pale);color:var(--caramelo);border-color:transparent}
+.mini-regua span.env.c{background:var(--critico-bg);color:var(--critico-fg);border-color:transparent}
+.mini-regua span.pul{text-decoration:line-through}
+.tl{list-style:none;margin:0;padding:0;position:relative}
+.tl::before{content:"";position:absolute;left:13px;top:6px;bottom:6px;width:2px;background:var(--border)}
+.tl li{position:relative;display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;padding-bottom:16px}
+.tl .ic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:2px solid var(--border);z-index:1}
+.tl .ic.w{border-color:var(--whatsapp);color:var(--whatsapp)}
+.tl .ic.l{border-color:var(--info-fg);color:var(--info-fg)}
+.tl .ic.p{border-color:var(--alerta-fg);color:var(--alerta-fg)}
+.tl .ic.s{color:var(--texto-faint)}
+.tl .t{font-weight:600;font-size:13.5px}
+.tl .w{font-size:12px;color:var(--texto-muted)}
+.tl .d{font-size:13px;color:var(--texto-sec);margin-top:3px;white-space:pre-line}
+.tl .q{margin-top:6px;background:var(--bolha);color:var(--bolha-fg);border-radius:4px 10px 10px 10px;padding:8px 10px;font-size:12.5px;white-space:pre-line}
+
+/* ── Régua ── */
+.cfg{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:18px 20px;min-width:0}
+.card h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0 0 4px}
+.card .desc{color:var(--texto-sec);margin:0 0 14px;font-size:13.5px}
+.stack{display:flex;flex-direction:column;gap:20px;min-width:0}
+.axis-wrap{overflow-x:auto;padding-bottom:4px}
+.axis{position:relative;height:150px;min-width:620px;margin:6px 8px 0}
+.zone{position:absolute;top:22px;height:76px;border-radius:6px}
+.zone.l{background:var(--lembrete-zone)}
+.zone.c{background:var(--cobranca-zone)}
+.zone-lb{position:absolute;top:0;font-size:11px;letter-spacing:.7px;text-transform:uppercase;font-weight:700}
+.zone-lb.l{color:var(--caramelo)}
+.zone-lb.c{color:var(--critico-fg)}
+.base{position:absolute;left:0;right:0;top:60px;height:2px;background:var(--border-strong)}
+.tick{position:absolute;top:98px;transform:translateX(-50%);font-size:11px;color:var(--texto-muted);font-variant-numeric:tabular-nums}
+.tick-m{position:absolute;top:56px;width:1px;height:10px;background:var(--border-strong)}
+.evento-mk{position:absolute;top:18px;height:84px;width:2px;background:var(--marrom);transform:translateX(-1px)}
+.evento-lb{position:absolute;top:118px;transform:translateX(-50%);font-size:12px;font-weight:700;color:var(--marrom);white-space:nowrap}
+.limite-mk{position:absolute;top:14px;height:92px;border-left:2px dashed var(--texto-sec)}
+.limite-lb{position:absolute;top:118px;transform:translateX(-50%);font-size:12px;font-weight:600;color:var(--texto-sec);white-space:nowrap;background:var(--surface);padding:0 4px}
+.etapa{position:absolute;top:47px;transform:translateX(-50%);width:28px;height:28px;border-radius:50%;border:2px solid var(--surface);display:grid;place-items:center;font-size:10.5px;font-weight:700;color:#fff;box-shadow:var(--shadow-md);padding:0}
+.etapa.l{background:var(--caramelo);color:var(--caramelo-texto)}
+.etapa.c{background:var(--critico-fg);color:var(--surface)}
+.etapa.off{background:var(--surface);border:2px dashed var(--texto-faint);color:var(--texto-muted);box-shadow:none}
+.etapa.sel{outline:3px solid var(--caramelo);outline-offset:2px}
+.slider-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:8px}
+.slider-row input[type=range]{flex:1;min-width:180px;accent-color:var(--caramelo)}
+.slider-row output{font-weight:700;font-variant-numeric:tabular-nums;min-width:110px}
+.etapa-ed-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.etapa-ed-head h3{margin:0}
+.ed-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+.vars{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.vars button{border:1px solid var(--border);background:var(--bg-alt);border-radius:var(--r-sm);padding:2px 7px;font-size:11.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--texto-sec)}
+.vars button:hover{border-color:var(--caramelo);color:var(--caramelo)}
+.wa{background:var(--bg-alt);border-radius:var(--r-md);padding:14px;min-height:100%}
+.wa .hdr{font-size:12px;color:var(--texto-muted);margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.bolha{background:var(--bolha);color:var(--bolha-fg);border-radius:10px 10px 10px 3px;padding:10px 12px;white-space:pre-wrap;font-size:13.5px;max-width:100%;overflow-wrap:anywhere}
+.bolha .bad{background:var(--critico-bg);color:var(--critico-fg);border-radius:3px;padding:0 2px}
+.erro{color:var(--critico-fg);font-size:12.5px;font-weight:600}
+.lista-etapas{display:flex;flex-direction:column;gap:6px}
+.le{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);text-align:left}
+.le.sel{border-color:var(--caramelo);background:var(--caramelo-pale)}
+.le .dd{font-weight:700;font-variant-numeric:tabular-nums}
+.le .tx{font-size:12.5px;color:var(--texto-sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dias-sem{display:flex;gap:6px;flex-wrap:wrap}
+.dias-sem button{width:42px;padding:6px 0;border-radius:var(--r-sm);border:1px solid var(--border-strong);background:var(--surface);font-weight:600;font-size:12.5px;color:var(--texto-sec)}
+.dias-sem button[aria-pressed="true"]{background:var(--caramelo);border-color:var(--caramelo);color:var(--caramelo-texto)}
+.toggle{position:relative;display:inline-flex;align-items:center;gap:10px;font-weight:600}
+.toggle input{position:absolute;opacity:0;width:1px;height:1px}
+.toggle .tr{width:40px;height:22px;border-radius:99px;background:var(--border-strong);position:relative;transition:background .15s;flex:none}
+.toggle .tr::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--surface);transition:transform .15s}
+.toggle input:checked+.tr{background:var(--caramelo)}
+.toggle input:checked+.tr::after{transform:translateX(18px)}
+.toggle input:focus-visible+.tr{outline:2px solid var(--caramelo);outline-offset:2px}
+.esp{display:flex;flex-direction:column;gap:14px}
+.esp details{border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px}
+.esp summary{display:flex;gap:10px;align-items:center;justify-content:space-between;cursor:pointer;font-weight:600;list-style:none}
+.esp summary::-webkit-details-marker{display:none}
+.esp details[open] summary{margin-bottom:10px}
+.esp summary small{display:block;font-weight:400;color:var(--texto-muted);font-size:12px}
+.save-bar{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+.toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--texto);color:var(--bg);padding:10px 16px;border-radius:var(--r-md);font-weight:600;box-shadow:var(--shadow-lg);z-index:400;display:flex;gap:8px;align-items:center}
+
+@media (max-width:1100px){.cfg{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:860px){.shell{grid-template-columns:minmax(0,1fr)}.side{display:none}.resumo{grid-template-columns:repeat(2,minmax(0,1fr))}.ed-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:480px){.grid2{grid-template-columns:minmax(0,1fr)}h1{font-size:24px}.kpi .vl{font-size:20px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+  <symbol id="i-phone-off" viewBox="0 0 24 24"><path d="M3 21 21 3"/><path d="M5.3 18.7A16 16 0 0 1 3 6a2 2 0 0 1 2-2h4l2 5-2.5 1.5c.4.8.9 1.6 1.5 2.3M11.3 15.6c.7.5 1.5.9 2.2 1.1L15 13l5 2v4a2 2 0 0 1-2 2 16 16 0 0 1-6.6-1.9"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M3 21l1.6-4.7A8.5 8.5 0 1 1 7.8 19.5z"/><path d="M9 10h.01M12 10h.01M15 10h.01"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M5 6v.01M5 12v.01M5 18v.01"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 24 24"><path d="M4 12h12M12 6l6 6-6 6"/></symbol>
+  <symbol id="i-cash" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M16 3v4M8 3v4M4 11h16"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.3 4.3a1.7 1.7 0 0 1 3.4 0 1.7 1.7 0 0 0 2.6 1.1 1.7 1.7 0 0 1 2.4 2.4 1.7 1.7 0 0 0 1 2.5 1.7 1.7 0 0 1 0 3.4 1.7 1.7 0 0 0-1 2.6 1.7 1.7 0 0 1-2.4 2.4 1.7 1.7 0 0 0-2.6 1 1.7 1.7 0 0 1-3.4 0 1.7 1.7 0 0 0-2.5-1 1.7 1.7 0 0 1-2.4-2.4 1.7 1.7 0 0 0-1.1-2.6 1.7 1.7 0 0 1 0-3.4 1.7 1.7 0 0 0 1.1-2.5 1.7 1.7 0 0 1 2.4-2.4 1.7 1.7 0 0 0 2.5-1.1z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M5 12H3l9-9 9 9h-2M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M16 3.1a4 4 0 0 1 0 7.8M21 21v-2a4 4 0 0 0-3-3.9"/></symbol>
+  <symbol id="i-cake" viewBox="0 0 24 24"><path d="M3 20h18v-7a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3zM3 15c3 2 6-2 9 0s6 2 9 0M12 4v3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M14.8 9a2 2 0 0 0-1.8-1h-2a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4h-2a2 2 0 0 1-1.8-1M12 6v2m0 8v2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M10 5a2 2 0 1 1 4 0 7 7 0 0 1 4 6v3a4 4 0 0 0 2 3H4a4 4 0 0 0 2-3v-3a7 7 0 0 1 4-6M9 17v1a3 3 0 0 0 6 0v-1"/></symbol>
+</svg>
+
+<div class="shell">
+  <aside class="side" aria-label="Menu">
+    <div class="brand">Arretado<small>CRM</small></div>
+    <a class="nav" href="#fila"><svg class="i"><use href="#i-home"/></svg>Dashboard</a>
+    <a class="nav" href="#fila"><svg class="i"><use href="#i-users"/></svg>Clientes</a>
+    <div class="nav-sec">Eventos</div>
+    <a class="nav" href="#fila"><svg class="i"><use href="#i-file"/></svg>Orçamentos</a>
+    <a class="nav" href="#fila"><svg class="i"><use href="#i-cake"/></svg>Eventos</a>
+    <a class="nav on" href="#fila"><svg class="i"><use href="#i-coin"/></svg>Cobrança<span class="novo">novo</span></a>
+    <div class="nav-sec">Gestão</div>
+    <a class="nav" href="#fila"><svg class="i"><use href="#i-cash"/></svg>Financeiro</a>
+    <a class="nav" href="#fila"><svg class="i"><use href="#i-bell"/></svg>Notificações</a>
+  </aside>
+
+  <main>
+    <div class="mock"><svg class="i"><use href="#i-info"/></svg>Mockup do módulo /cobranca · dados de exemplo · hoje = qua, 07/10/2026</div>
+    <div class="head">
+      <div>
+        <h1>Cobrança</h1>
+        <p>Eventos com saldo em aberto, régua automática de WhatsApp e ligações da equipe.</p>
+      </div>
+      <span class="status-auto" id="statusAuto"><span class="dot" id="statusDot"></span><span id="statusTxt">Régua automática ligada · envio diário às 09:30</span></span>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-fila" aria-selected="true" aria-controls="painel-fila"><svg class="i"><use href="#i-list"/></svg>Fila de cobrança</button>
+      <button class="tab" role="tab" id="tab-regua" aria-selected="false" aria-controls="painel-regua"><svg class="i"><use href="#i-gear"/></svg>Régua e mensagens</button>
+    </div>
+
+    <!-- ═════════ FILA ═════════ -->
+    <section id="painel-fila" role="tabpanel" aria-labelledby="tab-fila">
+      <div class="resumo" id="resumo"></div>
+      <div class="filtros" id="filtros"></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Cliente / evento</th><th>Data do evento</th><th>Saldo</th><th>Fase da régua</th><th>Último contato</th><th>Próxima ação</th><th><span hidden>Ações</span></th></tr></thead>
+          <tbody id="linhas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═════════ RÉGUA ═════════ -->
+    <section id="painel-regua" role="tabpanel" aria-labelledby="tab-regua" hidden>
+      <div class="cfg">
+        <div class="stack">
+          <div class="card">
+            <h3>Régua de mensagens</h3>
+            <p class="desc">Cada ponto é uma mensagem de WhatsApp, contada a partir da data do evento. O tipo é definido pela posição em relação à data limite.</p>
+            <div class="axis-wrap"><div class="axis" id="axis"></div></div>
+            <div class="slider-row">
+              <label for="limite" class="hint" style="font-weight:600;color:var(--texto-sec)">Data limite (fim dos lembretes)</label>
+              <input type="range" id="limite" min="-14" max="0" step="1" value="-7">
+              <output id="limiteOut" for="limite"></output>
+            </div>
+          </div>
+
+          <div class="card" id="editor"></div>
+
+          <div class="card">
+            <h3>Mensagens do prazo combinado e da ligação</h3>
+            <p class="desc">Disparadas fora da régua: quando há uma pausa com prazo de pagamento, ou quando uma ligação não é atendida.</p>
+            <div class="esp" id="especiais"></div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <h3>Geral</h3>
+            <div style="display:flex;flex-direction:column;gap:16px;margin-top:12px">
+              <label class="toggle"><input type="checkbox" id="ativo" checked><span class="tr"></span>Envio automático ligado</label>
+              <div class="aviso"><svg class="i"><use href="#i-info"/></svg><span>No primeiro deploy esta opção nasce desligada. Nada é enviado até alguém ligar aqui.</span></div>
+              <div>
+                <div class="hint" style="font-weight:600;color:var(--texto-sec);margin-bottom:6px">Dias com envio</div>
+                <div class="dias-sem" id="diasSem"></div>
+                <div class="hint" style="margin-top:6px">Mensagem que cair num dia sem envio sai no próximo dia liberado.</div>
+              </div>
+              <label class="f" for="pix">Chave Pix<input type="text" id="pix" value="financeiro@arretadodoces.com.br"></label>
+              <label class="f" for="fav">Favorecido<input type="text" id="fav" value="Arretado Doces LTDA"></label>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Etapas</h3>
+            <p class="desc">Etapas não são apagadas, só desativadas, para manter o histórico de envios.</p>
+            <div class="lista-etapas" id="listaEtapas"></div>
+            <button class="btn" id="addEtapa" style="margin-top:12px;width:100%;justify-content:center"><svg class="i"><use href="#i-plus"/></svg>Adicionar etapa</button>
+          </div>
+          <div class="save-bar"><button class="btn pri" id="salvarRegua"><svg class="i"><use href="#i-check"/></svg>Salvar régua</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="camada"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const HOJE = new Date(2026, 9, 7);
+const fmtD = d => d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+const fmtDL = d => d.toLocaleDateString('pt-BR');
+const brl = v => v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+const dt = (d, m) => new Date(2026, m - 1, d);
+const diff = (a, b) => Math.round((a - b) / 86400000);
+const addD = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ico = (id, cls='') => `<svg class="i ${cls}"><use href="#i-${id}"/></svg>`;
+
+/* ── Régua ── */
+let limite = -7;
+let etapas = [
+  {dias:-12, ativo:true, msg:'Oi, {primeiro_nome}! Tudo bem? 😊\nPassando para lembrar que o saldo do seu evento *{tipo_evento}* de *{data_evento}* ({numero_evento}) deve ser quitado até *{data_limite}*.\n💰 Saldo: *R$ {saldo}*\nPix: {chave_pix} ({favorecido_pix})\nSe já tiver pago, é só desconsiderar. Qualquer dúvida, estamos por aqui! 🍬\n— {empresa}'},
+  {dias:-9, ativo:true, msg:'Oi, {primeiro_nome}! Faltam só {dias_para_limite} dias para o prazo do saldo do seu evento ({numero_evento}) 🗓️\n💰 *R$ {saldo}* até *{data_limite}*\nPix: {chave_pix}\nDepois de pagar, envie o comprovante por aqui para darmos baixa. Obrigado! 💛'},
+  {dias:-7, ativo:true, msg:'Bom dia, {primeiro_nome}! ☀️\nHoje é o último dia para quitar o saldo do seu evento de *{data_evento}*.\n💰 *R$ {saldo}* · Pix: {chave_pix}\nAssim que recebermos, seguimos com tudo certinho para o seu dia! 🎉'},
+  {dias:-6, ativo:true, msg:'Oi, {primeiro_nome}. Ainda não identificamos o pagamento do saldo do evento {numero_evento}, que venceu em {data_limite}.\n💰 Valor em aberto: *R$ {saldo}*\nPix: {chave_pix} ({favorecido_pix})\nSe já pagou, pode nos enviar o comprovante? Pode ter sido só um desencontro 🙏'},
+  {dias:-3, ativo:true, msg:'Olá, {primeiro_nome}. O saldo de *R$ {saldo}* do seu evento de *{data_evento}* está em aberto há {dias_em_atraso} dias.\nPara garantirmos a produção e a entrega no prazo, precisamos da quitação o quanto antes.\nPix: {chave_pix}\nSe precisar combinar outra forma, fale com a gente pelo {telefone_empresa}.'},
+  {dias:3, ativo:true, msg:'Olá, {primeiro_nome}. Consta em aberto o valor de *R$ {saldo}* referente ao evento {numero_evento} ({data_evento}), vencido em {data_limite}.\nPedimos que regularize ou entre em contato pelo {telefone_empresa} para combinarmos a melhor forma.\nPix: {chave_pix}\nAgradecemos a compreensão. — {empresa}'},
+];
+let sel = 3;
+const especiais = [
+  {id:'prazo_hoje', nome:'Prazo combinado vence hoje', quando:'No dia do prazo da pausa, se ainda houver saldo', ativo:true, msg:'Oi, {primeiro_nome}! Passando para lembrar que hoje é o prazo que combinamos para o saldo do evento {numero_evento}: *R$ {saldo}*.\nPix: {chave_pix}\nObrigado! 💛'},
+  {id:'prazo_vencido', nome:'Prazo combinado venceu', quando:'No dia seguinte ao prazo da pausa, se ainda houver saldo', ativo:true, msg:'Olá, {primeiro_nome}. O prazo combinado ({prazo_combinado}) para o saldo de *R$ {saldo}* do evento {numero_evento} venceu e ainda não identificamos o pagamento.\nPode nos dar um retorno?\nPix: {chave_pix}'},
+  {id:'ligacao_nao_atendida', nome:'Ligação não atendida', quando:'Logo após registrar uma ligação sem resposta', ativo:false, msg:'Oi, {primeiro_nome}! Tentamos falar com você por telefone sobre o saldo do evento {numero_evento} (*R$ {saldo}*).\nQuando puder, nos chame por aqui ou no {telefone_empresa}. Obrigado!'},
+];
+const VARS = ['primeiro_nome','nome','numero_evento','tipo_evento','data_evento','valor_total','valor_pago','saldo','data_limite','dias_para_limite','dias_em_atraso','dias_para_evento','prazo_combinado','chave_pix','favorecido_pix','empresa','telefone_empresa'];
+let diasSem = [true,true,true,true,true,true,false]; // seg..dom
+const tipoDe = d => d <= limite ? 'l' : 'c';
+const rotulo = (e, i) => {
+  const ord = etapas.map((x, j) => ({...x, j})).filter(x => tipoDe(x.dias) === tipoDe(e.dias)).sort((a,b)=>a.dias-b.dias);
+  return (tipoDe(e.dias) === 'l' ? 'L' : 'C') + (ord.findIndex(x => x.j === i) + 1);
+};
+const fmtDias = d => d === 0 ? 'Dia do evento' : (d < 0 ? `${-d} dia${d===-1?'':'s'} antes` : `${d} dia${d===1?'':'s'} depois`);
+const sinal = d => d === 0 ? 'D0' : (d < 0 ? `D−${-d}` : `D+${d}`);
+
+/* ── Eventos de exemplo ── */
+const eventos = [
+  {id:'EV-139', nome:'Rafael Nunes', tipo:'Formatura', data:dt(13,10), total:3200, pago:1600, tel:'(86) 99412-3380', tel2:'(86) 3221-4410',
+   enviadas:[-12,-9,-7,-6], puladas:[], pausa:null, status:'confirmado',
+   hist:[
+     {k:'w', q:dt(7,10), h:'09:30', t:'Cobrança C1 enviada', etapa:-6},
+     {k:'w', q:dt(4,10), h:'09:30', t:'Lembrete L3 enviado', etapa:-7},
+     {k:'w', q:dt(4,10), h:'09:30', t:'Lembrete L2 enviado', etapa:-9, nota:'Lembrete atrasado: o cron não rodou em 04/10. Sai só a etapa mais recente; L2 ficou como pulada.'},
+     {k:'w', q:dt(1,10), h:'09:31', t:'Lembrete L1 enviado', etapa:-12},
+   ]},
+  {id:'EV-128', nome:'Lúcia Ferreira', tipo:'Batizado', data:dt(28,9), total:1450, pago:1000, tel:'(86) 98817-0021',
+   enviadas:[-12,-9,-7,-6,-3], puladas:[3], pausa:{ate:dt(7,10), motivo:'Combinado por telefone: paga quando receber o salário', origem:'ligacao'}, status:'entregue',
+   hist:[
+     {k:'s', q:dt(1,10), h:'09:30', t:'Cobrança C3 pulada', d:'Pausa ativa até 07/10'},
+     {k:'p', q:dt(30,9), h:'16:12', t:'Pausado até 07/10', d:'Combinado por telefone: paga quando receber o salário\npor Carla Mendes (via ligação)'},
+     {k:'l', q:dt(30,9), h:'16:10', t:'Ligação · atendeu', d:'Atendente: Carla Mendes · (86) 98817-0021\nPrazo combinado: 07/10/2026\nObs.: disse que paga quando receber o salário.'},
+     {k:'w', q:dt(25,9), h:'09:30', t:'Cobrança C2 enviada', etapa:-3},
+   ]},
+  {id:'EV-131', nome:'Construtora Delta', tipo:'Corporativo', data:dt(4,10), total:1960, pago:980, tel:'(86) 99930-5512',
+   enviadas:[-12,-9,-7,-6,-3,3], puladas:[], pausa:null, status:'entregue',
+   hist:[
+     {k:'w', q:dt(7,10), h:'09:30', t:'Cobrança C3 enviada (última)', etapa:3, nota:'Equipe avisada: régua concluída sem pagamento.'},
+     {k:'l', q:dt(6,10), h:'10:45', t:'Ligação · não atendeu', d:'Atendente: Edvan Lima · (86) 99930-5512'},
+     {k:'w', q:dt(1,10), h:'09:30', t:'Cobrança C2 enviada', etapa:-3},
+   ]},
+  {id:'EV-137', nome:'Juliana Araújo', tipo:'Aniversário · 15 anos', data:dt(10,10), total:2780, pago:1390, tel:'(86) 99505-7788',
+   enviadas:[-12,-9,-7,-6], puladas:[-3], pausa:{ate:dt(9,10), motivo:'Prazo combinado: vai pagar via Pix na quinta', origem:'ligacao'}, status:'em_producao',
+   hist:[
+     {k:'s', q:dt(7,10), h:'09:30', t:'Cobrança C2 pulada', d:'Pausa ativa até 09/10'},
+     {k:'p', q:dt(5,10), h:'11:02', t:'Pausado até 09/10', d:'Prazo combinado: vai pagar via Pix na quinta\npor Carla Mendes (via ligação)'},
+     {k:'l', q:dt(5,10), h:'11:00', t:'Ligação · atendeu', d:'Atendente: Carla Mendes · (86) 99505-7788\nPrazo combinado: 09/10/2026'},
+     {k:'w', q:dt(4,10), h:'09:30', t:'Cobrança C1 enviada', etapa:-6},
+   ]},
+  {id:'EV-140', nome:'Thiago Lima', tipo:'Aniversário', data:dt(14,10), total:2400, pago:1200, tel:'(86) 98123-6640',
+   enviadas:[-12,-9,-7], puladas:[], pausa:null, status:'confirmado',
+   hist:[
+     {k:'w', q:dt(7,10), h:'09:30', t:'Lembrete L3 enviado (data limite)', etapa:-7},
+     {k:'w', q:dt(5,10), h:'09:30', t:'Lembrete L2 enviado', etapa:-9},
+     {k:'w', q:dt(2,10), h:'09:30', t:'Lembrete L1 enviado', etapa:-12},
+   ]},
+  {id:'EV-142', nome:'Maria Clara Sousa', tipo:'Casamento', data:dt(18,10), total:4850, pago:2425, tel:'(86) 99744-1203',
+   enviadas:[-12], puladas:[], pausa:null, status:'confirmado',
+   hist:[{k:'w', q:dt(6,10), h:'09:30', t:'Lembrete L1 enviado', etapa:-12}]},
+  {id:'EV-145', nome:'Pedro e Ana Castelo', tipo:'Chá revelação', data:dt(25,10), total:1800, pago:900, tel:'(86) 99211-4057',
+   enviadas:[], puladas:[], pausa:null, status:'confirmado', hist:[]},
+];
+const saldo = e => e.total - e.pago;
+const pausaAtiva = e => e.pausa && diff(e.pausa.ate, HOJE) >= 0 ? e.pausa : null;
+
+function fase(e) {
+  const dEv = diff(e.data, HOJE);
+  const pa = pausaAtiva(e);
+  if (pa) return {cls:'pausa', txt:`Pausado até ${fmtD(pa.ate)}`};
+  const ativas = etapas.filter(x => x.ativo).sort((a,b)=>a.dias-b.dias);
+  const feitas = ativas.filter(x => e.enviadas.includes(x.dias));
+  if (!feitas.length) return {cls:'aguarda', txt:'Ainda não começou'};
+  const ult = feitas[feitas.length-1];
+  const restantes = ativas.filter(x => x.dias > -dEv);
+  if (!restantes.length && ult.dias === ativas[ativas.length-1].dias) return {cls:'fim', txt:'Régua concluída'};
+  const t = tipoDe(ult.dias);
+  const doTipo = ativas.filter(x => tipoDe(x.dias) === t);
+  const pos = doTipo.findIndex(x => x.dias === ult.dias) + 1;
+  return {cls: t === 'l' ? 'lembrete' : 'cobranca', txt:`${t==='l'?'Lembrete':'Cobrança'} ${pos} de ${doTipo.length}`};
+}
+function proxima(e) {
+  const pa = pausaAtiva(e);
+  if (pa) {
+    const d = diff(pa.ate, HOJE);
+    return d === 0 ? {hoje:true, txt:'Prazo combinado vence hoje'} : {txt:`Retoma em ${fmtD(addD(pa.ate,1))} se não pagar`};
+  }
+  const prox = etapas.filter(x => x.ativo).sort((a,b)=>a.dias-b.dias).find(x => addD(e.data, x.dias) > HOJE);
+  if (!prox) return {txt:'Sem mensagens pendentes. Ligar.', hoje:diff(HOJE, e.data) >= 0};
+  const dataP = addD(e.data, prox.dias);
+  return {txt:`${rotulo(prox, etapas.indexOf(prox))} em ${fmtD(dataP)}`};
+}
+function ultimoContato(e) {
+  const h = e.hist.find(x => x.k === 'w' || x.k === 'l');
+  if (!h) return {k:'n', t:'Nenhum contato', s:''};
+  const quando = diff(HOJE, h.q) === 0 ? `hoje, ${h.h}` : diff(HOJE, h.q) === 1 ? `ontem, ${h.h}` : `${fmtD(h.q)} · há ${diff(HOJE,h.q)} dias`;
+  return {k:h.k, t: h.k === 'w' ? 'WhatsApp' : h.t.replace('Ligação · ','Ligação, '), s:quando, dias:diff(HOJE,h.q)};
+}
+
+/* ── Fila ── */
+let filtro = 'todos';
+const FILTROS = [
+  ['todos','Todos', e => true],
+  ['lembrete','Lembrete', e => fase(e).cls === 'lembrete' || fase(e).cls === 'aguarda'],
+  ['cobranca','Cobrança', e => fase(e).cls === 'cobranca' || fase(e).cls === 'fim'],
+  ['pausa','Pausados', e => !!pausaAtiva(e)],
+  ['prazo','Prazo vence hoje', e => pausaAtiva(e) && diff(e.pausa.ate, HOJE) === 0],
+  ['pos','Pós-evento', e => diff(e.data, HOJE) < 0],
+  ['semcontato','Sem ligação', e => !e.hist.some(x => x.k === 'l') && fase(e).cls !== 'aguarda'],
+];
+function urg(e) { const p = proxima(e); const f = fase(e).cls; return (p.hoje?0:10) + ({fim:1,cobranca:2,pausa:4,lembrete:5,aguarda:8}[f]||9) + diff(e.data,HOJE)/100; }
+
+function renderResumo() {
+  const total = eventos.reduce((s,e) => s + saldo(e), 0);
+  const cob = eventos.filter(e => ['cobranca','fim'].includes(fase(e).cls));
+  const cobV = cob.reduce((s,e)=>s+saldo(e),0);
+  const pz = eventos.filter(e => pausaAtiva(e) && diff(e.pausa.ate,HOJE) === 0).length;
+  const pos = eventos.filter(e => diff(e.data,HOJE) < 0);
+  document.getElementById('resumo').innerHTML = `
+    <div class="kpi"><div class="lb">Em aberto</div><div class="vl">R$ ${brl(total)}</div><div class="sub">${eventos.length} eventos na régua</div></div>
+    <div class="kpi"><div class="lb">Já em cobrança</div><div class="vl">R$ ${brl(cobV)}</div><div class="sub">${cob.length} eventos passaram da data limite</div></div>
+    <div class="kpi ${pz?'alerta':''}"><div class="lb">Prazos combinados para hoje</div><div class="vl">${pz}</div><div class="sub">pausas que vencem hoje</div></div>
+    <div class="kpi ${pos.length?'alerta':''}"><div class="lb">Evento já realizado</div><div class="vl">${pos.length}</div><div class="sub">R$ ${brl(pos.reduce((s,e)=>s+saldo(e),0))} pós-evento</div></div>`;
+}
+function renderFiltros() {
+  document.getElementById('filtros').innerHTML = FILTROS.map(([id,lb,fn]) =>
+    `<button class="chip" data-f="${id}" aria-pressed="${filtro===id}">${lb}<span class="c">${eventos.filter(fn).length}</span></button>`).join('');
+}
+function renderLinhas() {
+  const fn = FILTROS.find(f => f[0] === filtro)[2];
+  const lista = eventos.filter(fn).sort((a,b)=>urg(a)-urg(b));
+  const tb = document.getElementById('linhas');
+  if (!lista.length) { tb.innerHTML = `<tr><td colspan="7" class="vazio">Nenhum evento neste filtro.</td></tr>`; return; }
+  tb.innerHTML = lista.map(e => {
+    const dEv = diff(e.data, HOJE);
+    const f = fase(e), p = proxima(e), c = ultimoContato(e);
+    const ativas = etapas.filter(x=>x.ativo).sort((a,b)=>a.dias-b.dias);
+    const barras = ativas.map(x => `<i class="${e.enviadas.includes(x.dias) ? tipoDe(x.dias) : e.puladas.includes(x.dias) ? 'p' : ''}" title="${rotulo(x,etapas.indexOf(x))} · ${sinal(x.dias)}"></i>`).join('');
+    const pa = pausaAtiva(e);
+    return `<tr>
+      <td class="cli"><b>${esc(e.nome)}</b><span>${e.id} · ${esc(e.tipo)}</span></td>
+      <td class="data"><b>${fmtDL(e.data)}</b><span class="d-rel">${dEv===0?'hoje':dEv>0?`em ${dEv} dias`:`há ${-dEv} dias · ${e.status==='entregue'?'entregue':'realizado'}`}</span></td>
+      <td class="saldo">R$ ${brl(saldo(e))}<span>de R$ ${brl(e.total)}</span></td>
+      <td><span class="pill ${f.cls}">${f.txt}</span><div class="etapas" aria-hidden="true">${barras}</div></td>
+      <td><div class="contato"><span class="ic ${c.k}">${ico(c.k==='w'?'msg':c.k==='l'?(c.t.includes('não')?'phone-off':'phone'):'info')}</span><div>${esc(c.t)}<small>${c.s}</small></div></div></td>
+      <td><span class="prox ${p.hoje?'hoje':''}">${p.txt}</span></td>
+      <td><div class="acoes">
+        <button class="ib" data-a="ligar" data-id="${e.id}" title="Registrar ligação" aria-label="Registrar ligação de ${esc(e.nome)}">${ico('phone')}</button>
+        ${pa ? `<button class="ib" data-a="retomar" data-id="${e.id}" title="Retomar régua" aria-label="Retomar régua de ${esc(e.nome)}">${ico('play')}</button>`
+             : `<button class="ib" data-a="pausar" data-id="${e.id}" title="Pausar com prazo" aria-label="Pausar régua de ${esc(e.nome)}">${ico('pause')}</button>`}
+        <button class="ib" data-a="linha" data-id="${e.id}" title="Linha do tempo" aria-label="Linha do tempo de ${esc(e.nome)}">${ico('list')}</button>
+      </div></td></tr>`;
+  }).join('');
+}
+function renderFila() { renderResumo(); renderFiltros(); renderLinhas(); }
+
+document.getElementById('filtros').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-f]'); if (!b) return; filtro = b.dataset.f; renderFila();
+});
+document.getElementById('linhas').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-a]'); if (!b) return;
+  const e = eventos.find(x => x.id === b.dataset.id);
+  ({ligar:abrirLigacao, pausar:abrirPausa, retomar:abrirRetomar, linha:abrirLinha})[b.dataset.a](e);
+});
+
+/* ── Camadas (modal / gaveta) ── */
+const camada = document.getElementById('camada');
+let voltarFoco = null;
+function fechar() { camada.innerHTML = ''; if (voltarFoco) voltarFoco.focus(); }
+function abrirModal(html, onMount) {
+  voltarFoco = document.activeElement;
+  camada.innerHTML = `<div class="overlay" data-fechar><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
+  camada.querySelector('[data-fechar]').addEventListener('click', ev => { if (ev.target.dataset.fechar !== undefined || ev.target.closest('[data-x]')) fechar(); });
+  onMount && onMount(camada.querySelector('.modal'));
+  const f = camada.querySelector('input,select,textarea,button'); f && f.focus();
+}
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && camada.innerHTML) fechar(); });
+function toast(msg) {
+  const t = document.getElementById('toast'); t.innerHTML = ico('check') + esc(msg); t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 2600);
+}
+const mHead = (t, s) => `<div class="m-head"><div><h2>${t}</h2><p>${s}</p></div><button class="ib" data-x aria-label="Fechar">${ico('x')}</button></div>`;
+
+function abrirLigacao(e) {
+  abrirModal(`${mHead('Registrar ligação', `${e.id} · ${esc(e.nome)} · saldo R$ ${brl(saldo(e))}`)}
+    <form class="m-body" id="fLig" novalidate>
+      <div class="grid2">
+        <label class="f" for="lgData">Data e hora da ligação<input type="datetime-local" id="lgData" value="2026-10-07T15:10" max="2026-10-07T23:59"></label>
+        <label class="f" for="lgAt">Atendente<select id="lgAt"><option>Carla Mendes (você)</option><option>Edvan Lima</option><option>Joana Rocha</option></select></label>
+      </div>
+      <fieldset style="border:0;padding:0;margin:0"><legend class="hint" style="font-weight:600;color:var(--texto-sec);margin-bottom:6px">Número discado</legend>
+        <div class="radios">
+          <label><input type="radio" name="lgTel" id="lgTel1" checked> Principal · ${e.tel}</label>
+          ${e.tel2 ? `<label><input type="radio" name="lgTel" id="lgTel2"> Secundário · ${e.tel2}</label>` : ''}
+          <label><input type="radio" name="lgTel" id="lgTel3"> Outro número</label>
+        </div>
+      </fieldset>
+      <div><div class="hint" style="font-weight:600;color:var(--texto-sec);margin-bottom:6px">O cliente atendeu?</div>
+        <div class="seg" role="group" aria-label="O cliente atendeu?">
+          <button type="button" class="sim" id="lgSim" aria-pressed="false">${ico('phone')}Atendeu</button>
+          <button type="button" class="nao" id="lgNao" aria-pressed="false">${ico('phone-off')}Não atendeu</button>
+        </div>
+      </div>
+      <div id="lgSimBloco" hidden style="display:flex;flex-direction:column;gap:12px">
+        <label class="f" for="lgPrazo">Prazo combinado para pagamento <span class="hint">opcional</span><input type="date" id="lgPrazo" min="2026-10-07" value="2026-10-12"></label>
+        <label class="check"><input type="checkbox" id="lgPausar" checked><span>Pausar o WhatsApp até o prazo<br><span class="hint">No dia do prazo sai o lembrete "vence hoje"; se não pagar, no dia seguinte sai "prazo venceu" e a régua continua.</span></span></label>
+      </div>
+      <div id="lgNaoBloco" hidden>
+        <div class="aviso">${ico('info')}<span>A mensagem "tentamos te ligar" está <b>desligada</b> na configuração. Nada será enviado ao cliente.</span></div>
+      </div>
+      <label class="f" for="lgObs">Observação<textarea id="lgObs" style="min-height:70px" placeholder="Ex.: pediu para pagar em 2x"></textarea></label>
+      <div class="aviso">${ico('info')}<span>O registro não pode ser editado depois. Para corrigir, registre uma nova ligação.</span></div>
+      <div class="erro" id="lgErro" hidden>Informe se o cliente atendeu.</div>
+    </form>
+    <div class="m-foot"><button class="btn ghost" data-x>Cancelar</button><button class="btn pri" id="lgSalvar">${ico('check')}Registrar ligação</button></div>`,
+  m => {
+    let atendeu = null;
+    const sim = m.querySelector('#lgSim'), nao = m.querySelector('#lgNao');
+    const set = v => { atendeu = v; sim.setAttribute('aria-pressed', v===true); nao.setAttribute('aria-pressed', v===false);
+      m.querySelector('#lgSimBloco').hidden = v !== true; m.querySelector('#lgNaoBloco').hidden = v !== false; m.querySelector('#lgErro').hidden = true; };
+    sim.onclick = () => set(true); nao.onclick = () => set(false);
+    m.querySelector('#lgSimBloco').hidden = true;
+    m.querySelector('#lgSalvar').onclick = () => {
+      if (atendeu === null) { m.querySelector('#lgErro').hidden = false; return; }
+      const at = m.querySelector('#lgAt').value.replace(' (você)','');
+      const pz = m.querySelector('#lgPrazo').value;
+      const obs = m.querySelector('#lgObs').value.trim();
+      let d = `Atendente: ${at} · ${e.tel}`;
+      if (atendeu && pz) { const [y,mm,dd] = pz.split('-'); d += `\nPrazo combinado: ${dd}/${mm}/${y}`; }
+      if (obs) d += `\nObs.: ${obs}`;
+      e.hist.unshift({k:'l', q:HOJE, h:'15:10', t: atendeu ? 'Ligação · atendeu' : 'Ligação · não atendeu', d});
+      if (atendeu && pz && m.querySelector('#lgPausar').checked) {
+        const [y,mm,dd] = pz.split('-').map(Number);
+        e.pausa = {ate:new Date(y,mm-1,dd), motivo: obs || 'Prazo combinado por telefone', origem:'ligacao'};
+        e.hist.unshift({k:'p', q:HOJE, h:'15:10', t:`Pausado até ${String(dd).padStart(2,'0')}/${String(mm).padStart(2,'0')}`, d:`${e.pausa.motivo}\npor ${at} (via ligação)`});
+      }
+      fechar(); renderFila(); toast(atendeu && pz ? 'Ligação registrada e régua pausada até o prazo' : 'Ligação registrada');
+    };
+  });
+}
+function abrirPausa(e) {
+  abrirModal(`${mHead('Pausar com prazo de pagamento', `${e.id} · ${esc(e.nome)} · saldo R$ ${brl(saldo(e))}`)}
+    <div class="m-body">
+      <label class="f" for="pzData">Pausado até (prazo para pagar)<input type="date" id="pzData" min="2026-10-07" value="2026-10-14"></label>
+      <label class="f" for="pzMot">Motivo<input type="text" id="pzMot" placeholder="Ex.: cliente pediu até sexta para pagar"></label>
+      <div class="aviso">${ico('info')}<span>Mensagens da régua que vencerem durante a pausa não são enviadas. No dia do prazo sai o lembrete "vence hoje"; no dia seguinte, se não houver pagamento, sai "prazo venceu".</span></div>
+      <div class="erro" id="pzErro" hidden>Informe o motivo da pausa.</div>
+    </div>
+    <div class="m-foot"><button class="btn ghost" data-x>Cancelar</button><button class="btn pri" id="pzSalvar">${ico('pause')}Pausar régua</button></div>`,
+  m => {
+    m.querySelector('#pzSalvar').onclick = () => {
+      const mot = m.querySelector('#pzMot').value.trim();
+      if (!mot) { m.querySelector('#pzErro').hidden = false; m.querySelector('#pzMot').focus(); return; }
+      const [y,mm,dd] = m.querySelector('#pzData').value.split('-').map(Number);
+      e.pausa = {ate:new Date(y,mm-1,dd), motivo:mot, origem:'manual'};
+      e.hist.unshift({k:'p', q:HOJE, h:'15:12', t:`Pausado até ${String(dd).padStart(2,'0')}/${String(mm).padStart(2,'0')}`, d:`${mot}\npor Carla Mendes`});
+      fechar(); renderFila(); toast(`Régua pausada até ${String(dd).padStart(2,'0')}/${String(mm).padStart(2,'0')}`);
+    };
+  });
+}
+function abrirRetomar(e) {
+  abrirModal(`${mHead('Retomar régua agora', `${e.id} · pausado até ${fmtD(e.pausa.ate)}`)}
+    <div class="m-body">
+      <label class="f" for="rtMot">Motivo da retomada<input type="text" id="rtMot" placeholder="Ex.: cliente desistiu do acordo"></label>
+      <div class="aviso">${ico('info')}<span>A régua volta a enviar a partir da próxima etapa. Etapas puladas durante a pausa não são reenviadas.</span></div>
+      <div class="erro" id="rtErro" hidden>Informe o motivo da retomada.</div>
+    </div>
+    <div class="m-foot"><button class="btn ghost" data-x>Cancelar</button><button class="btn pri" id="rtSalvar">${ico('play')}Retomar</button></div>`,
+  m => {
+    m.querySelector('#rtSalvar').onclick = () => {
+      const mot = m.querySelector('#rtMot').value.trim();
+      if (!mot) { m.querySelector('#rtErro').hidden = false; return; }
+      e.hist.unshift({k:'p', q:HOJE, h:'15:14', t:'Pausa encerrada antes do prazo', d:`${mot}\npor Carla Mendes`});
+      e.pausa = null; fechar(); renderFila(); toast('Régua retomada');
+    };
+  });
+}
+function abrirLinha(e) {
+  voltarFoco = document.activeElement;
+  const ativas = etapas.filter(x=>x.ativo).sort((a,b)=>a.dias-b.dias);
+  const mini = ativas.map(x => {
+    const env = e.enviadas.includes(x.dias), pul = e.puladas.includes(x.dias);
+    return `<span class="${env?'env '+tipoDe(x.dias):''} ${pul?'pul':''}" title="${fmtDias(x.dias)} · ${fmtD(addD(e.data,x.dias))}">${env?ico('check'):''}${rotulo(x,etapas.indexOf(x))} · ${fmtD(addD(e.data,x.dias))}</span>`;
+  }).join('');
+  const pa = pausaAtiva(e);
+  const icK = {w:'msg', l:'phone', p:'pause', s:'skip'};
+  const itens = e.hist.length ? e.hist.map(h => {
+    const et = h.etapa !== undefined ? etapas.find(x=>x.dias===h.etapa) : null;
+    const q = et ? `<div class="q">${render(et.msg, e)}</div>` : '';
+    return `<li><span class="ic ${h.k}">${ico(h.k==='l' && h.t.includes('não') ? 'phone-off' : icK[h.k])}</span><div><div class="t">${esc(h.t)}</div><div class="w">${fmtDL(h.q)} · ${h.h}</div>${h.d?`<div class="d">${esc(h.d)}</div>`:''}${h.nota?`<div class="d">${esc(h.nota)}</div>`:''}${q}</div></li>`;
+  }).join('') : `<li><span class="ic s">${ico('info')}</span><div><div class="t">Sem contatos ainda</div><div class="w">Primeiro lembrete em ${fmtD(addD(e.data, ativas[0].dias))}</div></div></li>`;
+  camada.innerHTML = `<div class="drawer-ov" data-fechar><aside class="drawer" role="dialog" aria-modal="true" aria-label="Linha do tempo de cobrança">
+    ${mHead(esc(e.nome), `${e.id} · ${esc(e.tipo)} · ${fmtDL(e.data)}`)}
+    <div class="dr-body">
+      <div class="dr-fin"><div><small>Total</small><b>R$ ${brl(e.total)}</b></div><div><small>Pago</small><b>R$ ${brl(e.pago)}</b></div><div><small>Saldo</small><b>R$ ${brl(saldo(e))}</b></div></div>
+      ${pa ? `<div class="aviso">${ico('pause')}<span><b>Pausado até ${fmtDL(pa.ate)}</b> · ${esc(pa.motivo)}</span></div>` : ''}
+      <div class="dr-acoes">
+        <button class="btn" data-dr="ligar">${ico('phone')}Registrar ligação</button>
+        ${pa ? `<button class="btn" data-dr="retomar">${ico('play')}Retomar</button>` : `<button class="btn" data-dr="pausar">${ico('pause')}Pausar com prazo</button>`}
+      </div>
+      <div><p class="sec-t">Régua deste evento</p><div class="mini-regua">${mini}</div></div>
+      <div><p class="sec-t">Linha do tempo</p><ul class="tl">${itens}</ul></div>
+    </div></aside></div>`;
+  const ov = camada.querySelector('[data-fechar]');
+  ov.addEventListener('click', ev => {
+    if (ev.target === ov || ev.target.closest('[data-x]')) return fechar();
+    const b = ev.target.closest('[data-dr]'); if (!b) return;
+    ({ligar:abrirLigacao, pausar:abrirPausa, retomar:abrirRetomar})[b.dataset.dr](e);
+  });
+  camada.querySelector('.drawer button').focus();
+}
+
+/* ── Renderização de mensagem ── */
+const exemplo = eventos[0];
+function valores(e) {
+  const lim = addD(e.data, limite);
+  const atraso = Math.max(diff(HOJE, lim), 0);
+  return {primeiro_nome:e.nome.split(' ')[0], nome:e.nome, numero_evento:e.id, tipo_evento:e.tipo, data_evento:fmtDL(e.data),
+    valor_total:brl(e.total), valor_pago:brl(e.pago), saldo:brl(saldo(e)), data_limite:fmtDL(lim),
+    dias_para_limite:String(Math.max(diff(lim,HOJE),0)), dias_em_atraso:String(atraso), dias_para_evento:String(Math.max(diff(e.data,HOJE),0)),
+    prazo_combinado:e.pausa?fmtDL(e.pausa.ate):'12/10/2026', chave_pix:document.getElementById('pix').value||'(chave Pix não configurada)',
+    favorecido_pix:document.getElementById('fav').value, empresa:'Arretado Doces', telefone_empresa:'(86) 99816-4324'};
+}
+function render(msg, e) {
+  const v = valores(e);
+  return esc(msg).replace(/\{(\w+)\}/g, (m, k) => k in v ? esc(v[k]) : `<span class="bad">{${k}}</span>`)
+    .replace(/\*([^*\n]+)\*/g, '<b>$1</b>');
+}
+const desconhecidas = msg => [...msg.matchAll(/\{(\w+)\}/g)].map(m=>m[1]).filter(k => !VARS.includes(k));
+
+/* ── Régua: eixo ── */
+const MIN = -16, MAX = 8;
+const pos = d => ((d - MIN) / (MAX - MIN) * 100).toFixed(2) + '%';
+function renderEixo() {
+  const ax = document.getElementById('axis');
+  const corte = limite + .5;
+  let h = `<div class="zone l" style="left:0;width:${pos(corte)}"></div><div class="zone c" style="left:${pos(corte)};right:0"></div>
+    <span class="zone-lb l" style="left:4px">Lembretes</span><span class="zone-lb c" style="left:calc(${pos(corte)} + 6px)">Cobranças</span>
+    <div class="base"></div>`;
+  for (let d = MIN; d <= MAX; d += 2) h += `<div class="tick-m" style="left:${pos(d)}"></div>${d!==0 && Math.abs(d-limite)>1 ? `<span class="tick" style="left:${pos(d)}">${d>0?'+'+d:d}</span>`:''}`;
+  h += `<div class="evento-mk" style="left:${pos(0)}"></div><span class="evento-lb" style="left:${pos(0)}">Dia do evento</span>`;
+  h += `<div class="limite-mk" style="left:${pos(limite)}"></div><span class="limite-lb" style="left:${pos(limite)}">Data limite ${sinal(limite)}</span>`;
+  etapas.forEach((e, i) => {
+    h += `<button class="etapa ${e.ativo?tipoDe(e.dias):'off'} ${i===sel?'sel':''}" style="left:${pos(e.dias)}" data-i="${i}" aria-label="${rotulo(e,i)}, ${fmtDias(e.dias)}${e.ativo?'':', desativada'}">${rotulo(e,i)}</button>`;
+  });
+  ax.innerHTML = h;
+  document.getElementById('limiteOut').textContent = `${sinal(limite)} · ${fmtDias(limite)}`;
+}
+function renderLista() {
+  const ord = etapas.map((e,i)=>({e,i})).sort((a,b)=>a.e.dias-b.e.dias);
+  document.getElementById('listaEtapas').innerHTML = ord.map(({e,i}) =>
+    `<button class="le ${i===sel?'sel':''}" data-i="${i}"><span class="dd">${sinal(e.dias)}</span><span class="tx">${esc(e.msg.split('\n')[0])}</span><span class="pill ${e.ativo?(tipoDe(e.dias)==='l'?'lembrete':'cobranca'):'aguarda'}">${e.ativo?rotulo(e,i):'Off'}</span></button>`).join('');
+}
+function renderEditor() {
+  const e = etapas[sel];
+  const tipo = tipoDe(e.dias);
+  const dup = etapas.some((x,j) => j!==sel && x.dias === e.dias);
+  const bad = desconhecidas(e.msg);
+  document.getElementById('editor').innerHTML = `
+    <div class="etapa-ed-head">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3>Etapa ${rotulo(e,sel)}</h3><span class="pill ${tipo==='l'?'lembrete':'cobranca'}">${tipo==='l'?'Lembrete':'Cobrança'}</span><span class="hint">tipo definido pela data limite</span></div>
+      <label class="toggle"><input type="checkbox" id="edAtivo" ${e.ativo?'checked':''}><span class="tr"></span>Ativa</label>
+    </div>
+    <div class="ed-grid">
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <label class="f" for="edDias">Enviar em (dias em relação ao evento)
+          <input type="number" id="edDias" value="${e.dias}" min="-60" max="60" step="1">
+          <span class="hint">${fmtDias(e.dias)} · negativo = antes do evento</span></label>
+        ${dup ? `<div class="erro">Já existe outra etapa em ${sinal(e.dias)}.</div>` : ''}
+        <label class="f" for="edMsg">Texto da mensagem<textarea id="edMsg" rows="9">${esc(e.msg)}</textarea></label>
+        <div><span class="hint">Clique para inserir. Use *texto* para negrito no WhatsApp.</span><div class="vars" id="edVars">${VARS.map(v=>`<button type="button" data-v="${v}">{${v}}</button>`).join('')}</div></div>
+        ${bad.length ? `<div class="erro">Variável desconhecida: ${bad.map(b=>'{'+esc(b)+'}').join(', ')}. O sistema não salva com variáveis inválidas.</div>` : ''}
+      </div>
+      <div class="wa"><div class="hdr"><span>Prévia com ${exemplo.id} · ${esc(exemplo.nome)}</span><span>${fmtD(addD(exemplo.data,e.dias))} · 09:30</span></div><div class="bolha" id="edPrev">${render(e.msg, exemplo)}</div></div>
+    </div>`;
+  const ed = document.getElementById('editor');
+  ed.querySelector('#edDias').addEventListener('input', ev => { const v = parseInt(ev.target.value,10); if (!isNaN(v)) { e.dias = v; renderEixo(); renderLista(); renderEditorParcial(); }});
+  ed.querySelector('#edDias').addEventListener('change', renderEditor);
+  ed.querySelector('#edMsg').addEventListener('input', ev => { e.msg = ev.target.value; document.getElementById('edPrev').innerHTML = render(e.msg, exemplo); renderLista(); });
+  ed.querySelector('#edMsg').addEventListener('change', renderEditor);
+  ed.querySelector('#edAtivo').addEventListener('change', ev => { e.ativo = ev.target.checked; renderRegua(); });
+  ed.querySelector('#edVars').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-v]'); if (!b) return;
+    const ta = ed.querySelector('#edMsg'); const s = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0,s) + `{${b.dataset.v}}` + ta.value.slice(ta.selectionEnd ?? s);
+    e.msg = ta.value; ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.v.length + 2;
+    document.getElementById('edPrev').innerHTML = render(e.msg, exemplo);
+  });
+}
+function renderEditorParcial() {
+  const e = etapas[sel];
+  const hint = document.querySelector('#edDias + .hint'); if (hint) hint.textContent = `${fmtDias(e.dias)} · negativo = antes do evento`;
+}
+function renderEspeciais() {
+  document.getElementById('especiais').innerHTML = especiais.map((s,i) => `
+    <details ${i===0?'open':''}>
+      <summary><span>${s.nome}<small>${s.quando}</small></span><span class="pill ${s.ativo?'lembrete':'aguarda'}">${s.ativo?'Ligada':'Desligada'}</span></summary>
+      <div class="ed-grid">
+        <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+          <label class="toggle"><input type="checkbox" data-esp-ativo="${i}" ${s.ativo?'checked':''}><span class="tr"></span>Enviar esta mensagem</label>
+          <label class="f" for="esp-${s.id}">Texto<textarea id="esp-${s.id}" data-esp="${i}" rows="6">${esc(s.msg)}</textarea></label>
+        </div>
+        <div class="wa"><div class="hdr"><span>Prévia</span></div><div class="bolha" id="espPrev-${i}">${render(s.msg, eventos[3])}</div></div>
+      </div>
+    </details>`).join('');
+}
+document.getElementById('especiais').addEventListener('input', ev => {
+  const i = ev.target.dataset.esp; if (i === undefined) return;
+  especiais[i].msg = ev.target.value; document.getElementById('espPrev-'+i).innerHTML = render(especiais[i].msg, eventos[3]);
+});
+document.getElementById('especiais').addEventListener('change', ev => {
+  const i = ev.target.dataset.espAtivo; if (i === undefined) return;
+  especiais[i].ativo = ev.target.checked; const open = [...document.querySelectorAll('#especiais details')].map(d=>d.open);
+  renderEspeciais(); document.querySelectorAll('#especiais details').forEach((d,j)=>d.open=open[j]);
+});
+function renderDiasSem() {
+  const nomes = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  document.getElementById('diasSem').innerHTML = nomes.map((n,i)=>`<button type="button" data-d="${i}" aria-pressed="${diasSem[i]}">${n}</button>`).join('');
+}
+document.getElementById('diasSem').addEventListener('click', ev => { const b = ev.target.closest('[data-d]'); if (!b) return; diasSem[b.dataset.d] = !diasSem[b.dataset.d]; renderDiasSem(); });
+function renderRegua() { renderEixo(); renderLista(); renderEditor(); }
+
+document.getElementById('axis').addEventListener('click', ev => { const b = ev.target.closest('[data-i]'); if (!b) return; sel = +b.dataset.i; renderRegua(); });
+document.getElementById('listaEtapas').addEventListener('click', ev => { const b = ev.target.closest('[data-i]'); if (!b) return; sel = +b.dataset.i; renderRegua(); });
+document.getElementById('limite').addEventListener('input', ev => { limite = +ev.target.value; renderRegua(); renderFila(); });
+document.getElementById('addEtapa').addEventListener('click', () => {
+  let d = Math.max(...etapas.map(x=>x.dias)) + 4; if (d > MAX) d = MAX; while (etapas.some(x=>x.dias===d)) d--;
+  etapas.push({dias:d, ativo:true, msg:'Olá, {primeiro_nome}. O saldo de *R$ {saldo}* do evento {numero_evento} segue em aberto.\nPix: {chave_pix}'});
+  sel = etapas.length - 1; renderRegua(); document.getElementById('edMsg').focus();
+});
+document.getElementById('salvarRegua').addEventListener('click', () => {
+  const dias = etapas.map(x=>x.dias);
+  if (new Set(dias).size !== dias.length) return toast('Duas etapas no mesmo dia. Ajuste antes de salvar.');
+  if (etapas.some(x => desconhecidas(x.msg).length)) return toast('Há variável desconhecida em alguma etapa.');
+  toast('Régua salva');
+});
+['pix','fav'].forEach(id => document.getElementById(id).addEventListener('input', () => { document.getElementById('edPrev').innerHTML = render(etapas[sel].msg, exemplo); }));
+document.getElementById('ativo').addEventListener('change', ev => {
+  document.getElementById('statusDot').classList.toggle('off', !ev.target.checked);
+  document.getElementById('statusTxt').textContent = ev.target.checked ? 'Régua automática ligada · envio diário às 09:30' : 'Régua automática desligada · nada é enviado';
+});
+
+/* ── Abas ── */
+function abrirAba(qual) {
+  const fila = qual === 'fila';
+  document.getElementById('tab-fila').setAttribute('aria-selected', fila);
+  document.getElementById('tab-regua').setAttribute('aria-selected', !fila);
+  document.getElementById('painel-fila').hidden = !fila;
+  document.getElementById('painel-regua').hidden = fila;
+}
+document.getElementById('tab-fila').onclick = () => abrirAba('fila');
+document.getElementById('tab-regua').onclick = () => abrirAba('regua');
+if (location.hash === '#regua') abrirAba('regua');
+
+renderFila(); renderDiasSem(); renderRegua(); renderEspeciais();
+document.getElementById('limite').value = limite;
+</script>

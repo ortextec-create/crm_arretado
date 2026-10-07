@@ -44,6 +44,12 @@ class LogAuditoria(models.Model):
     ACAO_MOVIMENTO_MANUAL = 'movimento_manual'
     ACAO_CONFIG_BACKUP_ALTERADA = 'config_backup_alterada'
     ACAO_EMPRESA_ALTERNADA = 'empresa_alternada'
+    ACAO_COBRANCA_CONFIG_ALTERADA = 'cobranca_config_alterada'
+    ACAO_COBRANCA_ETAPA_CRIADA = 'cobranca_etapa_criada'
+    ACAO_COBRANCA_ETAPA_ALTERADA = 'cobranca_etapa_alterada'
+    ACAO_COBRANCA_PAUSADA = 'cobranca_pausada'
+    ACAO_COBRANCA_RETOMADA = 'cobranca_retomada'
+    ACAO_COBRANCA_LIGACAO_REGISTRADA = 'cobranca_ligacao_registrada'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -91,6 +97,12 @@ class LogAuditoria(models.Model):
         (ACAO_MOVIMENTO_MANUAL, 'Movimento financeiro manual registrado'),
         (ACAO_CONFIG_BACKUP_ALTERADA, 'Configuração de backup alterada'),
         (ACAO_EMPRESA_ALTERNADA, 'Empresa ativa alternada'),
+        (ACAO_COBRANCA_CONFIG_ALTERADA, 'Configuração de cobrança alterada'),
+        (ACAO_COBRANCA_ETAPA_CRIADA, 'Etapa da régua de cobrança criada'),
+        (ACAO_COBRANCA_ETAPA_ALTERADA, 'Etapa da régua de cobrança alterada'),
+        (ACAO_COBRANCA_PAUSADA, 'Régua de cobrança pausada'),
+        (ACAO_COBRANCA_RETOMADA, 'Régua de cobrança retomada'),
+        (ACAO_COBRANCA_LIGACAO_REGISTRADA, 'Ligação de cobrança registrada'),
     ]
 
     usuario = models.ForeignKey(

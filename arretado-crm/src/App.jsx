@@ -17,6 +17,7 @@ import CatalogoPDV from './pages/CatalogoPDV'
 import Vinculacoes from './pages/Vinculacoes'
 import Eventos from './pages/Eventos'
 import Orcamentos from './pages/Orcamentos'
+import Cobranca from './pages/Cobranca'
 import Notificacoes from './pages/Notificacoes'
 import Configuracoes from './pages/Configuracoes'
 import Catalogo from './pages/Catalogo'
@@ -67,6 +68,7 @@ export default function App() {
             <Route path="/vinculacoes" element={<Vinculacoes />} />
             <Route path="eventos" element={<Eventos />} />
             <Route path="orcamentos" element={<Orcamentos />} />
+            <Route path="cobranca" element={<Cobranca />} />
             <Route path="locais-evento" element={<Locais />} />
             <Route path="notificacoes" element={<Notificacoes />} />
             <Route path="catalogo" element={<Catalogo />} />

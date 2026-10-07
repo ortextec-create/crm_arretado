@@ -3,6 +3,7 @@ import { eventosApi, locaisEventoApi, clientesApi, contratosApi, aditivosApi } f
 import { pdvApi, taxasEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast, Empty, NaturezaBadge, SeletorNatureza } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
+import CobrancaBadge from '../components/cobranca/CobrancaBadge'
 import AtorAcao from '../components/ui/AtorAcao'
 import { ACAO_LABEL, ACAO_COR, dataFmt, resumo } from '../utils/auditoriaResumo'
 import styles from './Eventos.module.css'
@@ -1399,6 +1400,9 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
               <span>Saldo restante</span>
               <span>{Number(evento.saldo_restante) > 0 ? fmt(evento.saldo_restante) : '✓ Quitado'}</span>
             </div>
+            {Number(evento.saldo_restante) > 0 && (
+              <div style={{ marginTop: 10 }}><CobrancaBadge eventoId={evento.id} /></div>
+            )}
           </div>
 
           {/* Ações de status */}

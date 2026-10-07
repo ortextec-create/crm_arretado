@@ -31,6 +31,12 @@ export const ACAO_LABEL = {
   status_alterado: 'Status alterado',
   item_adicionado: 'Item adicionado',
   orcamento_convertido_em_evento: 'Convertido em evento',
+  cobranca_config_alterada: 'Configuração de cobrança alterada',
+  cobranca_etapa_criada: 'Etapa da régua criada',
+  cobranca_etapa_alterada: 'Etapa da régua alterada',
+  cobranca_pausada: 'Régua de cobrança pausada',
+  cobranca_retomada: 'Régua de cobrança retomada',
+  cobranca_ligacao_registrada: 'Ligação de cobrança registrada',
 }
 
 export const ACAO_COR = {
@@ -62,6 +68,12 @@ export const ACAO_COR = {
   status_alterado: 'var(--caramelo)',
   item_adicionado: 'var(--verde)',
   orcamento_convertido_em_evento: 'var(--verde)',
+  cobranca_config_alterada: 'var(--caramelo)',
+  cobranca_etapa_criada: 'var(--verde)',
+  cobranca_etapa_alterada: 'var(--caramelo)',
+  cobranca_pausada: 'var(--caramelo)',
+  cobranca_retomada: 'var(--verde)',
+  cobranca_ligacao_registrada: 'var(--caramelo)',
 }
 
 export function dataFmt(iso) {
@@ -119,6 +131,17 @@ export function resumo(log) {
       return `${d.model ?? '—'} — ${d.nome ?? '—'} (R$ ${d.preco_total ?? '—'})`
     case 'orcamento_convertido_em_evento':
       return `${d.orcamento_numero ?? '—'} → ${d.evento_numero ?? '—'}`
+    case 'cobranca_config_alterada':
+      return Object.keys(d.depois ?? {}).join(', ') || '—'
+    case 'cobranca_etapa_criada':
+    case 'cobranca_etapa_alterada':
+      return `D${d.dias > 0 ? '+' : ''}${d.dias ?? '—'}`
+    case 'cobranca_pausada':
+      return `Evento ${d.evento_numero ?? '—'} · até ${d.pausado_ate ?? '—'}`
+    case 'cobranca_retomada':
+      return `Evento ${d.evento_numero ?? '—'}`
+    case 'cobranca_ligacao_registrada':
+      return `Evento ${d.evento_numero ?? '—'} · ${d.atendeu ? 'atendeu' : 'não atendeu'}`
     default:
       return '—'
   }

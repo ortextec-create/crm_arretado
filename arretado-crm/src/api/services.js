@@ -467,6 +467,37 @@ export const empresasApi = {
   brandingLogin:  ()          => api.get('/empresas/branding-login/'),
 }
 
+// ─── COBRANÇA (régua de cobrança de Eventos — ver COBRANCA.md) ────────────────
+
+export const cobrancaApi = {
+  configuracao: {
+    get:    ()     => api.get('/cobranca/configuracao/1/'),
+    update: (data) => api.patch('/cobranca/configuracao/1/', data),
+  },
+  etapas: {
+    list:    ()         => api.get('/cobranca/etapas/', { params: { page_size: 100 } }),
+    create:  (data)      => api.post('/cobranca/etapas/', data),
+    update:  (id, data)  => api.patch(`/cobranca/etapas/${id}/`, data),
+    preview: (data)      => api.post('/cobranca/etapas/preview/', data),
+  },
+  fila: {
+    list: (params = {}) => api.get('/cobranca/fila/', { params }),
+  },
+  linhaDoTempo: (eventoId) => api.get(`/cobranca/eventos/${eventoId}/linha-do-tempo/`),
+  envios: {
+    list: (params = {}) => api.get('/cobranca/envios/', { params }),
+  },
+  ligacoes: {
+    list:   (params = {}) => api.get('/cobranca/ligacoes/', { params }),
+    create: (data)        => api.post('/cobranca/ligacoes/', data),
+  },
+  pausas: {
+    list:     (params = {}) => api.get('/cobranca/pausas/', { params }),
+    create:   (data)        => api.post('/cobranca/pausas/', data),
+    encerrar: (id, data)    => api.post(`/cobranca/pausas/${id}/encerrar/`, data),
+  },
+}
+
 // ─── SISTEMA (versão — derivada do Git, ver CLAUDE.md) ─────────────────────────
 
 export const sistemaApi = {
