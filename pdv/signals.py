@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 def on_pedido_pdv_save(sender, instance, **kwargs):
     try:
         _sincronizar(instance)
-    except Exception as e:
-        logger.warning('Falha ao sincronizar PedidoUnificado para PDV #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('Falha ao sincronizar PedidoUnificado para PDV #%s', instance.pk)
 
 
 def _sincronizar(pedido):

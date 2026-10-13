@@ -139,3 +139,7 @@ ZAPI_CLIENT_TOKEN = os.getenv('ZAPI_CLIENT_TOKEN', '')
 # Orçamentos
 VALIDADE_ORCAMENTO_DIAS = int(os.getenv('VALIDADE_ORCAMENTO_DIAS', '30'))
 TIMBRE_PDF_PATH = BASE_DIR / 'timbre.pdf'
+
+# Logging (ver LOGGING.md)
+from .logging_config import montar_logging
+LOGGING = montar_logging(os.getenv("LOG_DIR", ""), os.getenv("LOG_LEVEL", "INFO"))

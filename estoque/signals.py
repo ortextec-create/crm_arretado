@@ -73,8 +73,8 @@ def on_pedido_pdv_confirmado(sender, instance, **kwargs):
     try:
         if instance.status == 'confirmado':
             _debitar_pedido_pdv(instance)
-    except Exception as e:
-        logger.warning('Falha ao debitar estoque do PedidoPDV #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('Falha ao debitar estoque do PedidoPDV #%s', instance.pk)
 
 
 def _debitar_pedido_pdv(pedido):
@@ -91,8 +91,8 @@ def on_pedido_ifood_confirmado(sender, instance, **kwargs):
     try:
         if instance.status == 'CONFIRMED':
             _debitar_pedido_ifood(instance)
-    except Exception as e:
-        logger.warning('Falha ao debitar estoque do PedidoIFood #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('Falha ao debitar estoque do PedidoIFood #%s', instance.pk)
 
 
 def _debitar_pedido_ifood(pedido):
@@ -121,8 +121,8 @@ def on_evento_entregue(sender, instance, **kwargs):
     try:
         if instance.status == 'entregue':
             _debitar_evento(instance)
-    except Exception as e:
-        logger.warning('Falha ao debitar estoque do Evento #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('Falha ao debitar estoque do Evento #%s', instance.pk)
 
 
 def _debitar_evento(evento):

@@ -17,11 +17,11 @@ class PedidosConfig(AppConfig):
         def on_pedido_ifood_save(sender, instance, **kwargs):
             try:
                 sincronizar_pedido_ifood(instance)
-            except Exception as e:
+            except Exception:
                 import logging
-                logging.getLogger(__name__).warning(
-                    "Falha ao sincronizar PedidoUnificado para iFood #%s: %s",
-                    instance.pk, e,
+                logging.getLogger(__name__).exception(
+                    "Falha ao sincronizar PedidoUnificado para iFood #%s",
+                    instance.pk,
                 )
 
         import pdv.signals      # noqa: F401

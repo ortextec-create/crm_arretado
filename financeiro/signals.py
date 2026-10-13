@@ -52,8 +52,8 @@ def on_pedido_pdv_salvo(sender, instance, **kwargs):
             _registrar_venda_pdv(instance)
         elif instance.status == 'cancelado':
             _estornar_pdv(instance)
-    except Exception as e:
-        logger.warning('financeiro: falha no signal do PedidoPDV #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('financeiro: falha no signal do PedidoPDV #%s', instance.pk)
 
 
 def _registrar_venda_pdv(pedido):
@@ -96,8 +96,8 @@ def on_pedido_ifood_salvo(sender, instance, **kwargs):
             _registrar_venda_ifood(instance)
         elif instance.status == 'CANCELLED':
             _estornar_ifood(instance)
-    except Exception as e:
-        logger.warning('financeiro: falha no signal do PedidoIFood #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('financeiro: falha no signal do PedidoIFood #%s', instance.pk)
 
 
 def _registrar_venda_ifood(pedido):
@@ -168,8 +168,8 @@ def on_pagamento_evento_salvo(sender, instance, **kwargs):
     try:
         if instance.status == 'pago':
             _registrar_pagamento_evento(instance)
-    except Exception as e:
-        logger.warning('financeiro: falha no signal do PagamentoEvento #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('financeiro: falha no signal do PagamentoEvento #%s', instance.pk)
 
 
 def _registrar_pagamento_evento(pagamento):
@@ -194,8 +194,8 @@ def _registrar_pagamento_evento(pagamento):
 def on_pagamento_evento_removido(sender, instance, **kwargs):
     try:
         _estornar_pagamento_evento(instance)
-    except Exception as e:
-        logger.warning('financeiro: falha no estorno do PagamentoEvento #%s: %s', instance.pk, e)
+    except Exception:
+        logger.exception('financeiro: falha no estorno do PagamentoEvento #%s', instance.pk)
 
 
 def _estornar_pagamento_evento(pagamento):

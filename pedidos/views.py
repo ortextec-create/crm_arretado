@@ -121,12 +121,12 @@ class PedidoUnificadoViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
                     cliente=cliente
                 )
             # anotaai: adicionar aqui quando implementado
-        except Exception as e:
+        except Exception:
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(
-                'Fase4: falha ao propagar vínculo de cliente ao canal %s (origem_id=%s): %s',
-                pedido_unificado.canal, pedido_unificado.origem_id, e,
+            logger.exception(
+                'Fase4: falha ao propagar vínculo de cliente ao canal %s (origem_id=%s)',
+                pedido_unificado.canal, pedido_unificado.origem_id,
             )
 
     # ── Action: estatísticas de pedidos sem vínculo ───────────────────────

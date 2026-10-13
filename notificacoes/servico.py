@@ -63,8 +63,8 @@ def notificar(telefone: str, mensagem: str, cliente=None, tipo: str = 'pedido') 
 
     try:
         registro.save()
-    except Exception as e:
-        logger.error('notificar: falha ao gravar HistoricoMensagem — %s', e)
+    except Exception:
+        logger.exception('notificar: falha ao gravar HistoricoMensagem')
 
     return registro.status == 'enviado'
 
@@ -101,8 +101,8 @@ def notificar_documento(telefone: str, pdf_bytes: bytes, nome_arquivo: str, capt
 
     try:
         registro.save()
-    except Exception as e:
-        logger.error('notificar_documento: falha ao gravar HistoricoMensagem — %s', e)
+    except Exception:
+        logger.exception('notificar_documento: falha ao gravar HistoricoMensagem')
 
     return registro.status == 'enviado'
 

@@ -17,9 +17,9 @@ def on_evento_save(sender, instance, **kwargs):
     try:
         from .models import sincronizar_evento
         sincronizar_evento(instance)
-    except Exception as e:
+    except Exception:
         import logging
-        logging.getLogger(__name__).warning(
-            'Falha ao sincronizar PedidoUnificado para Evento #%s: %s',
-            instance.pk, e,
+        logging.getLogger(__name__).exception(
+            'Falha ao sincronizar PedidoUnificado para Evento #%s',
+            instance.pk,
         )

@@ -32,6 +32,7 @@ arretado/                        ← raiz Django
 ├── config/
 │   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard, financeiro, manutencao, empresas, cobranca
 │   ├── urls.py                  ← rotas: /api/v1/, /api/v1/versao/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/, /api/v1/cobranca/
+│   ├── logging_config.py        ← `montar_logging(log_dir, nivel)` — dict de `settings.LOGGING` (ver LOGGING.md)
 │   ├── versao.py                ← `obter_versao()` — versão via `git describe --tags --always --dirty`, cacheada por processo (`lru_cache`) — ver "Versão do Sistema"
 │   ├── views.py                 ← `VersaoView` (APIView, AllowAny)
 │   └── wsgi.py
@@ -449,6 +450,7 @@ arretado-crm/                    ← raiz React
 - **`GET /financeiro/fluxo-caixa/?dias=N`** (N 1-90) — agregador: realizado do ledger + projetado de `ContaPagar`/`ContaReceber` pendente/parcial + saldos por conta. **Não inclui saldo dinâmico de Evento** (diferente de `contas-receber/resumo/`)
 - **Módulo de Backup** (spec completa em `backup.md`) — cron `fazer_backup` (pg_dump + tarfile + rclone pro B2), cron `verificar_backup` alerta sem dedup (decisão consciente — backup quebrado é o único problema invisível até precisar dele). `fazer_backup` nunca notifica. **Restauração é sempre manual**, nunca management command — ver `backup.md` para os comandos de `pg_restore`/`tar`
 - **Multi-Empresa** (spec completa em `MULTIEMPRESA.md`, 6 fases — 0-5 implementadas e deployadas, falta só cadastrar a MANGAIO) — `empresas.Empresa` é multi-tenant por linha (FK `empresa`, mesmo banco), nunca schema separado. Exatamente uma `Empresa` tem `padrao=True`, sempre via `Empresa.get_padrao()`. `EmpresaViewSet` sem DELETE/PUT. Credencial de ação de pedido iFood sempre resolvida por `ConfiguracaoIFood.objects.filter(empresa=pedido.empresa)`, nunca `.first()`. `Empresa.modulos_ocultos` é puramente cosmético (Sidebar), nunca controle de acesso. Login nunca bloqueia por falta de vínculo de empresa — cai na empresa padrão via `_empresas_efetivas()`
+- **Logging** (spec em `LOGGING.md`) — `config/logging_config.py::montar_logging()`. Console (stderr, vai pro `journalctl`) sempre; arquivos `arretado.log` (≥ `LOG_LEVEL`) e `arretado-erros.log` (só ERROR+) em `LOG_DIR` do `.env` (prod: `/var/log/arretado`). Sem `LOG_DIR`, ou sem permissão de escrita, cai pro console sem quebrar o boot. `WatchedFileHandler` + `logrotate` (`/etc/logrotate.d/arretado`) porque Gunicorn (www-data), polling (www-data) e crons (root) escrevem nos mesmos arquivos. Erro inesperado capturado em `except` é `logger.exception()`; aviso esperado é `logger.warning()`
 - **Versão do Sistema** (`config/versao.py`) — sempre derivada do Git (`git describe --tags --always --dirty`), nunca mantida à mão. Cada release: tag anotada `vX.Y.Z` + entrada no `CHANGELOG.md`, sempre juntos. Requer `git config --system --add safe.directory /var/www/crm_arretado` (já aplicado em prod) — sem isso, `obter_versao()` cai silenciosamente no fallback `'desconhecida'`
 - **Régua de Cobrança de Eventos** (spec completa em `COBRANCA.md`) — app `cobranca/`, fala com o
   **cliente** (WhatsApp), nunca com a equipe (isso é `eventos/management/commands/alertar_eventos.py`,
@@ -561,7 +563,7 @@ arretado-crm/                    ← raiz React
 2. **Fichas técnicas incompletas** — alguns ingredientes com custo zero/sem quantidade na planilha original
 3. **PDV Hardware (roadmap):** impressora térmica ESC/POS + caixa registradora (curto prazo) · NFC-e SEFAZ-PI (médio prazo) · TEF integrado (longo prazo)
 4. **Relatório de canal (`RelatorioIFoodView`) cobre só iFood** — expandir pra PDV. Eventos já ganhou relatório próprio (`RelatorioEventosView`, 17/set/2026). `ProdutosMaisVendidosView` já cobre os 3 canais e ganhou export Excel/PDF em 27/set/2026 — pendência dele encerrada
-5. **Logging/observabilidade rudimentar** — sem `LOGGING` dict/Sentry, sem persistência em arquivo (tudo no stdout do Gunicorn, só via `journalctl`). Considerar `RotatingFileHandler` e/ou Sentry
+5. ~~Logging/observabilidade~~ — resolvido (v1.6.1, ver `LOGGING.md`). Sentry segue como opcional não decidido (Fase 5 do spec)
 6. **Divergência de receita "hoje" entre o card iFood do Dashboard e o menu iFood** — causa raiz identificada, correção pendente de decisão do usuário. Ver `IFOOD_RECEITA_DASHBOARD.md`
 7. **Variáveis de ambiente em prod para WhatsApp (Z-API)** — `ZAPI_INSTANCE_ID`/`ZAPI_TOKEN`/`ZAPI_CLIENT_TOKEN` já configuradas
 8. **`ANTHROPIC_API_KEY` não configurada em produção** — fallback de IA da importação de nota fiscal cai sempre em `metodo_extracao='falhou'` sem ela (key da Ortex, decisão de negócio)
@@ -826,6 +828,11 @@ python manage.py verificar_backup              # 08:00
 python manage.py enviar_cobrancas              # 09:30 — régua de cobrança de Eventos (ver COBRANCA.md)
                                                 #   --dry-run / --evento EV-123 / --data AAAA-MM-DD (só com --dry-run)
 
+# Consultar logs (prod)
+tail -f /var/log/arretado/arretado-erros.log   # só ERROR+ — olhar primeiro
+tail -f /var/log/arretado/arretado.log         # INFO+ (polling iFood, signals...)
+journalctl -u arretado -u arretado-polling -f  # console continua valendo
+
 # Importar planilha de precificação
 python manage.py importar_planilha --arquivo PLANILHA_DE_PRECIFICACAO_ARRETADO.xlsx
 # flags: --dry-run | --apenas-materias | --sobrescrever
@@ -879,6 +886,7 @@ git push origin vX.Y.Z
 **Atenção — `arretado-polling` também precisa reiniciar, sempre que o deploy mexe em models.** `systemctl restart arretado` sozinho não recarrega o worker de longa duração. Incidente real: um deploy que adicionou campo obrigatório em `ifood.PedidoIFood` sem reiniciar o polling perdeu 245 pedidos reais por 5 dias (`NotNullViolation` silencioso). Regra: qualquer deploy que rode `migrate` reinicia os dois serviços juntos (`systemctl restart arretado arretado-polling`).
 
 Infra já configurada em produção (não precisa recriar):
+- Logs: `/var/log/arretado` (2770 `root:www-data`) + `/etc/logrotate.d/arretado` + `LOG_DIR`/`LOG_LEVEL` no `.env` (o `.env` não entra no backup — são 2 linhas a lembrar)
 - Nginx: `location /media/` (serve uploads) e `proxy_set_header X-Forwarded-Proto $scheme;` no bloco `/api/`
 - Nginx: `client_max_body_size 10m;` (upload de foto de nota fiscal por celular)
 - Django: `MEDIA_URL`/`MEDIA_ROOT` e `SECURE_PROXY_SSL_HEADER` em `config/settings.py`
@@ -975,6 +983,12 @@ Infra já configurada em produção (não precisa recriar):
 - Não criar management command `restaurar_backup` — restauração é sempre manual
 - Não incluir o `.env` no backup — guardar chaves é procedimento manual separado
 - Não adicionar dedup de alerta ao `verificar_backup` — repetição diária é decisão consciente
+- Não usar `RotatingFileHandler`/`TimedRotatingFileHandler` — vários processos escrevem no mesmo arquivo; rotação é do `logrotate`
+- Não deixar falha de configuração de log derrubar o boot — `montar_logging()` sempre cai pro console
+- Não logar exceção capturada com `logger.warning('...%s', e)` — sempre `logger.exception()` (senão perde o traceback)
+- Não logar credencial, token ou payload inteiro de pedido/cliente
+- Não usar `LogAuditoria` pra log técnico nem `logging` pra trilha de auditoria
+- Não deixar o `settings_test.py` herdar `LOG_DIR` de produção
 - Não resolver a empresa padrão por id fixo (`Empresa.objects.get(pk=1)`) — sempre `Empresa.get_padrao()`
 - Não permitir duas empresas com `padrao=True`, nem desmarcar a única sem promover outra na mesma requisição
 - Não implementar DELETE/PUT em `empresas.Empresa` — inativar via `ativo=False`

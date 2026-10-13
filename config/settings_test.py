@@ -22,3 +22,7 @@ DATABASES = {
 # porque um diretório de mídia tinha sido criado por um teste rodado como
 # root, ficando sem permissão de escrita pro www-data do Gunicorn).
 MEDIA_ROOT = tempfile.mkdtemp(prefix='arretado_test_media_')
+
+# Teste nunca grava em LOG_DIR, mesmo com .env de produção carregado.
+from .logging_config import montar_logging  # noqa: E402
+LOGGING = montar_logging(None, "WARNING")

@@ -439,8 +439,8 @@ class PedidoIFoodViewSet(CsrfExemptMixin, viewsets.ReadOnlyModelViewSet):
         try:
             from pedidos.models import PedidoUnificado
             PedidoUnificado.objects.filter(canal='ifood', origem_id=pedido.pk).update(cliente=cliente)
-        except Exception as e:
-            logger.warning('criar_cliente: falha ao propagar para PedidoUnificado: %s', e)
+        except Exception:
+            logger.exception('criar_cliente: falha ao propagar para PedidoUnificado')
 
         serializer = ClienteDetailSerializer(cliente)
         return Response(

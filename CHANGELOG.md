@@ -5,6 +5,19 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [v1.6.1] - 2026-10-13
+
+### Adicionado
+- **Logging estruturado em arquivo**: `config/logging_config.py` + `LOGGING` em `settings.py`.
+  Logs em `/var/log/arretado/arretado.log` (INFO+) e `arretado-erros.log` (só ERROR+), com
+  data/fuso, nível, PID e módulo; rotação diária via `logrotate`. Console/`journalctl`
+  continua funcionando. Spec em `LOGGING.md`.
+
+### Corrigido
+- Falhas capturadas nos signals (sincronização de `PedidoUnificado`, débito de estoque,
+  ledger financeiro) e em alguns pontos de views/notificações agora são registradas com
+  traceback completo (`logger.exception`) em vez de só a mensagem em nível WARNING.
+
 ## [v1.6.0] - 2026-10-07
 
 ### Adicionado
