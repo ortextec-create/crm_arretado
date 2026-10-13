@@ -143,3 +143,23 @@ TIMBRE_PDF_PATH = BASE_DIR / 'timbre.pdf'
 # Logging (ver LOGGING.md)
 from .logging_config import montar_logging
 LOGGING = montar_logging(os.getenv("LOG_DIR", ""), os.getenv("LOG_LEVEL", "INFO"))
+
+# Sentry (opcional — ver LOGGING.md, Fase 5). Sem SENTRY_DSN no .env, nada é inicializado.
+SENTRY_DSN = os.getenv('SENTRY_DSN', '')
+import sys as _sys
+if SENTRY_DSN and 'test' not in _sys.argv:  # nunca envia durante `manage.py test`
+    try:
+        import sentry_sdk
+
+        from .versao import obter_versao
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=os.getenv('SENTRY_ENVIRONMENT', 'producao'),
+            release=obter_versao()['versao'],
+            send_default_pii=False,
+            traces_sample_rate=0,
+        )
+    except Exception as _e:  # nunca derruba o boot por causa de observabilidade
+        import sys
+        print(f'[sentry] não inicializado: {_e}', file=sys.stderr)

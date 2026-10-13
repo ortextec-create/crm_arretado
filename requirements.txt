@@ -11,3 +11,4 @@ python-dotenv==1.2.2
 requests==2.34.2
 sqlparse==0.5.5
 twilio==9.10.9
+sentry-sdk==2.72.0

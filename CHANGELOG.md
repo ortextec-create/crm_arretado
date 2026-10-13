@@ -5,6 +5,12 @@ Versionamento derivado de tags anotadas do Git (`git describe --tags`) — nunca
 à mão em arquivo/settings, ver `CLAUDE.md` → "Versão do Sistema". Cada entrada aqui
 corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
+## [Não lançado]
+
+### Adicionado
+- **Sentry opcional**: `sentry-sdk` inicializado em `settings.py` apenas quando `SENTRY_DSN`
+  existe no `.env` (sem PII, sem tracing, `release` = versão do Git). Inativo até configurar.
+
 ## [v1.6.1] - 2026-10-13
 
 ### Adicionado
