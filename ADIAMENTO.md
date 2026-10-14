@@ -1,7 +1,7 @@
 # ADIAMENTO.md — Remarcação e Adiamento de Eventos
 
 > Spec para implementação via Claude Code. Segue os padrões obrigatórios de `CLAUDE.md`.
-> Mockup: **pendente** — validar as telas (modais Remarcar / Adiar / Retomar / Encerrar adiamento e o histórico de datas) antes da Fase 5.
+> Status (14/out/2026): fases 0-5 implementadas e deployadas (v1.7.0); cron `alertar_adiamentos` cadastrado (08:45). Lacunas conhecidas do mockup: KPIs da aba Adiados, coluna "Situação/Próxima ação" e prévia da faixa de multa no modal Adiar (exigiria endpoint de prévia no backend).
 > Requisito de revenda: **nenhum valor da Arretado hardcoded**. Prazos e faixas em `ConfiguracaoContrato` / `ConfiguracaoAlertaEvento`; textos de WhatsApp sem nome de empresa.
 > As regras contratuais desta spec (prazo máximo, multa, devolução) são decisão de negócio e devem ser revisadas por advogado antes de entrar no PDF do contrato.
 

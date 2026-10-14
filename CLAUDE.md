@@ -453,6 +453,7 @@ arretado-crm/                    ← raiz React
 - **Logging** (spec em `LOGGING.md`) — `config/logging_config.py::montar_logging()`. Console (stderr, vai pro `journalctl`) sempre; arquivos `arretado.log` (≥ `LOG_LEVEL`) e `arretado-erros.log` (só ERROR+) em `LOG_DIR` do `.env` (prod: `/var/log/arretado`). Sem `LOG_DIR`, ou sem permissão de escrita, cai pro console sem quebrar o boot. `WatchedFileHandler` + `logrotate` (`/etc/logrotate.d/arretado`) porque Gunicorn (www-data), polling (www-data) e crons (root) escrevem nos mesmos arquivos. Erro inesperado capturado em `except` é `logger.exception()`; aviso esperado é `logger.warning()`
 - **Sentry (opcional)** — `settings.py` só inicializa `sentry_sdk` se `SENTRY_DSN` estiver no `.env` (e nunca durante `manage.py test`); `send_default_pii=False`, `traces_sample_rate=0`, `release` vem de `obter_versao()`. `logger.exception()`/`logger.error()` viram evento automaticamente. Sem DSN = nada muda. DSN deve ser por cliente/instalação (LGPD, produto revendido)
 - **Versão do Sistema** (`config/versao.py`) — sempre derivada do Git (`git describe --tags --always --dirty`), nunca mantida à mão. Cada release: tag anotada `vX.Y.Z` + entrada no `CHANGELOG.md`, sempre juntos. Requer `git config --system --add safe.directory /var/www/crm_arretado` (já aplicado em prod) — sem isso, `obter_versao()` cai silenciosamente no fallback `'desconhecida'`
+- **Remarcação e Adiamento de Eventos** (spec completa em `ADIAMENTO.md`, fases 0-5, v1.7.0) — mudança de data só via `EventoViewSet.remarcar/` (log imutável `RemarcacaoEvento`) ou `retomar/`; PATCH com `data_evento`/`hora_evento` diferente → 400, e o frontend nem envia esses campos. Status `adiado` mantém a última data; `AdiamentoEvento` (um por adiamento) congela limite e faixa de multa no dia. Retomar sempre volta a `confirmado` e rejeita data após o limite (`fora_do_prazo` → prorrogar, até `prorrogacoes_adiamento_max`). Limite vencido não faz nada sozinho — só alerta (`alertar_adiamentos`, cron 08:45). Encerrar (`adiamento/encerrar/`) cancela o evento e, havendo devolução, cria `ContaPagar` `origem='devolucao_evento'`; multa+retido+devolução têm que somar o pago. **Cálculo do acerto sempre no backend** (`adiamento/simular-encerramento/`, `eventos/adiamento.py`), nunca no frontend. `adiado` fica fora da régua de cobrança, da agenda, do resumo de cozinha e de `alertar_eventos`. Prazos/faixas só em `ConfiguracaoContrato`/`ConfiguracaoAlertaEvento`, nunca hardcoded
 - **Régua de Cobrança de Eventos** (spec completa em `COBRANCA.md`) — app `cobranca/`, fala com o
   **cliente** (WhatsApp), nunca com a equipe (isso é `eventos/management/commands/alertar_eventos.py`,
   independente). `ConfiguracaoCobranca` é singleton, sempre via `.get()`, nasce `ativo=False` — deploy
@@ -554,6 +555,7 @@ arretado-crm/                    ← raiz React
 | Sistema de Backup | App `manutencao/` (ver `backup.md`) | ✅ Concluída (fases 1-5) |
 | Multi-Empresa + Temas | Fases 0-5 de 6 (ver `MULTIEMPRESA.md`) | 🔄 Deployado 24/ago/2026 (v1.5.0) — falta só cadastrar a MANGAIO |
 | Brindes e Permutas | Campo `natureza` por item, 5 de 5 fases (ver `BRINDES_PERMUTAS.md`) | ✅ Concluída (v1.5.1) |
+| Remarcação e Adiamento de Eventos | Remarcar, adiar sem data, retomar, encerrar com acerto, aditivo de data, alertas (ver `ADIAMENTO.md`) | ✅ Deployado 14/out/2026 (v1.7.0) — falta só revisão jurídica da cláusula de adiamento |
 | Cobrança de Eventos | Régua automática de WhatsApp + ligações da equipe, 7 de 7 fases (ver `COBRANCA.md`) | 🔄 Código completo (07/out/2026) — falta deploy (migrate + restart) e setup manual (Pix/telefone/crontab, ver COBRANCA.md § Setup Manual) |
 
 ---
@@ -826,6 +828,7 @@ python manage.py gerar_contas_recorrentes      # 07:00 — idempotente
 python manage.py alertar_vencimentos           # 08:30 — janelas de ConfiguracaoFinanceira
 python manage.py fazer_backup                  # 03:00
 python manage.py verificar_backup              # 08:00
+python manage.py alertar_adiamentos            # 08:45 — equipe: follow-up e limite de eventos adiados
 python manage.py enviar_cobrancas              # 09:30 — régua de cobrança de Eventos (ver COBRANCA.md)
                                                 #   --dry-run / --evento EV-123 / --data AAAA-MM-DD (só com --dry-run)
 
@@ -1024,6 +1027,10 @@ Infra já configurada em produção (não precisa recriar):
 - Não enviar etapa de cobrança com data anterior a `ConfiguracaoCobranca.ativo_desde`
 - Não implementar DELETE em `EtapaRegua`/PATCH-PUT-DELETE em `PausaCobranca`/`LigacaoCobranca`/`EnvioCobranca` — imutáveis de propósito (correção = registro novo)
 - Não criar `PausaCobranca` sem prazo (`pausado_ate` obrigatório) nem com prazo no passado
+- Não mudar `Evento.data_evento`/`hora_evento` por PATCH — sempre `remarcar/` ou `retomar/`
+- Não calcular multa/devolução do adiamento no frontend — sempre `adiamento/simular-encerramento/`
+- Não incluir `adiado` em `cobranca.regua.STATUS_ELEGIVEIS`, agenda ou alertas de evento
+- Não encerrar adiamento com `multa + retido + devolução != valor pago`, nem sem observação
 - Não reaproveitar `AlertaEventoEnviado`/`alertar_eventos` pra cobrança de cliente — aquele é da equipe, `cobranca/` é o cliente, nunca confundir os dois
 - Não hardcodar nome da empresa, Pix ou telefone em texto padrão de cobrança — sempre variável (`{empresa}`/`{chave_pix}`/`{telefone_empresa}`)
 - Não reimplementar fase/próxima ação da régua no frontend (`Cobranca.jsx`/`CobrancaBadge.jsx`) — sempre ler de `fila/`/`linha-do-tempo/`, nunca lógica paralela de decisão em JS

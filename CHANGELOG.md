@@ -7,6 +7,11 @@ corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
 ## [Não lançado]
 
+## [v1.7.0] - 2026-10-14
+
+### Adicionado
+- **Remarcação e adiamento de eventos** (`ADIAMENTO.md`): `remarcar/` com histórico imutável, status `adiado` com prazo máximo/prorrogação, `retomar/`, encerramento com acerto financeiro (multa, retido, devolução via `ContaPagar`), aditivo de data, cron `alertar_adiamentos` e telas correspondentes (modais, aba Datas, aba Adiados, configurações).
+
 ### Adicionado
 - **Sentry opcional**: `sentry-sdk` inicializado em `settings.py` apenas quando `SENTRY_DSN`
   existe no `.env` (sem PII, sem tracing, `release` = versão do Git). Inativo até configurar.
