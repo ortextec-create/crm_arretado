@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
-import { eventosApi, locaisEventoApi, clientesApi, contratosApi, aditivosApi } from '../api/services'
+import { eventosApi, locaisEventoApi, clientesApi, contratosApi, aditivosApi, configContratoApi } from '../api/services'
 import { pdvApi, taxasEntregaApi } from '../api/services'
 import { Btn, Modal, Spinner, Toast, Empty, NaturezaBadge, SeletorNatureza } from '../components/ui'
 import PresencaAtiva from '../components/ui/PresencaAtiva'
@@ -37,6 +37,7 @@ const STATUS_CONFIG = {
   pronto:      { label: 'Pronto',       color: '#059669' },
   entregue:    { label: 'Entregue',     color: '#7C3AED' },
   cancelado:   { label: 'Cancelado',    color: '#DC2626' },
+  adiado:      { label: 'Adiado',       color: '#0E7490' },
 }
 
 const STATUS_TABS = [
@@ -46,6 +47,7 @@ const STATUS_TABS = [
   { key: 'em_producao',label: 'Em produção' },
   { key: 'pronto',     label: 'Pronto' },
   { key: 'entregue',   label: 'Entregue' },
+  { key: 'adiado',     label: 'Adiados', icon: 'ti-player-pause' },
 ]
 
 // Sequência do stepper de status do modal de detalhe (exclui 'cancelado', tratado à parte)
@@ -69,6 +71,16 @@ const fmtData = (d) => {
   const [y, m, day] = d.split('-')
   return `${day}/${m}/${y}`
 }
+const hojeISO = () => {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+}
+const somaDiasISO = (iso, dias) => {
+  const d = new Date(`${iso}T12:00:00`)
+  d.setDate(d.getDate() + dias)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const erroApi = (e, padrao) => e?.response?.data?.mensagem || e?.response?.data?.detail || padrao
 const mesAtual = () => {
   const n = new Date()
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
@@ -95,6 +107,7 @@ export default function Eventos() {
   const [reenviarInfo, setReenviarInfo] = useState(null) // { contrato, nomeCliente, telefoneDisplay }
   const [emitirEvento, setEmitirEvento] = useState(null) // evento ativo pro modal de Emitir Contrato
   const [aditivoEvento, setAditivoEvento] = useState(null) // evento ativo pro modal de Emitir Aditivo
+  const [acaoData, setAcaoData] = useState(null) // { tipo: 'remarcar'|'adiar'|'retomar'|'encerrar'|'prorrogar'|'contato' }
 
   // ── Carregamento ──────────────────────────────────────────────────────────
 
@@ -106,7 +119,12 @@ export default function Eventos() {
       if (search)     params.search = search
       if (view === 'agenda') params.mes = mes
       const res = await eventosApi.list(params)
-      setEventos(res.data.results ?? res.data)
+      let lista = res.data.results ?? res.data
+      // Aba Adiados: fila de trabalho, limite mais próximo primeiro
+      if (statusTab === 'adiado') {
+        lista = [...lista].sort((a, b) => (a.adiado_limite || '9999').localeCompare(b.adiado_limite || '9999'))
+      }
+      setEventos(lista)
     } catch { /* silencioso */ }
     finally { setLoading(false) }
   }, [statusTab, search, view, mes])
@@ -183,7 +201,7 @@ export default function Eventos() {
   }
 
   const abrirEmitirAditivo = (ev) => {
-    if (!ev.aditivo_disponivel) return
+    if (!ev.aditivo_disponivel && !ev.contrato_divergente) return
     setAditivoEvento(ev)
   }
 
@@ -206,6 +224,13 @@ export default function Eventos() {
     } catch {
       setToast({ message: 'Erro ao gerar resumo de cozinha.', type: 'error' })
     }
+  }
+
+  // Remarcar/adiar/retomar/encerrar: o modal devolve o evento atualizado (detalhe) e, na remarcação/retomada, aditivo_sugerido
+  const handleAcaoDatas = (dados, mensagem) => {
+    if (dados?.id) setEventoAtivo(dados)
+    loadEventos(); loadStats()
+    setToast({ message: mensagem, type: 'success' })
   }
 
   const handleContratoEmitido = () => {
@@ -295,7 +320,7 @@ export default function Eventos() {
                   className={`${styles.tab} ${statusTab === t.key ? styles.tabActive : ''}`}
                   onClick={() => setStatusTab(t.key)}
                 >
-                  {t.label}
+                  {t.icon && <i className={`ti ${t.icon}`} />} {t.label}
                 </button>
               ))}
             </div>
@@ -351,7 +376,16 @@ export default function Eventos() {
                           {ev.tipo_evento_display}
                         </span>
                       </td>
-                      <td>{fmtData(ev.data_evento)}</td>
+                      <td>
+                        {ev.status === 'adiado'
+                          ? <span style={{ textDecoration: 'line-through', color: 'var(--texto-muted)' }}>{fmtData(ev.data_evento)}</span>
+                          : fmtData(ev.data_evento)}
+                        {ev.status === 'adiado' && ev.adiado_limite && (
+                          <span className={styles.limiteAdiado} data-vencido={ev.adiado_limite < hojeISO() || undefined}>
+                            limite {fmtData(ev.adiado_limite)}
+                          </span>
+                        )}
+                      </td>
                       <td>{ev.nome_cliente_display}</td>
                       <td>
                         <span className={`${styles.entregaBadge} ${ev.tipo_entrega === 'entrega_local' ? styles.entregaLocal : ''}`}>
@@ -400,7 +434,7 @@ export default function Eventos() {
                             <i className="ti ti-brand-whatsapp" /> Contrato
                           </button>
                         )}
-                        {ev.aditivo_disponivel && (
+                        {(ev.aditivo_disponivel || ev.contrato_divergente) && (
                           <button
                             className={styles.linkContrato}
                             onClick={() => abrirEmitirAditivo(ev)}
@@ -458,9 +492,37 @@ export default function Eventos() {
           onReenviarContrato={() => abrirReenviarContrato(eventoAtivo)}
           onEmitirContrato={() => abrirEmitirContrato(eventoAtivo)}
           onEmitirAditivo={() => abrirEmitirAditivo(eventoAtivo)}
+          onAcaoDatas={(tipo) => setAcaoData({ tipo })}
           onResumoCozinha={() => handleResumoCozinha(eventoAtivo.id, (eventoAtivo.imagens_inspiracao?.length ?? 0) > 0)}
         />
       )}
+
+      {acaoData && eventoAtivo && (() => {
+        const fechar = () => setAcaoData(null)
+        const comum = { evento: eventoAtivo, onClose: fechar }
+        if (acaoData.tipo === 'remarcar') return (
+          <ModalRemarcar {...comum} onFeito={(d) => { handleAcaoDatas(d, 'Evento remarcado.'); if (!d.aditivo_sugerido) fechar() }}
+            onAditivo={() => { fechar(); abrirEmitirAditivo(eventoAtivo) }} />
+        )
+        if (acaoData.tipo === 'adiar') return (
+          <ModalAdiar {...comum} onFeito={(d) => { handleAcaoDatas(d, 'Evento adiado.'); fechar() }} />
+        )
+        if (acaoData.tipo === 'retomar') return (
+          <ModalRetomar {...comum} onFeito={(d) => { handleAcaoDatas(d, 'Evento retomado.'); if (!d.aditivo_sugerido) fechar() }}
+            onProrrogar={() => setAcaoData({ tipo: 'prorrogar' })}
+            onAditivo={() => { fechar(); abrirEmitirAditivo(eventoAtivo) }} />
+        )
+        if (acaoData.tipo === 'encerrar') return (
+          <ModalEncerrarAdiamento {...comum} onFeito={(d) => { handleAcaoDatas(d, 'Adiamento encerrado.'); fechar() }} />
+        )
+        if (acaoData.tipo === 'prorrogar') return (
+          <ModalProrrogarContato {...comum} modo="prorrogar" onFeito={(d) => { handleAcaoDatas(d, 'Prazo do adiamento prorrogado.'); fechar() }} />
+        )
+        if (acaoData.tipo === 'contato') return (
+          <ModalProrrogarContato {...comum} modo="contato" onFeito={(d) => { handleAcaoDatas(d, 'Contato registrado.'); fechar() }} />
+        )
+        return null
+      })()}
 
       {reenviarInfo && (
         <ModalReenviarContrato
@@ -1093,7 +1155,7 @@ function ModalNovoEvento({ onClose, onSaved }) {
 
 // ─── Modal Detalhe do Evento ──────────────────────────────────────────────────
 
-function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato, onEmitirContrato, onEmitirAditivo, onResumoCozinha }) {
+function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onEditar, onReenviarContrato, onEmitirContrato, onEmitirAditivo, onAcaoDatas, onResumoCozinha }) {
   const [abaAtiva,    setAbaAtiva]    = useState('itens')
   const [addingItem,  setAddingItem]  = useState(false)
   const [produtos,    setProdutos]    = useState([])
@@ -1307,7 +1369,27 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
     { key: 'marcar_pronto',    label: 'Marcar como pronto',icon: 'ti-package',         show: evento.pode_marcar_pronto,    variant: 'primary' },
     { key: 'entregar',         label: 'Entregar',          icon: 'ti-truck-delivery', show: evento.pode_entregar,         variant: 'primary' },
     { key: 'cancelar',         label: 'Cancelar',          icon: 'ti-ban',            show: evento.pode_cancelar,         variant: 'danger'  },
+    { key: 'remarcar',         label: 'Remarcar',          icon: 'ti-calendar-event', show: evento.pode_remarcar,         variant: 'secondary', onClick: () => onAcaoDatas('remarcar') },
+    { key: 'adiar',            label: 'Adiar',             icon: 'ti-player-pause',   show: evento.pode_adiar,            variant: 'secondary', onClick: () => onAcaoDatas('adiar') },
+    { key: 'retomar',          label: 'Retomar com nova data', icon: 'ti-player-play', show: evento.pode_retomar,         variant: 'primary', disabled: adVencido, title: adVencido ? 'Prorrogue o prazo para retomar' : '', onClick: () => onAcaoDatas('retomar') },
+    { key: 'prorrogar',        label: 'Prorrogar prazo',   icon: 'ti-clock-plus',     show: evento.pode_retomar,          variant: 'secondary', disabled: (adVigente?.prorrogacoes_restantes ?? 0) < 1, title: (adVigente?.prorrogacoes_restantes ?? 0) < 1 ? 'Nenhuma prorrogação restante' : '', onClick: () => onAcaoDatas('prorrogar') },
+    { key: 'contato',          label: 'Registrar contato', icon: 'ti-phone',          show: evento.pode_retomar,          variant: 'secondary', onClick: () => onAcaoDatas('contato') },
+    { key: 'encerrar',         label: 'Encerrar adiamento', icon: 'ti-ban',           show: evento.pode_retomar,          variant: 'danger', onClick: () => onAcaoDatas('encerrar') },
   ]
+
+  const adVigente = evento.adiamento_vigente
+  const adVencido = !!adVigente && adVigente.dias_para_limite < 0
+  const divergeData = (evento.contrato_divergencia || []).includes('data')
+  const dataMudou = evento.data_original && evento.data_original !== evento.data_evento
+  const nRemarcacoes = (evento.remarcacoes || []).filter(r => r.origem === 'remarcacao').length
+  const nDatas = (evento.remarcacoes?.length ?? 0) + (evento.adiamentos?.length ?? 0)
+  const pctPrazo = (() => {
+    if (!adVigente) return 0
+    const ini = new Date(`${adVigente.adiado_em}T12:00:00`), lim = new Date(`${adVigente.limite}T12:00:00`)
+    const total = Math.max((lim - ini) / 86400000, 1)
+    const gasto = (new Date(`${hojeISO()}T12:00:00`) - ini) / 86400000
+    return Math.min(Math.max(Math.round((gasto / total) * 100), 2), 100)
+  })()
 
   const cfg = STATUS_CONFIG[evento.status] || {}
   const stepIdx = STATUS_STEPS.indexOf(evento.status)
@@ -1325,6 +1407,23 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
       {evento.status === 'cancelado' ? (
         <div className={styles.statusCanceladoBadge}>
           <i className="ti ti-ban" /> Evento cancelado
+        </div>
+      ) : evento.status === 'adiado' && adVigente ? (
+        <div className={`${styles.adiadoBadge} ${adVencido ? styles.adiadoVencido : ''}`}>
+          <div className={styles.adiadoBadgeTxt}>
+            <strong><i className="ti ti-player-pause" /> {adVencido ? `Limite de adiamento vencido há ${Math.abs(adVigente.dias_para_limite)} dias` : 'Evento adiado'}</strong>
+            <span>
+              Desde {fmtData(adVigente.adiado_em)} · a pedido {adVigente.solicitado_por === 'cliente' ? 'da cliente' : 'da empresa'}
+              {adVencido ? ` · limite era ${fmtData(adVigente.limite)}` : ` · status antes: ${STATUS_CONFIG[adVigente.status_antes]?.label || adVigente.status_antes}`}
+            </span>
+          </div>
+          <div className={styles.adiadoPrazo}>
+            <div className={styles.adiadoBarra}><span style={{ width: `${pctPrazo}%` }} /></div>
+            <div className={styles.adiadoLeg}>
+              <span>{fmtData(adVigente.adiado_em)}</span>
+              <span>limite {fmtData(adVigente.limite)}{adVencido ? ' · vencido' : ` · ${adVigente.dias_para_limite} dias`}</span>
+            </div>
+          </div>
         </div>
       ) : (
         <div className={styles.statusStepper}>
@@ -1344,6 +1443,17 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
         </div>
       )}
 
+      {divergeData && evento.status !== 'adiado' && (
+        <div className={styles.avisoDivergencia}>
+          <i className="ti ti-file-alert" />
+          <div>
+            <strong>Contrato com data desatualizada.</strong>
+            <span> O contrato ainda registra a data anterior do evento.</span>
+          </div>
+          <Btn variant="secondary" onClick={onEmitirAditivo}><i className="ti ti-file-diff" /> Emitir aditivo</Btn>
+        </div>
+      )}
+
       <div className={styles.detalheLayoutV2}>
 
         {/* Sidebar: dados + financeiro + ações */}
@@ -1354,7 +1464,17 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
           </span>
 
           <div className={styles.infoGrid}>
-            <InfoRow icon="ti-calendar" label="Data"     value={fmtData(evento.data_evento)} />
+            <InfoRow
+              icon="ti-calendar"
+              label={evento.status === 'adiado' ? 'Última data' : 'Data'}
+              value={evento.status === 'adiado'
+                ? <span style={{ textDecoration: 'line-through', color: 'var(--texto-muted)' }}>{fmtData(evento.data_evento)}</span>
+                : fmtData(evento.data_evento)}
+            />
+            {dataMudou && <InfoRow icon="ti-history" label="Original" value={<span style={{ textDecoration: 'line-through', color: 'var(--texto-muted)' }}>{fmtData(evento.data_original)}</span>} />}
+            {adVigente?.retomar_contato_em && (
+              <InfoRow icon="ti-phone" label="Contato" value={`${fmtData(adVigente.retomar_contato_em)} · prorrog. ${adVigente.prorrogacoes} de ${adVigente.prorrogacoes + adVigente.prorrogacoes_restantes}`} />
+            )}
             {evento.hora_evento && <InfoRow icon="ti-clock" label="Hora" value={evento.hora_evento.slice(0,5)} />}
             <InfoRow icon="ti-user"    label="Cliente"  value={evento.nome_cliente_display} />
             {evento.telefone_display && <InfoRow icon="ti-phone" label="Telefone" value={evento.telefone_display} />}
@@ -1423,7 +1543,7 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
                 <i className="ti ti-brand-whatsapp" /> Reenviar Contrato
               </Btn>
             )}
-            {evento.aditivo_disponivel && (
+            {(evento.aditivo_disponivel || divergeData) && evento.status !== 'adiado' && (
               <Btn onClick={onEmitirAditivo} style={{ background: 'var(--caramelo)' }} title="Emitir aditivo — o valor do evento mudou desde o contrato">
                 <i className="ti ti-file-diff" /> Emitir Aditivo
               </Btn>
@@ -1431,8 +1551,10 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             {ACOES.filter(a => a.show).map(a => (
               <Btn
                 key={a.key}
-                variant={a.variant === 'danger' ? 'ghost' : 'primary'}
-                onClick={() => onAcao(a.key, evento.id)}
+                variant={a.variant === 'danger' ? 'ghost' : a.variant}
+                onClick={() => (a.onClick ? a.onClick() : onAcao(a.key, evento.id))}
+                disabled={a.disabled}
+                title={a.title || undefined}
                 style={a.variant === 'danger' ? { color: '#DC2626', borderColor: '#DC2626' } : {}}
               >
                 <i className={`ti ${a.icon}`} /> {a.label}
@@ -1456,10 +1578,16 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
             <button className={`${styles.tabBtn} ${abaAtiva === 'cozinha' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('cozinha')}>
               Cozinha{evento.observacoes_cozinha ? ' •' : ''}
             </button>
+            <button className={`${styles.tabBtn} ${abaAtiva === 'datas' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('datas')}>
+              <i className="ti ti-history" /> Datas ({nDatas})
+            </button>
             <button className={`${styles.tabBtn} ${abaAtiva === 'historico' ? styles.tabBtnAtivo : ''}`} onClick={() => setAbaAtiva('historico')}>
               Histórico
             </button>
           </div>
+
+          {/* ── Aba: Datas (remarcações + adiamentos) ───────────────────── */}
+          {abaAtiva === 'datas' && <HistoricoDatas evento={evento} nRemarcacoes={nRemarcacoes} />}
 
           {/* ── Aba: Itens ──────────────────────────────────────────────── */}
           {abaAtiva === 'itens' && (
@@ -1861,7 +1989,6 @@ function ModalEditarEvento({ evento, onClose, onSalvo }) {
 
   async function handleSalvar() {
     if (!clienteSel && !form.cliente_nome) { setErro('Informe o cliente ou nome do cliente.'); return }
-    if (!form.data_evento) { setErro('Informe a data do evento.'); return }
     setSaving(true); setErro('')
     try {
       const payload = {
@@ -1869,8 +1996,6 @@ function ModalEditarEvento({ evento, onClose, onSalvo }) {
         cliente_nome:     clienteSel ? '' : form.cliente_nome,
         cliente_telefone: clienteSel ? '' : form.cliente_telefone,
         tipo_evento:      form.tipo_evento || '',
-        data_evento:      form.data_evento,
-        hora_evento:      form.hora_evento || null,
         tipo_entrega:     form.tipo_entrega,
         local:            form.tipo_entrega === 'entrega_local' && form.local ? Number(form.local) : null,
         endereco_avulso:  form.tipo_entrega === 'entrega_local' && !form.local ? form.endereco_avulso : '',
@@ -1947,13 +2072,16 @@ function ModalEditarEvento({ evento, onClose, onSalvo }) {
 
         {/* Datas */}
         <div className={styles.formGroup}>
-          <label>Data do evento *</label>
-          <input type="date" value={form.data_evento} onChange={e => set('data_evento', e.target.value)} />
+          <label>Data do evento</label>
+          <input type="date" value={form.data_evento} disabled />
         </div>
         <div className={styles.formGroup}>
           <label>Hora do evento</label>
-          <input type="time" value={form.hora_evento} onChange={e => set('hora_evento', e.target.value)} />
+          <input type="time" value={form.hora_evento} disabled />
         </div>
+        <p className={styles.hintDatas}>
+          <i className="ti ti-info-circle" /> Para mudar a data ou a hora, use <strong>Remarcar</strong> no detalhe do evento — assim fica registrado no histórico.
+        </p>
         <div className={styles.formGroup}>
           <label>Desconto (R$)</label>
           <input type="number" min="0" step="0.01" value={form.desconto} onChange={e => set('desconto', e.target.value)} />
@@ -2407,9 +2535,9 @@ function ModalEmitirAditivo({ evento, onClose, onGerado }) {
   return (
     <Modal open title="Emitir Aditivo de Contrato" onClose={onClose}>
       <p>
-        O valor do evento <strong>{evento.numero}</strong> mudou desde o contrato (ou último aditivo)
-        já emitido. Gerar um aditivo documenta essa alteração para o cliente, com os itens e o valor
-        atuais do evento.
+        O valor ou a data do evento <strong>{evento.numero}</strong> mudou desde o contrato (ou último aditivo)
+        já emitido. Gerar um aditivo documenta essa alteração para o cliente, com os itens, o valor
+        e a data atuais do evento.
       </p>
       <div className={styles.financeiroCard}>
         <div className={styles.financeiroLinha}><span>Valor atual do evento</span><span>{fmt(evento.valor_total)}</span></div>
@@ -2419,6 +2547,538 @@ function ModalEmitirAditivo({ evento, onClose, onGerado }) {
         <Btn variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Btn>
         <Btn onClick={handleGerar} disabled={saving}>
           {saving ? <Spinner size={14} /> : <i className="ti ti-file-diff" />} Gerar aditivo
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Remarcação e adiamento (ver ADIAMENTO.md) ───────────────────────────────
+
+const DESFECHO_LABEL = {
+  retomado:      'Retomado com nova data',
+  rescisao:      'Encerrado por rescisão',
+  forca_maior:   'Encerrado por força maior',
+  acordo_manual: 'Encerrado por acordo manual',
+}
+
+function HistoricoDatas({ evento, nRemarcacoes }) {
+  const itens = []
+  ;(evento.remarcacoes || []).forEach(r => itens.push({
+    key: `r${r.id}`, quando: r.criado_em, tipo: r.origem === 'retomada' ? 'retomada' : 'remarc', r,
+  }))
+  ;(evento.adiamentos || []).forEach(a => itens.push({ key: `a${a.id}`, quando: a.criado_em, tipo: 'adiado', a }))
+  itens.sort((x, y) => (y.quando || '').localeCompare(x.quando || ''))
+  const dtHora = (iso) => (iso ? dataFmt(iso) : '')
+  const hh = (h) => (h ? ` · ${h.slice(0, 5)}` : '')
+
+  return (
+    <div className={styles.datasWrap}>
+      {nRemarcacoes > 0 && (
+        <span className={styles.contadorDatas}>
+          <i className="ti ti-calendar-event" /> Remarcado {nRemarcacoes}x · data original {fmtData(evento.data_original)}
+        </span>
+      )}
+      <ol className={styles.linhaDatas}>
+        {itens.map(it => (
+          <li key={it.key}>
+            {it.tipo === 'adiado' ? (
+              <>
+                <span className={`${styles.pino} ${styles.pinoAdiado}`}><i className="ti ti-player-pause" /></span>
+                <div>
+                  <div className={styles.linhaTitulo}>Adiado sem nova data</div>
+                  <div className={styles.linhaDesc}>
+                    {it.a.motivo}. Limite {fmtData(it.a.limite)}.
+                    {it.a.encerrado_em && <> {DESFECHO_LABEL[it.a.desfecho] || it.a.desfecho_display}.</>}
+                  </div>
+                </div>
+                <div className={styles.linhaQuando}>{dtHora(it.a.criado_em)}<br />{it.a.criado_por_nome}</div>
+              </>
+            ) : (
+              <>
+                <span className={`${styles.pino} ${styles.pinoRemarc}`}><i className="ti ti-calendar-event" /></span>
+                <div>
+                  <div className={styles.linhaTitulo}>
+                    {fmtData(it.r.data_anterior)} <span className={styles.seta}>→</span> {fmtData(it.r.data_nova)}{hh(it.r.hora_nova)}
+                    {it.tipo === 'retomada' && <span className={styles.linhaTag}>retomada</span>}
+                  </div>
+                  <div className={styles.linhaDesc}>
+                    {it.r.motivo} <em>({it.r.solicitado_por === 'cliente' ? 'a pedido do cliente' : it.r.solicitado_por === 'empresa' ? 'a pedido da empresa' : ''})</em>
+                  </div>
+                </div>
+                <div className={styles.linhaQuando}>{dtHora(it.r.criado_em)}<br />{it.r.criado_por_nome}</div>
+              </>
+            )}
+          </li>
+        ))}
+        <li>
+          <span className={`${styles.pino} ${styles.pinoOrig}`}><i className="ti ti-check" /></span>
+          <div>
+            <div className={styles.linhaTitulo}>{fmtData(evento.data_original)}</div>
+            <div className={styles.linhaDesc}>Data original.</div>
+          </div>
+          <div className={styles.linhaQuando} />
+        </li>
+      </ol>
+    </div>
+  )
+}
+
+function SolicitadoPor({ value, onChange }) {
+  return (
+    <div className={styles.formGroup}>
+      <label>Solicitado por</label>
+      <div className={styles.radiosLinha}>
+        {[['cliente', 'Cliente'], ['empresa', 'Empresa']].map(([v, l]) => (
+          <label key={v} className={value === v ? styles.radioOn : ''}>
+            <input type="radio" name="solicitado_por" checked={value === v} onChange={() => onChange(v)} /> {l}
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ModalRemarcar({ evento, onClose, onFeito, onAditivo }) {
+  const emProducao = ['em_producao', 'pronto'].includes(evento.status)
+  const [data,    setData]    = useState('')
+  const [hora,    setHora]    = useState(evento.hora_evento ? evento.hora_evento.slice(0, 5) : '')
+  const [por,     setPor]     = useState('cliente')
+  const [motivo,  setMotivo]  = useState('')
+  const [ciente,  setCiente]  = useState(false)
+  const [voltar,  setVoltar]  = useState(true)
+  const [saving,  setSaving]  = useState(false)
+  const [erro,    setErro]    = useState('')
+  const [feito,   setFeito]   = useState(null)
+
+  const podeSalvar = data && motivo.trim() && (!emProducao || ciente) && !saving
+
+  async function salvar() {
+    setSaving(true); setErro('')
+    try {
+      const body = { data_evento: data, hora_evento: hora || null, motivo: motivo.trim(), solicitado_por: por }
+      if (emProducao) { body.confirmar_producao = true; body.voltar_para_confirmado = voltar }
+      const res = await eventosApi.remarcar(evento.id, body)
+      onFeito(res.data)
+      if (res.data.aditivo_sugerido) setFeito(res.data)
+    } catch (e) {
+      setErro(erroApi(e, 'Erro ao remarcar o evento.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (feito) {
+    return (
+      <Modal open title={`Remarcar ${evento.numero}`} onClose={onClose}>
+        <div className={styles.sucessoBox}>
+          <span className={styles.sucessoIco}><i className="ti ti-check" /></span>
+          <h4>Evento remarcado para {fmtData(feito.data_evento)}</h4>
+          <p>O contrato ainda tem a data antiga. Deseja emitir o aditivo de data agora?</p>
+        </div>
+        <div className={styles.stepNav}>
+          <Btn variant="ghost" onClick={onClose}>Agora não</Btn>
+          <Btn onClick={onAditivo}><i className="ti ti-file-diff" /> Emitir aditivo de data</Btn>
+        </div>
+      </Modal>
+    )
+  }
+
+  return (
+    <Modal open title={`Remarcar ${evento.numero}`} onClose={onClose}>
+      <div className={styles.avisoInfo}>
+        <i className="ti ti-calendar-event" />
+        <div>
+          <strong>Data atual: {fmtData(evento.data_evento)}{evento.hora_evento ? ` às ${evento.hora_evento.slice(0, 5)}` : ''}</strong>
+          <span>O status continua o mesmo. A régua de cobrança passa a contar da nova data.</span>
+        </div>
+      </div>
+
+      {emProducao && (
+        <div className={styles.avisoCritico}>
+          <i className="ti ti-tools-kitchen-2" />
+          <div>
+            <strong>A produção já começou.</strong>
+            <span>Doces produzidos para {fmtData(evento.data_evento)} podem não servir para a nova data.</span>
+            <label className={styles.checkLinha}><input type="checkbox" checked={ciente} onChange={e => setCiente(e.target.checked)} /> Estou ciente e quero remarcar mesmo assim</label>
+            <label className={styles.checkLinha}><input type="checkbox" checked={voltar} onChange={e => setVoltar(e.target.checked)} /> Voltar o status para Confirmado</label>
+          </div>
+        </div>
+      )}
+
+      <div className={styles.grid2Datas}>
+        <div className={styles.formGroup}>
+          <label>Nova data *</label>
+          <input type="date" min={hojeISO()} value={data} onChange={e => setData(e.target.value)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label>Hora</label>
+          <input type="time" value={hora} onChange={e => setHora(e.target.value)} />
+        </div>
+      </div>
+      <SolicitadoPor value={por} onChange={setPor} />
+      <div className={styles.formGroup}>
+        <label>Motivo *</label>
+        <textarea rows={3} value={motivo} onChange={e => setMotivo(e.target.value)} />
+      </div>
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={saving}>Voltar</Btn>
+        <Btn onClick={salvar} disabled={!podeSalvar}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-calendar-event" />} Remarcar{data ? ` para ${fmtData(data)}` : ''}
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+function ModalAdiar({ evento, onClose, onFeito }) {
+  const [cfg,    setCfg]    = useState({ prazo_maximo_adiamento_dias: 180, dias_followup_adiamento: 30 })
+  const [por,    setPor]    = useState('cliente')
+  const [motivo, setMotivo] = useState('')
+  const [follow, setFollow] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [erro,   setErro]   = useState('')
+
+  useEffect(() => {
+    configContratoApi.get().then(r => {
+      setCfg(r.data)
+      setFollow(somaDiasISO(hojeISO(), r.data.dias_followup_adiamento))
+    }).catch(() => setFollow(somaDiasISO(hojeISO(), 30)))
+  }, [])
+
+  const limite = somaDiasISO(evento.data_evento, cfg.prazo_maximo_adiamento_dias)
+  const noContrato = !!evento.contrato
+
+  async function salvar() {
+    setSaving(true); setErro('')
+    try {
+      const res = await eventosApi.adiar(evento.id, { motivo: motivo.trim(), solicitado_por: por, retomar_contato_em: follow || undefined })
+      onFeito(res.data)
+    } catch (e) {
+      setErro(erroApi(e, 'Erro ao adiar o evento.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open title={`Adiar ${evento.numero}`} onClose={onClose}>
+      <p className={styles.textoSec}>
+        Use quando o evento não vai acontecer em {fmtData(evento.data_evento)} e ainda não existe nova data.
+        Se a data já é conhecida, use <strong>Remarcar</strong>.
+      </p>
+      <div className={styles.resumoMini}>
+        <div><span>Nova data até</span><strong>{fmtData(limite)}</strong><small>{cfg.prazo_maximo_adiamento_dias} dias após {fmtData(evento.data_evento)}</small></div>
+        <div>
+          <span>Multa se não houver nova data</span>
+          <strong>{noContrato ? 'Definida ao adiar' : 'Sem contrato'}</strong>
+          <small>{noContrato ? 'Faixa congelada hoje, se o contrato tiver a cláusula' : 'Valores informados manualmente no encerramento'}</small>
+        </div>
+      </div>
+      <SolicitadoPor value={por} onChange={setPor} />
+      <div className={styles.formGroup}>
+        <label>Motivo *</label>
+        <textarea rows={3} value={motivo} onChange={e => setMotivo(e.target.value)} />
+      </div>
+      <div className={styles.formGroup}>
+        <label>Retomar contato em</label>
+        <input type="date" min={hojeISO()} value={follow} onChange={e => setFollow(e.target.value)} />
+        <span className={styles.ajudaCampo}>A equipe recebe um alerta nesse dia. Padrão: {cfg.dias_followup_adiamento} dias.</span>
+      </div>
+      {Number(evento.sinal_pago) > 0 && (
+        <div className={styles.avisoInfo}>
+          <i className="ti ti-cash" />
+          <div><span>O pagamento de <strong>{fmt(evento.sinal_pago)}</strong> continua com o evento. Nada é estornado agora.</span></div>
+        </div>
+      )}
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={saving}>Voltar</Btn>
+        <Btn onClick={salvar} disabled={saving || !motivo.trim()}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-player-pause" />} Adiar evento
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+function ModalRetomar({ evento, onClose, onFeito, onProrrogar, onAditivo }) {
+  const adv = evento.adiamento_vigente
+  const [data,   setData]   = useState('')
+  const [hora,   setHora]   = useState(evento.hora_evento ? evento.hora_evento.slice(0, 5) : '')
+  const [motivo, setMotivo] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [erro,   setErro]   = useState('')
+  const [foraPrazo, setForaPrazo] = useState(false)
+  const [feito,  setFeito]  = useState(null)
+
+  const passaDoLimite = !!adv && !!data && data > adv.limite
+
+  async function salvar() {
+    setSaving(true); setErro(''); setForaPrazo(false)
+    try {
+      const res = await eventosApi.retomar(evento.id, { data_evento: data, hora_evento: hora || null, motivo: motivo.trim() })
+      onFeito(res.data)
+      if (res.data.aditivo_sugerido) setFeito(res.data)
+    } catch (e) {
+      if (e?.response?.data?.detail === 'fora_do_prazo') setForaPrazo(true)
+      setErro(erroApi(e, 'Erro ao retomar o evento.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (feito) {
+    return (
+      <Modal open title={`Retomar ${evento.numero}`} onClose={onClose}>
+        <div className={styles.sucessoBox}>
+          <span className={styles.sucessoIco}><i className="ti ti-check" /></span>
+          <h4>Evento retomado para {fmtData(feito.data_evento)}</h4>
+          <p>O contrato ainda tem a data antiga. Deseja emitir o aditivo de data agora?</p>
+        </div>
+        <div className={styles.stepNav}>
+          <Btn variant="ghost" onClick={onClose}>Agora não</Btn>
+          <Btn onClick={onAditivo}><i className="ti ti-file-diff" /> Emitir aditivo de data</Btn>
+        </div>
+      </Modal>
+    )
+  }
+
+  const podeProrrogar = (adv?.prorrogacoes_restantes ?? 0) > 0
+  return (
+    <Modal open title={`Retomar ${evento.numero}`} onClose={onClose}>
+      <div className={styles.avisoInfo}>
+        <i className="ti ti-player-play" />
+        <div><span>O evento volta para <strong>Confirmado</strong> com a nova data. O pagamento de {fmt(evento.sinal_pago)} abate do total, e a régua de cobrança recomeça.</span></div>
+      </div>
+      <div className={styles.grid2Datas}>
+        <div className={styles.formGroup}>
+          <label>Nova data *</label>
+          <input type="date" min={hojeISO()} value={data} onChange={e => setData(e.target.value)} />
+          {adv && <span className={styles.ajudaCampo}>Até {fmtData(adv.limite)}</span>}
+        </div>
+        <div className={styles.formGroup}>
+          <label>Hora</label>
+          <input type="time" value={hora} onChange={e => setHora(e.target.value)} />
+        </div>
+      </div>
+      {(passaDoLimite || foraPrazo) && (
+        <div className={styles.avisoCritico}>
+          <i className="ti ti-alert-triangle" />
+          <div>
+            <strong>Essa data passa do limite de {fmtData(adv?.limite)}.</strong>
+            <span>{podeProrrogar ? 'Prorrogue o prazo primeiro.' : 'Não há mais prorrogações disponíveis; escolha uma data até o limite ou encerre o adiamento.'}</span>
+          </div>
+          {podeProrrogar && <Btn variant="secondary" onClick={onProrrogar}><i className="ti ti-clock-plus" /> Prorrogar</Btn>}
+        </div>
+      )}
+      <div className={styles.formGroup}>
+        <label>Observação <span style={{ color: 'var(--texto-muted)', fontWeight: 400 }}>(opcional)</span></label>
+        <textarea rows={3} value={motivo} onChange={e => setMotivo(e.target.value)} />
+      </div>
+      {erro && !foraPrazo && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={saving}>Voltar</Btn>
+        <Btn onClick={salvar} disabled={saving || !data || passaDoLimite}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-player-play" />} Retomar evento
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+function ModalProrrogarContato({ evento, modo, onClose, onFeito }) {
+  const adv = evento.adiamento_vigente
+  const prorrogar = modo === 'prorrogar'
+  const [motivo, setMotivo] = useState('')
+  const [data,   setData]   = useState(adv?.retomar_contato_em || '')
+  const [saving, setSaving] = useState(false)
+  const [erro,   setErro]   = useState('')
+
+  async function salvar() {
+    setSaving(true); setErro('')
+    try {
+      const res = prorrogar
+        ? await eventosApi.prorrogarAdiamento(evento.id, { motivo: motivo.trim() })
+        : await eventosApi.contatoAdiamento(evento.id, { retomar_contato_em: data, observacao: motivo.trim() })
+      onFeito(res.data)
+    } catch (e) {
+      setErro(erroApi(e, prorrogar ? 'Erro ao prorrogar o prazo.' : 'Erro ao registrar o contato.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open title={prorrogar ? `Prorrogar prazo · ${evento.numero}` : `Registrar contato · ${evento.numero}`} onClose={onClose}>
+      {prorrogar ? (
+        <div className={styles.avisoInfo}>
+          <i className="ti ti-clock-plus" />
+          <div><span>O limite atual é {fmtData(adv?.limite)}. Restam {adv?.prorrogacoes_restantes ?? 0} prorrogação(ões).</span></div>
+        </div>
+      ) : (
+        <div className={styles.formGroup}>
+          <label>Próximo contato em *</label>
+          <input type="date" min={hojeISO()} value={data} onChange={e => setData(e.target.value)} />
+        </div>
+      )}
+      <div className={styles.formGroup}>
+        <label>{prorrogar ? 'Motivo *' : 'Observação'}</label>
+        <textarea rows={3} value={motivo} onChange={e => setMotivo(e.target.value)} />
+      </div>
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={saving}>Voltar</Btn>
+        <Btn onClick={salvar} disabled={saving || (prorrogar ? !motivo.trim() : !data)}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-check" />} {prorrogar ? 'Prorrogar' : 'Registrar'}
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
+function ModalEncerrarAdiamento({ evento, onClose, onFeito }) {
+  const [desfecho, setDesfecho] = useState('rescisao')
+  const [sim,      setSim]      = useState(null)    // resposta de simular-encerramento/
+  const [semClausula, setSemClausula] = useState(false)
+  const [multa,    setMulta]    = useState('')
+  const [retido,   setRetido]   = useState('')
+  const [devolucao, setDevolucao] = useState('')
+  const [obs,      setObs]      = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [erro,     setErro]     = useState('')
+
+  const num = (v) => { const n = parseFloat(v); return Number.isNaN(n) ? 0 : n }
+  const cents = (v) => Math.round(num(v) * 100)
+
+  // O cálculo sugerido vem sempre do backend; aqui só se preenchem os campos editáveis
+  const carregar = useCallback(async (d, ret) => {
+    try {
+      const res = await eventosApi.simularEncerramento(evento.id, { desfecho: d, retido: ret || 0 })
+      const r = res.data
+      setSim(r)
+      if (d === 'rescisao' && r.sem_clausula) { setSemClausula(true); setDesfecho('acordo_manual'); return }
+      if (d === 'acordo_manual') { setMulta(''); setRetido(''); setDevolucao(''); return }
+      setMulta(String(r.multa_sugerida ?? 0))
+      setDevolucao(String(r.devolucao_sugerida ?? 0))
+      if (ret === undefined) setRetido(String(r.valor_retido_producao ?? 0))
+    } catch (e) {
+      setErro(erroApi(e, 'Erro ao calcular o acerto.'))
+    }
+  }, [evento.id])
+
+  useEffect(() => { carregar('rescisao') }, [carregar])
+
+  const trocarDesfecho = (d) => { setDesfecho(d); setErro(''); carregar(d) }
+
+  const pago = Number(sim?.valor_pago ?? evento.sinal_pago ?? 0)
+  const soma = cents(multa) + cents(retido) + cents(devolucao)
+  const bate = soma === Math.round(pago * 100)
+  const vazio = multa === '' && retido === '' && devolucao === ''
+  const manual = desfecho === 'acordo_manual'
+  const dif = (campo, sug) => !manual && campo !== '' && sug != null && Math.abs(num(campo) - Number(sug)) > 0.004
+  const difMulta = dif(multa, sim?.multa_sugerida)
+  const difRet   = dif(retido, sim?.valor_retido_producao)
+  const difDev   = dif(devolucao, sim?.devolucao_sugerida)
+  const algumDif = difMulta || difRet || difDev
+  const podeEncerrar = bate && !vazio && obs.trim() && !saving
+
+  // Força maior: o retido abate a devolução — recalcula no backend
+  const mudarRetido = (v) => {
+    setRetido(v)
+    if (desfecho === 'forca_maior') carregar('forca_maior', v === '' ? '0' : v)
+  }
+
+  async function encerrar() {
+    setSaving(true); setErro('')
+    try {
+      const res = await eventosApi.encerrarAdiamento(evento.id, {
+        desfecho, observacao: obs.trim(),
+        valor_multa: multa === '' ? 0 : multa,
+        valor_retido_producao: retido === '' ? 0 : retido,
+        valor_devolucao: devolucao === '' ? 0 : devolucao,
+      })
+      onFeito(res.data)
+    } catch (e) {
+      setErro(erroApi(e, 'Erro ao encerrar o adiamento.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const adv = evento.adiamento_vigente
+  const opcoes = [
+    ['rescisao', 'Rescisão', semClausula
+      ? 'Indisponível: o contrato deste evento não tem a cláusula de adiamento.'
+      : `Prazo vencido ou cliente desistiu. Multa da cláusula contratual${adv?.multa_pct != null ? `, faixa congelada em ${fmtData(adv.adiado_em)}: ${Number(adv.multa_pct)}%` : ''}.`],
+    ['forca_maior', 'Força maior', 'Sem multa. Retém só os custos já feitos, informados abaixo.'],
+    ['acordo_manual', 'Acordo manual', 'Distrato negociado. Você informa os três valores.'],
+  ]
+
+  return (
+    <Modal open title={`Encerrar adiamento · ${evento.numero}`} onClose={onClose} width={680}>
+      <div className={styles.formGroup}>
+        <label>Desfecho</label>
+        <div className={styles.cardsDesfecho}>
+          {opcoes.map(([v, t, d]) => (
+            <label key={v} className={desfecho === v ? styles.radioOn : ''} style={v === 'rescisao' && semClausula ? { opacity: .5 } : undefined}>
+              <input type="radio" name="desfecho" disabled={v === 'rescisao' && semClausula} checked={desfecho === v} onChange={() => trocarDesfecho(v)} />
+              <b>{t}</b><span>{d}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className={styles.acerto}>
+        <div className={`${styles.acertoLin} ${styles.acertoCab}`}><span>Destino do valor pago</span><span>Sugerido</span><span>Aplicar</span></div>
+        <div className={`${styles.acertoLin} ${difMulta ? styles.acertoDif : ''}`}>
+          <span>Multa retida<small>{desfecho === 'rescisao' && sim?.multa_pct != null ? `${Number(sim.multa_pct)}% de ${fmt(sim.valor_contrato)}, limitada ao pago` : desfecho === 'forca_maior' ? 'Sem multa na força maior' : 'Valor acordado no distrato'}</small></span>
+          <span>{manual || sim?.multa_sugerida == null ? '—' : fmt(sim.multa_sugerida)}</span>
+          <input type="number" min="0" step="0.01" value={multa} disabled={desfecho === 'forca_maior'} onChange={e => setMulta(e.target.value)} aria-label="Multa" />
+        </div>
+        <div className={`${styles.acertoLin} ${difRet ? styles.acertoDif : ''}`}>
+          <span>Retido por produção<small>Insumos e itens já feitos</small></span>
+          <span>{manual || !sim ? '—' : fmt(sim.valor_retido_producao)}</span>
+          <input type="number" min="0" step="0.01" value={retido} onChange={e => mudarRetido(e.target.value)} aria-label="Retido por produção" />
+        </div>
+        <div className={`${styles.acertoLin} ${difDev ? styles.acertoDif : ''}`}>
+          <span>Devolver à cliente<small>{sim?.vencimento_devolucao ? `Vence em ${fmtData(sim.vencimento_devolucao)} (dias úteis)` : ''}</small></span>
+          <span>{manual || sim?.devolucao_sugerida == null ? '—' : fmt(sim.devolucao_sugerida)}</span>
+          <input type="number" min="0" step="0.01" value={devolucao} onChange={e => setDevolucao(e.target.value)} aria-label="Devolução" />
+        </div>
+        <div className={`${styles.acertoLin} ${styles.acertoTotal}`}><span>Total pago</span><span>{fmt(pago)}</span><span>{fmt(soma / 100)}</span></div>
+      </div>
+
+      {!bate && !vazio && (
+        <div className={styles.avisoCritico}>
+          <i className="ti ti-alert-triangle" />
+          <div>
+            <strong>{soma > Math.round(pago * 100) ? `A soma passa do valor pago em ${fmt((soma - Math.round(pago * 100)) / 100)}.` : `Faltam ${fmt((Math.round(pago * 100) - soma) / 100)} para fechar a conta.`}</strong>
+            <span>Multa, retido e devolução precisam somar {fmt(pago)}.</span>
+          </div>
+        </div>
+      )}
+      {algumDif && (
+        <div className={styles.avisoAlerta}>
+          <i className="ti ti-alert-triangle" />
+          <div><span>Valores diferentes do sugerido ficam registrados na auditoria com o sugerido ao lado.</span></div>
+        </div>
+      )}
+
+      <div className={styles.formGroup}>
+        <label>Observação <span style={{ color: '#DC2626', fontWeight: 400 }}>obrigatória</span></label>
+        <textarea rows={3} value={obs} onChange={e => setObs(e.target.value)} placeholder="Ex.: cliente desistiu do evento em ligação." />
+      </div>
+      <div className={styles.avisoInfo}>
+        <i className="ti ti-ban" />
+        <div><span>O evento vai para <strong>Cancelado</strong> e a cliente recebe o aviso de cancelamento por WhatsApp.</span></div>
+      </div>
+      {erro && <p className={styles.error}><i className="ti ti-alert-circle" /> {erro}</p>}
+      <div className={styles.stepNav}>
+        <Btn variant="ghost" onClick={onClose} disabled={saving}>Voltar</Btn>
+        <Btn onClick={encerrar} disabled={!podeEncerrar} style={{ background: '#DC2626' }}>
+          {saving ? <Spinner size={14} /> : <i className="ti ti-ban" />} {num(devolucao) > 0 ? 'Encerrar e gerar devolução' : 'Encerrar adiamento'}
         </Btn>
       </div>
     </Modal>

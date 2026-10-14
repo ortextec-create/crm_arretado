@@ -399,6 +399,30 @@ export default function Configuracoes() {
             </label>
           </div>
 
+          <Toggle
+            label="Avisar a equipe sobre eventos adiados chegando ao limite (cron diário)"
+            checked={formAlertas.ativo_adiamento}
+            onChange={v => setAlertas('ativo_adiamento', v)}
+          />
+          <div className={styles.grid3} style={{ marginTop: 16 }}>
+            <label className={styles.field}>
+              <span>Avisar a partir de (dias antes do limite)</span>
+              <input
+                type="number" min={1} max={365}
+                value={formAlertas.dias_antes_limite_adiamento}
+                onChange={e => setAlertas('dias_antes_limite_adiamento', parseInt(e.target.value) || 15)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Repetir a cada (dias)</span>
+              <input
+                type="number" min={1} max={365}
+                value={formAlertas.repetir_adiamento_dias}
+                onChange={e => setAlertas('repetir_adiamento_dias', parseInt(e.target.value) || 7)}
+              />
+            </label>
+          </div>
+
           <button className={styles.btnTest} onClick={salvarAlertas} disabled={savingAlertas}>
             {savingAlertas
               ? <><i className="ti ti-loader-2" /> Salvando…</>
@@ -671,6 +695,35 @@ export default function Configuracoes() {
               />
             </label>
           </div>
+
+          <p className={styles.subLabel}>Adiamento de evento</p>
+          <div className={styles.grid3}>
+            <label className={styles.field}>
+              <span>Prazo máximo para a nova data (dias após a data original)</span>
+              <input
+                type="number" min={1}
+                value={formContrato.prazo_maximo_adiamento_dias}
+                onChange={e => setContrato('prazo_maximo_adiamento_dias', parseInt(e.target.value) || 1)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Prorrogações permitidas</span>
+              <input
+                type="number" min={0}
+                value={formContrato.prorrogacoes_adiamento_max}
+                onChange={e => setContrato('prorrogacoes_adiamento_max', parseInt(e.target.value) || 0)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Primeiro contato após adiar (dias)</span>
+              <input
+                type="number" min={1}
+                value={formContrato.dias_followup_adiamento}
+                onChange={e => setContrato('dias_followup_adiamento', parseInt(e.target.value) || 1)}
+              />
+            </label>
+          </div>
+          <p className={styles.hint}>O prazo máximo aparece na cláusula de adiamento dos contratos novos. Contratos já emitidos e adiamentos abertos não mudam.</p>
 
           <p className={styles.subLabel}>Foro</p>
           <div className={styles.grid3}>

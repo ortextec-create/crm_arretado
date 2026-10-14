@@ -233,6 +233,14 @@ export const eventosApi = {
   historico:       (id)    => api.get(`/eventos/${id}/historico/`),
   gerarContrato:   (id, data) => api.post(`/eventos/${id}/gerar-contrato/`, data),
   gerarAditivo:    (id)     => api.post(`/eventos/${id}/gerar-aditivo/`),
+  // Remarcação e adiamento (ver ADIAMENTO.md) — o acerto do encerramento é sempre calculado pelo backend
+  remarcar:        (id, data) => api.post(`/eventos/${id}/remarcar/`, data),
+  adiar:           (id, data) => api.post(`/eventos/${id}/adiar/`, data),
+  retomar:         (id, data) => api.post(`/eventos/${id}/retomar/`, data),
+  prorrogarAdiamento: (id, data) => api.post(`/eventos/${id}/adiamento/prorrogar/`, data),
+  contatoAdiamento:   (id, data) => api.post(`/eventos/${id}/adiamento/contato/`, data),
+  simularEncerramento: (id, params) => api.get(`/eventos/${id}/adiamento/simular-encerramento/`, { params }),
+  encerrarAdiamento:   (id, data) => api.post(`/eventos/${id}/adiamento/encerrar/`, data),
   resumoCozinha:   (id, incluirImagens=false) => api.get(`/eventos/${id}/resumo-cozinha/`, {
     params: incluirImagens ? { imagens: 1 } : {}, responseType: 'blob',
   }),
