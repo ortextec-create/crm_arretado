@@ -291,6 +291,7 @@ class Evento(models.Model):
         ('confirmado',   'Confirmado'),
         ('em_producao',  'Em produção'),
         ('pronto',       'Pronto'),
+        ('adiado',       'Adiado'),
         ('entregue',     'Entregue'),
         ('cancelado',    'Cancelado'),
     ]
@@ -423,7 +424,24 @@ class Evento(models.Model):
 
     @property
     def pode_cancelar(self):
-        return self.status not in ('entregue', 'cancelado')
+        # 'adiado' sai só via adiamento/encerrar/ (acerto financeiro obrigatório)
+        return self.status not in ('entregue', 'cancelado', 'adiado')
+
+    @property
+    def pode_remarcar(self):
+        return self.status in ('orcamento', 'confirmado', 'em_producao', 'pronto')
+
+    @property
+    def pode_adiar(self):
+        return self.status in ('confirmado', 'em_producao', 'pronto')
+
+    @property
+    def pode_retomar(self):
+        return self.status == 'adiado'
+
+    @property
+    def adiamento_vigente(self):
+        return self.adiamentos.filter(encerrado_em__isnull=True).first()
 
     @property
     def nome_cliente_display(self):
@@ -518,6 +536,7 @@ EVENTO_STATUS_MAP = {
     'confirmado':  'confirmado',
     'em_producao': 'em_preparo',
     'pronto':      'pronto',
+    'adiado':      'pendente',
     'entregue':    'concluido',
     'cancelado':   'cancelado',
 }
@@ -615,6 +634,13 @@ class ConfiguracaoContrato(models.Model):
 
     prazo_devolucao_dias = models.PositiveIntegerField(default=30)
 
+    # Adiamento de evento (ver ADIAMENTO.md)
+    prazo_maximo_adiamento_dias = models.PositiveIntegerField(
+        default=180, help_text='Nova data do evento até data original + N dias',
+    )
+    prorrogacoes_adiamento_max = models.PositiveSmallIntegerField(default=1)
+    dias_followup_adiamento = models.PositiveIntegerField(default=30)
+
     # Foro
     foro_comarca = models.CharField(max_length=100, blank=True, default='Teresina')
     foro_estado  = models.CharField(max_length=100, blank=True, default='Piauí')
@@ -672,6 +698,10 @@ class Contrato(models.Model):
     percentual_sinal = models.DecimalField(max_digits=5, decimal_places=2)
     valor_sinal      = models.DecimalField(max_digits=10, decimal_places=2)
     data_quitacao    = models.DateField()
+
+    # Contratos emitidos antes do ADIAMENTO.md ficam False — sem a cláusula,
+    # o sistema não calcula multa no encerramento de adiamento.
+    possui_clausula_adiamento = models.BooleanField(default=False)
 
     # ── Snapshot da entrada paga no ato da assinatura (ver PAGAMENTOS_CONTRATO.md) ──
     # Só é a fonte da tabela de pagamentos do PDF quando `evento` (acima) é None —
@@ -736,6 +766,13 @@ class AditivoContrato(models.Model):
     valor_total_novo  = models.DecimalField(max_digits=10, decimal_places=2)
     itens_snapshot    = models.JSONField(default=list)
 
+    # Alteração de data (ADIAMENTO.md) — nulos = aditivo só de valor
+    data_evento_anterior = models.DateField(null=True, blank=True)
+    hora_evento_anterior = models.TimeField(null=True, blank=True)
+    data_evento_nova     = models.DateField(null=True, blank=True)
+    hora_evento_nova     = models.TimeField(null=True, blank=True)
+    data_quitacao_nova   = models.DateField(null=True, blank=True)
+
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -786,6 +823,13 @@ class ConfiguracaoAlertaEvento(models.Model):
     )
     repetir_entrega_dias = models.PositiveIntegerField('Repetir a cada quantos dias', default=5)
 
+    # Evento adiado (ver ADIAMENTO.md)
+    ativo_adiamento = models.BooleanField('Alerta de evento adiado ativo', default=True)
+    dias_antes_limite_adiamento = models.PositiveIntegerField(
+        'Avisar a partir de quantos dias antes do limite do adiamento', default=15,
+    )
+    repetir_adiamento_dias = models.PositiveIntegerField('Repetir a cada quantos dias', default=7)
+
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -830,6 +874,9 @@ class AlertaEventoEnviado(models.Model):
     TIPO_CHOICES = [
         ('pagamento_pendente', 'Pagamento pendente'),
         ('aviso_entrega',      'Aviso de entrega'),
+        ('adiamento_contato',  'Follow-up de adiamento'),
+        ('adiamento_limite',   'Adiamento próximo do limite'),
+        ('adiamento_vencido',  'Limite de adiamento vencido'),
     ]
 
     evento     = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='alertas_enviados')
@@ -846,3 +893,115 @@ class AlertaEventoEnviado(models.Model):
 
     def __str__(self):
         return f'{self.evento.numero} — {self.get_tipo_display()} ({self.enviado_em:%d/%m %H:%M})'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Remarcação e Adiamento (ver ADIAMENTO.md)
+# ─────────────────────────────────────────────────────────────────────────────
+
+SOLICITADO_POR_CHOICES = [
+    ('cliente', 'Cliente'),
+    ('empresa', 'Empresa'),
+]
+
+
+class AdiamentoEvento(models.Model):
+    """Um registro por adiamento. Vigente = encerrado_em IS NULL (uma por evento).
+    limite/multa_pct/antecedencia_dias são snapshot — nunca recalculados da config."""
+
+    DESFECHO_CHOICES = [
+        ('retomado', 'Retomado'),
+        ('rescisao', 'Rescisão'),
+        ('forca_maior', 'Força maior'),
+        ('acordo_manual', 'Acordo manual'),
+    ]
+
+    evento = models.ForeignKey(Evento, on_delete=models.PROTECT, related_name='adiamentos')
+    adiado_em = models.DateField()
+    data_original = models.DateField()
+    status_antes = models.CharField(max_length=20)
+    motivo = models.CharField(max_length=300)
+    solicitado_por = models.CharField(max_length=10, choices=SOLICITADO_POR_CHOICES)
+    limite = models.DateField()
+    prorrogacoes = models.PositiveSmallIntegerField(default=0)
+    retomar_contato_em = models.DateField(null=True, blank=True)
+    antecedencia_dias = models.IntegerField()
+    producao_iniciada = models.BooleanField(default=False)
+    multa_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    encerrado_em = models.DateTimeField(null=True, blank=True)
+    desfecho = models.CharField(max_length=15, choices=DESFECHO_CHOICES, blank=True, default='')
+    valor_pago_no_encerramento = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    valor_multa = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    valor_multa_sugerido = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    valor_retido_producao = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    valor_devolucao = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    conta_pagar = models.OneToOneField(
+        'financeiro.ContaPagar', null=True, blank=True, on_delete=models.PROTECT,
+        related_name='adiamento_evento',
+    )
+    observacao_encerramento = models.TextField(blank=True, default='')
+
+    criado_por = models.ForeignKey(
+        'usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+    criado_por_nome = models.CharField(max_length=150, blank=True, default='')
+    encerrado_por = models.ForeignKey(
+        'usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+    encerrado_por_nome = models.CharField(max_length=150, blank=True, default='')
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Adiamento de Evento'
+        verbose_name_plural = 'Adiamentos de Evento'
+        ordering            = ['-criado_em']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['evento'], condition=models.Q(encerrado_em__isnull=True),
+                name='um_adiamento_vigente_por_evento',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.evento.numero} — adiado em {self.adiado_em}'
+
+    @property
+    def vigente(self):
+        return self.encerrado_em is None
+
+
+class RemarcacaoEvento(models.Model):
+    """Log imutável de toda mudança de data/hora do Evento."""
+
+    ORIGEM_CHOICES = [
+        ('remarcacao', 'Remarcação'),
+        ('retomada', 'Retomada de adiamento'),
+    ]
+
+    evento = models.ForeignKey(Evento, on_delete=models.PROTECT, related_name='remarcacoes')
+    origem = models.CharField(max_length=12, choices=ORIGEM_CHOICES, default='remarcacao')
+    adiamento = models.ForeignKey(
+        AdiamentoEvento, null=True, blank=True, on_delete=models.PROTECT, related_name='remarcacoes',
+    )
+    data_anterior = models.DateField(null=True, blank=True)
+    hora_anterior = models.TimeField(null=True, blank=True)
+    data_nova = models.DateField(null=True, blank=True)
+    hora_nova = models.TimeField(null=True, blank=True)
+    status_anterior = models.CharField(max_length=20)
+    status_novo = models.CharField(max_length=20)
+    motivo = models.CharField(max_length=300)
+    solicitado_por = models.CharField(max_length=10, choices=SOLICITADO_POR_CHOICES)
+    criado_por = models.ForeignKey(
+        'usuarios.Usuario', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+    criado_por_nome = models.CharField(max_length=150, blank=True, default='')
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Remarcação de Evento'
+        verbose_name_plural = 'Remarcações de Evento'
+        ordering            = ['-criado_em']
+
+    def __str__(self):
+        return f'{self.evento.numero}: {self.data_anterior} → {self.data_nova}'

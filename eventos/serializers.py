@@ -3,8 +3,9 @@ from rest_framework import serializers
 from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
     ImagemInspiracao, Contrato, AditivoContrato, ConfiguracaoContrato,
-    ConfiguracaoAlertaEvento, TelefoneAlertaEvento,
+    ConfiguracaoAlertaEvento, TelefoneAlertaEvento, AdiamentoEvento, RemarcacaoEvento,
 )
+from .adiamento import data_referencia_contrato
 from auditoria.models import LogAuditoria
 from auditoria.utils import registrar
 
@@ -76,6 +77,62 @@ def _valor_referencia_contrato(contrato):
     return ultimo_aditivo.valor_total_novo if ultimo_aditivo else contrato.valor_total
 
 
+def _divergencias_contrato(evento):
+    """Lista de campos em que o Evento divergiu do contrato/último aditivo:
+    'valor' e/ou 'data' (data ou hora). Vazia se não há contrato."""
+    contrato = next(iter(evento.contratos.all()), None)
+    if not contrato:
+        return []
+    divergencias = []
+    if evento.valor_total != _valor_referencia_contrato(contrato):
+        divergencias.append('valor')
+    data_ref, hora_ref = data_referencia_contrato(evento)
+    if evento.data_evento != data_ref or evento.hora_evento != hora_ref:
+        divergencias.append('data')
+    return divergencias
+
+
+class RemarcacaoEventoSerializer(serializers.ModelSerializer):
+    origem_display = serializers.CharField(source='get_origem_display', read_only=True)
+
+    class Meta:
+        model  = RemarcacaoEvento
+        fields = [
+            'id', 'origem', 'origem_display', 'adiamento',
+            'data_anterior', 'hora_anterior', 'data_nova', 'hora_nova',
+            'status_anterior', 'status_novo', 'motivo', 'solicitado_por',
+            'criado_por_nome', 'criado_em',
+        ]
+        read_only_fields = fields
+
+
+class AdiamentoEventoSerializer(serializers.ModelSerializer):
+    desfecho_display = serializers.CharField(source='get_desfecho_display', read_only=True)
+    vigente = serializers.ReadOnlyField()
+    dias_para_limite = serializers.SerializerMethodField()
+    prorrogacoes_restantes = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = AdiamentoEvento
+        fields = [
+            'id', 'vigente', 'adiado_em', 'data_original', 'status_antes', 'motivo', 'solicitado_por',
+            'limite', 'dias_para_limite', 'prorrogacoes', 'prorrogacoes_restantes',
+            'retomar_contato_em', 'antecedencia_dias', 'producao_iniciada', 'multa_pct',
+            'encerrado_em', 'desfecho', 'desfecho_display',
+            'valor_pago_no_encerramento', 'valor_multa', 'valor_multa_sugerido',
+            'valor_retido_producao', 'valor_devolucao', 'conta_pagar', 'observacao_encerramento',
+            'criado_por_nome', 'encerrado_por_nome', 'criado_em',
+        ]
+        read_only_fields = fields
+
+    def get_dias_para_limite(self, obj):
+        return (obj.limite - timezone.localdate()).days
+
+    def get_prorrogacoes_restantes(self, obj):
+        maximo = ConfiguracaoContrato.get().prorrogacoes_adiamento_max
+        return max(maximo - obj.prorrogacoes, 0)
+
+
 # ─── Evento ───────────────────────────────────────────────────────────────────
 
 class EventoListSerializer(serializers.ModelSerializer):
@@ -92,6 +149,10 @@ class EventoListSerializer(serializers.ModelSerializer):
     tem_orcamento_origem = serializers.SerializerMethodField()
     n_imagens_inspiracao = serializers.SerializerMethodField()
     aditivo_disponivel   = serializers.SerializerMethodField()
+    pode_remarcar        = serializers.ReadOnlyField()
+    pode_adiar           = serializers.ReadOnlyField()
+    pode_retomar         = serializers.ReadOnlyField()
+    adiado_limite        = serializers.SerializerMethodField()
 
     class Meta:
         model  = Evento
@@ -109,6 +170,7 @@ class EventoListSerializer(serializers.ModelSerializer):
             'pode_entregar', 'pode_cancelar',
             'criado_em', 'atualizado_em', 'ultima_modificacao', 'contrato', 'tem_orcamento_origem',
             'n_imagens_inspiracao', 'aditivo_disponivel',
+            'pode_remarcar', 'pode_adiar', 'pode_retomar', 'adiado_limite',
         ]
 
     def get_cliente_nome_crm(self, obj):
@@ -136,12 +198,15 @@ class EventoListSerializer(serializers.ModelSerializer):
         # Botão "Emitir Aditivo" só aparece quando o Evento já tem contrato
         # emitido E o valor atual divergiu do que consta no contrato/último
         # aditivo — nunca depois de entregue/cancelado (ver CLAUDE.md).
-        if obj.status in ('cancelado', 'entregue'):
+        if obj.status in ('cancelado', 'entregue', 'adiado'):
             return False
-        contrato = next(iter(obj.contratos.all()), None)
-        if not contrato:
-            return False
-        return obj.valor_total != _valor_referencia_contrato(contrato)
+        return bool(_divergencias_contrato(obj))
+
+    def get_adiado_limite(self, obj):
+        if obj.status != 'adiado':
+            return None
+        vigente = obj.adiamento_vigente
+        return vigente.limite if vigente else None
 
 
 class PagamentoEventoSerializer(serializers.ModelSerializer):
@@ -162,12 +227,36 @@ class EventoDetailSerializer(EventoListSerializer):
     pagamentos = PagamentoEventoSerializer(many=True, read_only=True)
     imagens_inspiracao = serializers.SerializerMethodField()
     aditivos = serializers.SerializerMethodField()
+    adiamento_vigente = serializers.SerializerMethodField()
+    adiamentos = AdiamentoEventoSerializer(many=True, read_only=True)
+    remarcacoes = RemarcacaoEventoSerializer(many=True, read_only=True)
+    data_original = serializers.SerializerMethodField()
+    contrato_divergente = serializers.SerializerMethodField()
+    contrato_divergencia = serializers.SerializerMethodField()
 
     class Meta(EventoListSerializer.Meta):
         fields = EventoListSerializer.Meta.fields + [
             'itens', 'local_detalhe', 'pagamentos',
             'imagens_inspiracao', 'observacoes', 'observacoes_cozinha', 'aditivos',
+            'adiamento_vigente', 'adiamentos', 'remarcacoes', 'data_original',
+            'contrato_divergente', 'contrato_divergencia',
         ]
+
+    def get_adiamento_vigente(self, obj):
+        vigente = obj.adiamento_vigente
+        return AdiamentoEventoSerializer(vigente).data if vigente else None
+
+    def get_data_original(self, obj):
+        primeira = obj.remarcacoes.order_by('criado_em', 'id').first()
+        return primeira.data_anterior if primeira and primeira.data_anterior else obj.data_evento
+
+    def get_contrato_divergencia(self, obj):
+        if obj.status in ('cancelado', 'entregue', 'adiado'):
+            return []
+        return _divergencias_contrato(obj)
+
+    def get_contrato_divergente(self, obj):
+        return bool(self.get_contrato_divergencia(obj))
 
     def get_imagens_inspiracao(self, obj):
         return ImagemInspiracaoSerializer(obj.galeria_imagens_inspiracao(), many=True).data
@@ -195,6 +284,14 @@ class EventoCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     'Para entrega no local, informe o local cadastrado ou o endereço avulso.'
                 )
+        # Data/hora só mudam via remarcar/ ou retomar/ (ver ADIAMENTO.md) — valor
+        # igual ao atual passa, o formulário de edição reenvia o objeto inteiro.
+        if self.instance is not None:
+            for campo in ('data_evento', 'hora_evento'):
+                if campo in data and data[campo] != getattr(self.instance, campo):
+                    raise serializers.ValidationError(
+                        {campo: ['Use Remarcar para mudar a data do evento.']}
+                    )
         return data
 
     def create(self, validated_data):
@@ -470,7 +567,9 @@ class AditivoContratoSerializer(serializers.ModelSerializer):
             'id', 'numero', 'contrato', 'contrato_numero', 'evento', 'evento_numero',
             'cliente', 'cliente_nome',
             'valor_total_anterior', 'subtotal_novo', 'desconto_novo', 'taxa_entrega_novo',
-            'valor_total_novo', 'diferenca', 'itens_snapshot', 'criado_em',
+            'valor_total_novo', 'diferenca', 'itens_snapshot',
+            'data_evento_anterior', 'hora_evento_anterior', 'data_evento_nova',
+            'hora_evento_nova', 'data_quitacao_nova', 'criado_em',
         ]
         read_only_fields = fields
 
@@ -489,6 +588,7 @@ class ConfiguracaoContratoSerializer(serializers.ModelSerializer):
             'multa_rescisao_acima_60_dias_pct', 'multa_rescisao_30_60_dias_pct',
             'multa_rescisao_abaixo_30_dias_pct', 'multa_rescisao_abaixo_7_dias_pct',
             'prazo_devolucao_dias', 'foro_comarca', 'foro_estado',
+            'prazo_maximo_adiamento_dias', 'prorrogacoes_adiamento_max', 'dias_followup_adiamento',
             'atualizado_em',
         ]
         read_only_fields = ['id', 'atualizado_em']
@@ -501,6 +601,7 @@ class ConfiguracaoAlertaEventoSerializer(serializers.ModelSerializer):
             'id',
             'ativo_pagamento', 'dias_antes_pagamento', 'repetir_pagamento_dias',
             'ativo_entrega', 'dias_antes_entrega', 'repetir_entrega_dias',
+            'ativo_adiamento', 'dias_antes_limite_adiamento', 'repetir_adiamento_dias',
             'atualizado_em',
         ]
         read_only_fields = ['id', 'atualizado_em']

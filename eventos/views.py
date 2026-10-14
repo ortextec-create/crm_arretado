@@ -2,6 +2,7 @@ import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Q, Sum, Count
 from django.http import HttpResponse
 from django.utils import timezone
@@ -13,8 +14,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import (
     LocalEvento, Evento, ItemEvento, PagamentoEvento, Orcamento, ItemOrcamento,
     ImagemInspiracao, Contrato, AditivoContrato, ConfiguracaoContrato,
-    ConfiguracaoAlertaEvento, TelefoneAlertaEvento,
+    ConfiguracaoAlertaEvento, TelefoneAlertaEvento, AdiamentoEvento, RemarcacaoEvento,
 )
+from . import adiamento as regras_adiamento
 from notificacoes.servico import notificar, _fone_pedido
 from usuarios.authentication import TokenAuthentication
 from auditoria.models import LogAuditoria
@@ -27,6 +29,42 @@ from auditoria.serializers import LogAuditoriaSerializer
 
 def _notificar_evento(evento, mensagem):
     notificar(_fone_pedido(evento), mensagem, cliente=evento.cliente, tipo='pedido')
+
+
+MSG_EVENTO_REMARCADO = '📅 Sua encomenda #{numero} foi remarcada para {data}{hora}. Qualquer dúvida, estamos por aqui!'
+MSG_EVENTO_ADIADO = '⏸️ Sua encomenda #{numero} foi adiada. Assim que tiver a nova data, é só nos avisar.'
+MSG_EVENTO_CANCELADO = '❌ Sua encomenda #{numero} foi cancelada. Entre em contato se precisar de ajuda.'
+
+
+def _msg_remarcado(evento):
+    hora = f' às {evento.hora_evento.strftime("%H:%M")}' if evento.hora_evento else ''
+    return MSG_EVENTO_REMARCADO.format(
+        numero=evento.numero, data=evento.data_evento.strftime('%d/%m/%Y'), hora=hora,
+    )
+
+
+def _erro(detail, mensagem):
+    return Response({'detail': detail, 'mensagem': mensagem}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _parse_data(valor):
+    try:
+        return datetime.date.fromisoformat(str(valor))
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_hora(valor):
+    if not valor:
+        return None
+    try:
+        return datetime.time.fromisoformat(str(valor))
+    except (ValueError, TypeError):
+        return False
+
+
+def _nome_ator(user):
+    return getattr(user, 'name', '') or ''
 
 
 def _campos_entrada_contrato(request):
@@ -115,6 +153,7 @@ class EventoViewSet(
     queryset           = Evento.objects.prefetch_related(
         'itens', 'pagamentos', 'orcamento_origem__imagens_inspiracao',
         'imagens_inspiracao_diretas', 'contratos__aditivos', 'aditivos',
+        'adiamentos', 'remarcacoes',
     ).select_related('cliente', 'local', 'orcamento_origem').all()
     filter_backends    = [filters.OrderingFilter]
     ordering_fields    = ['data_evento', 'criado_em', 'valor_total']
@@ -138,6 +177,8 @@ class EventoViewSet(
             'create', 'update', 'partial_update',
             'confirmar', 'iniciar_producao', 'marcar_pronto', 'entregar', 'cancelar',
             'adicionar_item', 'historico', 'gerar_contrato', 'gerar_aditivo', 'remover_imagem',
+            'remarcar', 'adiar', 'retomar', 'prorrogar_adiamento', 'contato_adiamento',
+            'encerrar_adiamento',
         ):
             return [IsAuthenticated()]
         return [AllowAny()]
@@ -268,6 +309,384 @@ class EventoViewSet(
         self.log_mudanca_status(evento, de=de, para=evento.status)
         _notificar_evento(evento, f'❌ Sua encomenda #{evento.numero} foi cancelada. Entre em contato se precisar de ajuda.')
         return Response(EventoDetailSerializer(evento).data)
+
+    # ── Remarcação e Adiamento (ver ADIAMENTO.md) ─────────────────────────
+
+    def _resposta_detalhe(self, evento, **extra):
+        evento = self.get_queryset().get(pk=evento.pk)
+        return Response({**EventoDetailSerializer(evento).data, **extra})
+
+    @action(detail=True, methods=['post'], url_path='remarcar')
+    def remarcar(self, request, pk=None):
+        evento = self.get_object()
+        if not evento.pode_remarcar:
+            return _erro('status_invalido', 'Evento não pode ser remarcado neste status.')
+        data_nova = _parse_data(request.data.get('data_evento'))
+        hora_nova = _parse_hora(request.data['hora_evento']) if 'hora_evento' in request.data else evento.hora_evento
+        motivo = (request.data.get('motivo') or '').strip()
+        solicitado_por = request.data.get('solicitado_por')
+        if not data_nova:
+            return _erro('data_invalida', 'Informe a nova data do evento.')
+        if hora_nova is False:
+            return _erro('hora_invalida', 'Hora inválida.')
+        if not motivo:
+            return _erro('motivo_obrigatorio', 'Informe o motivo da remarcação.')
+        if solicitado_por not in ('cliente', 'empresa'):
+            return _erro('solicitado_por_invalido', 'Informe quem solicitou (cliente ou empresa).')
+        if data_nova < timezone.localdate():
+            return _erro('data_no_passado', 'A nova data não pode estar no passado.')
+        if data_nova == evento.data_evento and hora_nova == evento.hora_evento:
+            return _erro('sem_alteracao', 'A nova data e hora são iguais às atuais.')
+        em_producao = evento.status in ('em_producao', 'pronto')
+        if em_producao and request.data.get('confirmar_producao') not in (True, 'true', 'True', '1', 1):
+            return _erro(
+                'producao_iniciada',
+                'A produção deste evento já começou — confirme a remarcação (itens perecíveis).',
+            )
+        voltar = em_producao and request.data.get('voltar_para_confirmado') in (True, 'true', 'True', '1', 1)
+
+        with transaction.atomic():
+            de = evento.status
+            RemarcacaoEvento.objects.create(
+                evento=evento, origem='remarcacao',
+                data_anterior=evento.data_evento, hora_anterior=evento.hora_evento,
+                data_nova=data_nova, hora_nova=hora_nova,
+                status_anterior=de, status_novo='confirmado' if voltar else de,
+                motivo=motivo[:300], solicitado_por=solicitado_por,
+                criado_por=request.user, criado_por_nome=_nome_ator(request.user),
+            )
+            data_anterior = evento.data_evento
+            evento.data_evento = data_nova
+            evento.hora_evento = hora_nova
+            campos = ['data_evento', 'hora_evento', 'atualizado_em']
+            if voltar:
+                evento.status = 'confirmado'
+                campos.append('status')
+            evento.save(update_fields=campos)
+            registrar(
+                request.user, LogAuditoria.ACAO_EVENTO_REMARCADO,
+                detalhes={
+                    'evento_id': evento.id, 'evento_numero': evento.numero,
+                    'data_anterior': str(data_anterior), 'data_nova': str(data_nova),
+                    'motivo': motivo, 'solicitado_por': solicitado_por,
+                },
+                request=request,
+            )
+            if voltar:
+                self.log_mudanca_status(evento, de=de, para='confirmado')
+
+        _notificar_evento(evento, _msg_remarcado(evento))
+        evento = self.get_queryset().get(pk=evento.pk)
+        aditivo_sugerido = bool(evento.contratos.all()) and evento.status != 'orcamento'
+        return self._resposta_detalhe(evento, aditivo_sugerido=aditivo_sugerido)
+
+    @action(detail=True, methods=['post'], url_path='adiar')
+    def adiar(self, request, pk=None):
+        evento = self.get_object()
+        if not evento.pode_adiar:
+            return _erro('status_invalido', 'Evento não pode ser adiado neste status.')
+        if evento.adiamentos.filter(encerrado_em__isnull=True).exists():
+            return _erro('adiamento_vigente', 'Este evento já tem um adiamento em andamento.')
+        motivo = (request.data.get('motivo') or '').strip()
+        solicitado_por = request.data.get('solicitado_por')
+        if not motivo:
+            return _erro('motivo_obrigatorio', 'Informe o motivo do adiamento.')
+        if solicitado_por not in ('cliente', 'empresa'):
+            return _erro('solicitado_por_invalido', 'Informe quem solicitou (cliente ou empresa).')
+
+        cfg = ConfiguracaoContrato.get()
+        hoje = timezone.localdate()
+        contato = request.data.get('retomar_contato_em')
+        contato = _parse_data(contato) if contato else hoje + datetime.timedelta(days=cfg.dias_followup_adiamento)
+        if not contato or contato < hoje:
+            return _erro('contato_invalido', 'A data de follow-up não pode estar no passado.')
+
+        antecedencia = (evento.data_evento - hoje).days
+        producao = evento.status in ('em_producao', 'pronto')
+        contrato = next(iter(evento.contratos.all()), None)
+        multa_pct = None
+        if contrato and contrato.possui_clausula_adiamento:
+            multa_pct = regras_adiamento.faixa_multa_pct(antecedencia, producao, cfg)
+
+        with transaction.atomic():
+            de = evento.status
+            adiamento = AdiamentoEvento.objects.create(
+                evento=evento, adiado_em=hoje, data_original=evento.data_evento, status_antes=de,
+                motivo=motivo[:300], solicitado_por=solicitado_por,
+                limite=evento.data_evento + datetime.timedelta(days=cfg.prazo_maximo_adiamento_dias),
+                retomar_contato_em=contato, antecedencia_dias=antecedencia,
+                producao_iniciada=producao, multa_pct=multa_pct,
+                criado_por=request.user, criado_por_nome=_nome_ator(request.user),
+            )
+            evento.status = 'adiado'
+            evento.save(update_fields=['status', 'atualizado_em'])
+            registrar(
+                request.user, LogAuditoria.ACAO_EVENTO_ADIADO,
+                detalhes={
+                    'evento_id': evento.id, 'evento_numero': evento.numero,
+                    'adiamento_id': adiamento.id, 'data_original': str(adiamento.data_original),
+                    'limite': str(adiamento.limite), 'motivo': motivo, 'solicitado_por': solicitado_por,
+                    'multa_pct': str(multa_pct) if multa_pct is not None else None,
+                },
+                request=request,
+            )
+            self.log_mudanca_status(evento, de=de, para='adiado')
+
+        _notificar_evento(evento, MSG_EVENTO_ADIADO.format(numero=evento.numero))
+        return self._resposta_detalhe(evento)
+
+    @action(detail=True, methods=['post'], url_path='retomar')
+    def retomar(self, request, pk=None):
+        evento = self.get_object()
+        if not evento.pode_retomar:
+            return _erro('status_invalido', 'Só é possível retomar um evento adiado.')
+        adiamento = evento.adiamento_vigente
+        if not adiamento:
+            return _erro('sem_adiamento', 'Evento adiado sem adiamento vigente.')
+        data_nova = _parse_data(request.data.get('data_evento'))
+        hora_nova = _parse_hora(request.data['hora_evento']) if 'hora_evento' in request.data else evento.hora_evento
+        if not data_nova:
+            return _erro('data_invalida', 'Informe a nova data do evento.')
+        if hora_nova is False:
+            return _erro('hora_invalida', 'Hora inválida.')
+        if data_nova < timezone.localdate():
+            return _erro('data_no_passado', 'A nova data não pode estar no passado.')
+        if data_nova > adiamento.limite:
+            return _erro(
+                'fora_do_prazo',
+                f'A nova data passa do limite do adiamento ({adiamento.limite.strftime("%d/%m/%Y")}) '
+                '— prorrogue o prazo antes de retomar.',
+            )
+        motivo = (request.data.get('motivo') or '').strip() or 'Retomada de evento adiado'
+
+        with transaction.atomic():
+            RemarcacaoEvento.objects.create(
+                evento=evento, origem='retomada', adiamento=adiamento,
+                data_anterior=evento.data_evento, hora_anterior=evento.hora_evento,
+                data_nova=data_nova, hora_nova=hora_nova,
+                status_anterior='adiado', status_novo='confirmado',
+                motivo=motivo[:300], solicitado_por='cliente',
+                criado_por=request.user, criado_por_nome=_nome_ator(request.user),
+            )
+            data_anterior = evento.data_evento
+            evento.data_evento = data_nova
+            evento.hora_evento = hora_nova
+            evento.status = 'confirmado'
+            evento.save(update_fields=['data_evento', 'hora_evento', 'status', 'atualizado_em'])
+            adiamento.encerrado_em = timezone.now()
+            adiamento.desfecho = 'retomado'
+            adiamento.encerrado_por = request.user
+            adiamento.encerrado_por_nome = _nome_ator(request.user)
+            adiamento.save(update_fields=['encerrado_em', 'desfecho', 'encerrado_por', 'encerrado_por_nome'])
+            registrar(
+                request.user, LogAuditoria.ACAO_EVENTO_RETOMADO,
+                detalhes={
+                    'evento_id': evento.id, 'evento_numero': evento.numero,
+                    'adiamento_id': adiamento.id,
+                    'data_anterior': str(data_anterior), 'data_nova': str(data_nova),
+                },
+                request=request,
+            )
+            self.log_mudanca_status(evento, de='adiado', para='confirmado')
+
+        _notificar_evento(evento, _msg_remarcado(evento))
+        evento = self.get_queryset().get(pk=evento.pk)
+        return self._resposta_detalhe(evento, aditivo_sugerido=bool(evento.contratos.all()))
+
+    @action(detail=True, methods=['post'], url_path='adiamento/prorrogar')
+    def prorrogar_adiamento(self, request, pk=None):
+        evento = self.get_object()
+        adiamento = evento.adiamento_vigente
+        if not adiamento:
+            return _erro('sem_adiamento', 'Este evento não tem adiamento em andamento.')
+        cfg = ConfiguracaoContrato.get()
+        if adiamento.prorrogacoes >= cfg.prorrogacoes_adiamento_max:
+            return _erro('limite_prorrogacoes', 'O número máximo de prorrogações já foi atingido.')
+        motivo = (request.data.get('motivo') or '').strip()
+        if not motivo:
+            return _erro('motivo_obrigatorio', 'Informe o motivo da prorrogação.')
+        limite_anterior = adiamento.limite
+        adiamento.limite = limite_anterior + datetime.timedelta(days=cfg.prazo_maximo_adiamento_dias)
+        adiamento.prorrogacoes += 1
+        adiamento.save(update_fields=['limite', 'prorrogacoes'])
+        registrar(
+            request.user, LogAuditoria.ACAO_ADIAMENTO_PRORROGADO,
+            detalhes={
+                'evento_id': evento.id, 'evento_numero': evento.numero, 'adiamento_id': adiamento.id,
+                'limite_anterior': str(limite_anterior), 'limite': str(adiamento.limite), 'motivo': motivo,
+            },
+            request=request,
+        )
+        return self._resposta_detalhe(evento)
+
+    @action(detail=True, methods=['post'], url_path='adiamento/contato')
+    def contato_adiamento(self, request, pk=None):
+        evento = self.get_object()
+        adiamento = evento.adiamento_vigente
+        if not adiamento:
+            return _erro('sem_adiamento', 'Este evento não tem adiamento em andamento.')
+        data = _parse_data(request.data.get('retomar_contato_em'))
+        if not data or data < timezone.localdate():
+            return _erro('contato_invalido', 'Informe uma data de follow-up de hoje em diante.')
+        anterior = adiamento.retomar_contato_em
+        adiamento.retomar_contato_em = data
+        adiamento.save(update_fields=['retomar_contato_em'])
+        registrar(
+            request.user, LogAuditoria.ACAO_REGISTRO_ATUALIZADO,
+            detalhes={
+                'model': 'AdiamentoEvento', 'id': adiamento.id, 'evento_id': evento.id,
+                'evento_numero': evento.numero,
+                'campos': {'retomar_contato_em': [str(anterior), str(data)]},
+                'observacao': (request.data.get('observacao') or '').strip(),
+            },
+            request=request,
+        )
+        return self._resposta_detalhe(evento)
+
+    @action(detail=True, methods=['get'], url_path='adiamento/simular-encerramento')
+    def simular_encerramento(self, request, pk=None):
+        evento = self.get_object()
+        adiamento = evento.adiamento_vigente
+        if not adiamento:
+            return _erro('sem_adiamento', 'Este evento não tem adiamento em andamento.')
+        desfecho = request.query_params.get('desfecho', 'rescisao')
+        if desfecho not in ('rescisao', 'forca_maior', 'acordo_manual'):
+            return _erro('desfecho_invalido', 'Desfecho inválido.')
+        try:
+            retido = Decimal(request.query_params.get('retido') or '0')
+        except InvalidOperation:
+            return _erro('valor_invalido', 'Valor retido inválido.')
+        return Response(self._simular(evento, adiamento, desfecho, retido))
+
+    def _simular(self, evento, adiamento, desfecho, retido):
+        cfg = ConfiguracaoContrato.get()
+        contrato = next(iter(evento.contratos.all()), None)
+        valor_pago = evento.sinal_pago
+        valor_contrato = _valor_referencia_contrato(contrato) if contrato else evento.valor_total
+        sem_clausula = desfecho == 'rescisao' and adiamento.multa_pct is None
+        if desfecho == 'acordo_manual' or sem_clausula:
+            acerto = {'multa': None, 'retido': retido, 'devolucao': None}
+        else:
+            acerto = regras_adiamento.calcular_acerto(
+                valor_pago, valor_contrato, adiamento.multa_pct, retido, desfecho,
+            )
+        vencimento = regras_adiamento.somar_dias_uteis(timezone.localdate(), cfg.prazo_devolucao_dias)
+        return {
+            'desfecho': desfecho,
+            'valor_pago': valor_pago,
+            'valor_contrato': valor_contrato,
+            'multa_pct': adiamento.multa_pct,
+            'sem_clausula': sem_clausula,
+            'multa_sugerida': acerto['multa'],
+            'valor_retido_producao': acerto['retido'],
+            'devolucao_sugerida': acerto['devolucao'],
+            'vencimento_devolucao': vencimento,
+        }
+
+    @action(detail=True, methods=['post'], url_path='adiamento/encerrar')
+    def encerrar_adiamento(self, request, pk=None):
+        evento = self.get_object()
+        adiamento = evento.adiamento_vigente
+        if not adiamento:
+            return _erro('sem_adiamento', 'Este evento não tem adiamento em andamento.')
+        desfecho = request.data.get('desfecho')
+        if desfecho not in ('rescisao', 'forca_maior', 'acordo_manual'):
+            return _erro('desfecho_invalido', 'Desfecho inválido.')
+        observacao = (request.data.get('observacao') or '').strip()
+        if not observacao:
+            return _erro('observacao_obrigatoria', 'Informe a observação do encerramento.')
+        if desfecho == 'rescisao' and adiamento.multa_pct is None:
+            return _erro(
+                'sem_clausula',
+                'Este contrato não tem a cláusula de adiamento — encerre como acordo manual.',
+            )
+
+        def _dec(campo):
+            bruto = request.data.get(campo)
+            if bruto in (None, ''):
+                return None
+            valor = Decimal(str(bruto))  # InvalidOperation tratada abaixo
+            if valor < 0:
+                raise InvalidOperation
+            return valor
+
+        try:
+            multa_in, retido_in, devolucao_in = _dec('valor_multa'), _dec('valor_retido_producao'), _dec('valor_devolucao')
+        except InvalidOperation:
+            return _erro('valor_invalido', 'Valores devem ser números não negativos.')
+
+        cfg = ConfiguracaoContrato.get()
+        contrato = next(iter(evento.contratos.all()), None)
+        valor_pago = evento.sinal_pago
+        valor_contrato = _valor_referencia_contrato(contrato) if contrato else evento.valor_total
+        retido = retido_in or Decimal('0')
+
+        if desfecho == 'acordo_manual':
+            if multa_in is None or devolucao_in is None:
+                return _erro('valores_obrigatorios', 'No acordo manual, informe multa e devolução.')
+            sugerido = None
+            final = regras_adiamento.calcular_acerto(
+                valor_pago, valor_contrato, None, retido, desfecho,
+                valor_multa=multa_in, valor_devolucao=devolucao_in,
+            )
+        else:
+            sugerido = regras_adiamento.calcular_acerto(
+                valor_pago, valor_contrato, adiamento.multa_pct, retido, desfecho,
+            )
+            final = {
+                'multa': multa_in if multa_in is not None else sugerido['multa'],
+                'retido': retido,
+                'devolucao': devolucao_in if devolucao_in is not None else sugerido['devolucao'],
+            }
+        if final['multa'] + final['retido'] + final['devolucao'] != valor_pago:
+            return _erro(
+                'soma_invalida',
+                f'Multa + retido + devolução ({final["multa"] + final["retido"] + final["devolucao"]}) '
+                f'precisa fechar com o total pago ({valor_pago}).',
+            )
+
+        hoje = timezone.localdate()
+        with transaction.atomic():
+            conta = None
+            if final['devolucao'] > 0:
+                from financeiro.models import ContaPagar
+                from empresas.models import Empresa
+                conta = ContaPagar.objects.create(
+                    numero=ContaPagar.proximo_numero(), empresa=Empresa.get_padrao(), categoria=None,
+                    origem='devolucao_evento',
+                    descricao=f'Devolução — {evento.numero} ({evento.nome_cliente_display})'[:160],
+                    valor=final['devolucao'], data_emissao=hoje,
+                    data_vencimento=regras_adiamento.somar_dias_uteis(hoje, cfg.prazo_devolucao_dias),
+                )
+            adiamento.encerrado_em = timezone.now()
+            adiamento.desfecho = desfecho
+            adiamento.valor_pago_no_encerramento = valor_pago
+            adiamento.valor_multa = final['multa']
+            adiamento.valor_multa_sugerido = sugerido['multa'] if sugerido else None
+            adiamento.valor_retido_producao = final['retido']
+            adiamento.valor_devolucao = final['devolucao']
+            adiamento.conta_pagar = conta
+            adiamento.observacao_encerramento = observacao
+            adiamento.encerrado_por = request.user
+            adiamento.encerrado_por_nome = _nome_ator(request.user)
+            adiamento.save()
+            evento.status = 'cancelado'
+            evento.save(update_fields=['status', 'atualizado_em'])
+            registrar(
+                request.user, LogAuditoria.ACAO_ADIAMENTO_ENCERRADO,
+                detalhes={
+                    'evento_id': evento.id, 'evento_numero': evento.numero, 'adiamento_id': adiamento.id,
+                    'desfecho': desfecho, 'valor_pago': str(valor_pago),
+                    'sugerido': {k: str(v) for k, v in sugerido.items()} if sugerido else None,
+                    'final': {k: str(v) for k, v in final.items()},
+                    'conta_pagar': conta.numero if conta else None, 'observacao': observacao,
+                },
+                request=request,
+            )
+            self.log_mudanca_status(evento, de='adiado', para='cancelado')
+
+        _notificar_evento(evento, MSG_EVENTO_CANCELADO.format(numero=evento.numero))
+        return self._resposta_detalhe(evento)
 
     # ── Itens ─────────────────────────────────────────────────────────────
 
@@ -501,6 +920,7 @@ class EventoViewSet(
             percentual_sinal=percentual_sinal,
             valor_sinal=valor_sinal,
             data_quitacao=data_quitacao,
+            possui_clausula_adiamento=True,
             **_campos_entrada_contrato(request),
         )
 
@@ -540,25 +960,37 @@ class EventoViewSet(
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if evento.status in ('cancelado', 'entregue'):
+        if evento.status in ('cancelado', 'entregue', 'adiado'):
             return Response(
                 {
                     'detail': f'evento_{evento.status}',
-                    'mensagem': 'Não é possível emitir aditivo de um evento cancelado ou já entregue.',
+                    'mensagem': 'Não é possível emitir aditivo de um evento cancelado, entregue ou adiado.',
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         valor_referencia = _valor_referencia_contrato(contrato)
-        if evento.valor_total == valor_referencia:
+        data_ref, hora_ref = regras_adiamento.data_referencia_contrato(evento)
+        mudou_valor = evento.valor_total != valor_referencia
+        mudou_data = evento.data_evento != data_ref or evento.hora_evento != hora_ref
+        if not mudou_valor and not mudou_data:
             return Response(
                 {
                     'detail': 'sem_alteracao',
                     'mensagem': (
-                        'O valor do evento não mudou desde o contrato/último aditivo — nada para documentar.'
+                        'Nem o valor nem a data do evento mudaram desde o contrato/último aditivo '
+                        '— nada para documentar.'
                     ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+        campos_data = {}
+        if mudou_data:
+            cfg = ConfiguracaoContrato.get()
+            campos_data = dict(
+                data_evento_anterior=data_ref, hora_evento_anterior=hora_ref,
+                data_evento_nova=evento.data_evento, hora_evento_nova=evento.hora_evento,
+                data_quitacao_nova=evento.data_evento - datetime.timedelta(days=cfg.prazo_quitacao_dias),
             )
 
         itens_snapshot = [
@@ -584,6 +1016,7 @@ class EventoViewSet(
             taxa_entrega_novo=evento.taxa_entrega,
             valor_total_novo=evento.valor_total,
             itens_snapshot=itens_snapshot,
+            **campos_data,
         )
 
         registrar(
@@ -676,6 +1109,8 @@ class EventoViewSet(
 
     @action(detail=True, methods=['get'], url_path='resumo-cozinha')
     def resumo_cozinha(self, request, pk=None):
+        if Evento.objects.filter(pk=pk, status='adiado').exists():
+            return _erro('evento_adiado', 'Evento adiado fora da produção — sem resumo de cozinha.')
         evento = (
             Evento.objects
             .prefetch_related(
@@ -718,7 +1153,7 @@ class EventoViewSet(
         eventos = (
             Evento.objects
             .filter(data_evento__year=ano, data_evento__month=m)
-            .exclude(status='cancelado')
+            .exclude(status__in=['cancelado', 'adiado'])
             .select_related('cliente', 'local')
             .order_by('data_evento', 'hora_evento')
         )
@@ -748,7 +1183,7 @@ class EventoViewSet(
         eventos_mes = Evento.objects.filter(
             data_evento__year=hoje.year,
             data_evento__month=hoje.month,
-        ).exclude(status='cancelado')
+        ).exclude(status__in=['cancelado', 'adiado'])
 
         # Próximos 7 dias
         prox7 = Evento.objects.filter(
@@ -767,11 +1202,13 @@ class EventoViewSet(
         por_status = dict(
             Evento.objects
             .filter(data_evento__gte=hoje)
-            .exclude(status='cancelado')
+            .exclude(status__in=['cancelado', 'adiado'])
             .values('status')
             .annotate(total=Count('id'))
             .values_list('status', 'total')
         )
+        # Adiados não filtram por data_evento (a data é só a última prevista) — KPI "Adiados"
+        por_status['adiado'] = Evento.objects.filter(status='adiado').count()
 
         return Response({
             'eventos_mes':        eventos_mes.count(),
@@ -1354,6 +1791,7 @@ class OrcamentoViewSet(
             percentual_sinal=percentual_sinal,
             valor_sinal=valor_sinal,
             data_quitacao=data_quitacao,
+            possui_clausula_adiamento=True,
             **_campos_entrada_contrato(request),
         )
 

@@ -55,6 +55,11 @@ class LogAuditoria(models.Model):
     ACAO_CONFIG_EXTENSAO_ALTERADA = 'config_extensao_alterada'
     ACAO_TOKEN_EXTENSAO_CRIADO = 'token_extensao_criado'
     ACAO_TOKEN_EXTENSAO_REVOGADO = 'token_extensao_revogado'
+    ACAO_EVENTO_REMARCADO = 'evento_remarcado'
+    ACAO_EVENTO_ADIADO = 'evento_adiado'
+    ACAO_EVENTO_RETOMADO = 'evento_retomado'
+    ACAO_ADIAMENTO_PRORROGADO = 'adiamento_prorrogado'
+    ACAO_ADIAMENTO_ENCERRADO = 'adiamento_encerrado'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -113,6 +118,11 @@ class LogAuditoria(models.Model):
         (ACAO_CONFIG_EXTENSAO_ALTERADA, 'Configuração da extensão alterada'),
         (ACAO_TOKEN_EXTENSAO_CRIADO, 'Token da extensão criado'),
         (ACAO_TOKEN_EXTENSAO_REVOGADO, 'Token da extensão revogado'),
+        (ACAO_EVENTO_REMARCADO, 'Evento remarcado'),
+        (ACAO_EVENTO_ADIADO, 'Evento adiado'),
+        (ACAO_EVENTO_RETOMADO, 'Evento retomado'),
+        (ACAO_ADIAMENTO_PRORROGADO, 'Adiamento prorrogado'),
+        (ACAO_ADIAMENTO_ENCERRADO, 'Adiamento encerrado'),
     ]
 
     usuario = models.ForeignKey(

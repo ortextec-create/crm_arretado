@@ -412,6 +412,19 @@ def _gerar_conteudo(contrato) -> bytes:
         'comprovação do estágio de execução, abatendo-se tais valores do montante a devolver.',
         st['clausula'],
     ))
+    if contrato.possui_clausula_adiamento:
+        # Parágrafo 3º só nos contratos emitidos com a cláusula (ver ADIAMENTO.md) —
+        # não renumera as cláusulas seguintes. Prazo sempre do singleton.
+        story.append(Paragraph(
+            'Parágrafo 3º: A CONTRATANTE poderá solicitar o adiamento do evento, por escrito, sem '
+            'incidência da multa desta cláusula, desde que a nova data seja realizada em até '
+            f'{cfg.prazo_maximo_adiamento_dias} dias após a data originalmente contratada, sujeita à '
+            'disponibilidade do CONTRATADO e formalizada por termo aditivo. Não sendo realizada nova '
+            'data dentro desse prazo, o adiamento será considerado rescisão unilateral por iniciativa '
+            'da CONTRATANTE, aplicando-se a multa desta cláusula conforme a antecedência entre a '
+            'comunicação do adiamento e a data originalmente contratada, observados os Parágrafos 1º e 2º.',
+            st['clausula'],
+        ))
     story.append(Paragraph(
         f'<b>Cláusula 12ª:</b> No caso de rescisão unilateral por parte do CONTRATADO, haverá devolução '
         f'integral dos valores já quitados pela CONTRATANTE, no prazo de {cfg.prazo_devolucao_dias} dias '

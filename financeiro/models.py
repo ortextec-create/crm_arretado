@@ -302,6 +302,7 @@ class ContaPagar(models.Model):
         ('manual', 'Manual'),
         ('nota_fiscal', 'Nota Fiscal'),
         ('recorrente', 'Recorrente'),
+        ('devolucao_evento', 'Devolução de evento'),
     ]
 
     numero = models.CharField(max_length=12, unique=True)
@@ -322,7 +323,7 @@ class ContaPagar(models.Model):
     data_emissao = models.DateField()
     data_vencimento = models.DateField(db_index=True)
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='pendente')
-    origem = models.CharField(max_length=12, choices=ORIGEM_CHOICES, default='manual')
+    origem = models.CharField(max_length=20, choices=ORIGEM_CHOICES, default='manual')
     nota_fiscal = models.OneToOneField(
         'estoque.ImportacaoNotaFiscal', null=True, blank=True, on_delete=models.PROTECT, related_name='conta_pagar',
         help_text="Preenchido na Fase 5 (integração com Estoque) — OneToOne garante idempotência do confirmar()",

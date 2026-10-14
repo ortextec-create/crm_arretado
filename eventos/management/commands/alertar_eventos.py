@@ -63,7 +63,7 @@ class Command(BaseCommand):
         limite = hoje + timedelta(days=cfg.dias_antes_pagamento)
         qs = (
             Evento.objects
-            .exclude(status__in=['cancelado', 'entregue'])
+            .exclude(status__in=['cancelado', 'entregue', 'adiado'])
             .annotate(saldo=F('valor_total') - F('sinal_pago'))
             .filter(saldo__gt=0, data_evento__gte=hoje, data_evento__lte=limite)
         )
@@ -93,7 +93,7 @@ class Command(BaseCommand):
         limite = hoje + timedelta(days=cfg.dias_antes_entrega)
         qs = (
             Evento.objects
-            .exclude(status__in=['cancelado', 'entregue'])
+            .exclude(status__in=['cancelado', 'entregue', 'adiado'])
             .filter(tipo_entrega='entrega_local', data_evento__gte=hoje, data_evento__lte=limite)
         )
 

@@ -20,7 +20,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from .pdf_contrato import (
     CARAMELO, MARROM, CINZA_ESC, CINZA_MED, CINZA_LIG, LISTRA,
     ML, MR, MW, W, H, ESTILO_PRECO_RISCADO,
-    _brl, _data, _data_extenso, _estilos, _header_footer, _mesclar_timbre,
+    _brl, _data, _data_extenso, _hora, _estilos, _header_footer, _mesclar_timbre,
 )
 
 
@@ -60,33 +60,64 @@ def _gerar_conteudo(aditivo) -> bytes:
         st['clausula'],
     ))
 
+    mudou_data  = aditivo.data_evento_nova is not None
+    mudou_valor = aditivo.valor_total_novo != aditivo.valor_total_anterior
+
+    if mudou_data and mudou_valor:
+        objeto = 'na data do evento e nos itens/quantitativos do pedido originalmente contratado'
+    elif mudou_data:
+        objeto = 'na data do evento originalmente contratada'
+    else:
+        objeto = 'nos itens/quantitativos do pedido originalmente contratado'
+
     story.append(Paragraph('1. DO MOTIVO', st['secao']))
     story.append(Paragraph(
-        '<b>Cláusula 1ª:</b> O presente aditivo decorre de alteração solicitada pela CONTRATANTE nos '
-        'itens/quantitativos do pedido originalmente contratado, conforme detalhado no Anexo deste '
-        'termo.',
+        f'<b>Cláusula 1ª:</b> O presente aditivo decorre de alteração solicitada nas condições do '
+        f'contrato, relativa {objeto}'
+        + (', conforme detalhado no Anexo deste termo.' if mudou_valor else '.'),
         st['clausula'],
     ))
 
-    story.append(Paragraph('2. DO NOVO VALOR', st['secao']))
-    story.append(Paragraph(
-        f'<b>Cláusula 2ª:</b> Em razão da alteração referida na Cláusula 1ª, o valor total do '
-        f'fornecimento passa de {_brl(aditivo.valor_total_anterior)} para <b>{_brl(aditivo.valor_total_novo)}</b>, '
-        f'conforme o novo detalhamento constante do Anexo deste termo, que passa a substituir o Anexo 1 '
-        f'do contrato original para todos os efeitos.',
-        st['clausula'],
-    ))
-    if aditivo.valor_total_novo > aditivo.valor_total_anterior:
+    secao = 2
+    if mudou_data:
+        story.append(Paragraph(f'{secao}. DA NOVA DATA', st['secao']))
+        hora_txt = f', às {_hora(aditivo.hora_evento_nova)}' if aditivo.hora_evento_nova else ''
         story.append(Paragraph(
-            f'Parágrafo único: A diferença de {_brl(aditivo.diferenca)} decorrente deste aditivo segue as '
-            f'mesmas condições de pagamento e prazos já estabelecidos no contrato original (Cláusula 7ª '
-            f'e seguintes), salvo se de outra forma acordado por escrito entre as partes.',
+            f'<b>Cláusula 2ª:</b> A data do evento, antes prevista para '
+            f'{_data(aditivo.data_evento_anterior)}, passa a ser <b>{_data(aditivo.data_evento_nova)}</b>'
+            f'{hora_txt}, permanecendo inalterados o local e as demais condições de entrega, salvo '
+            f'ajuste por escrito entre as partes.',
             st['clausula'],
         ))
+        if aditivo.data_quitacao_nova:
+            story.append(Paragraph(
+                f'Parágrafo único: Em razão da nova data, o prazo para quitação integral do contrato '
+                f'passa a ser <b>{_data(aditivo.data_quitacao_nova)}</b>.',
+                st['clausula'],
+            ))
+        secao += 1
 
-    story.append(Paragraph('3. DAS DEMAIS CONDIÇÕES', st['secao']))
+    if mudou_valor:
+        story.append(Paragraph(f'{secao}. DO NOVO VALOR', st['secao']))
+        story.append(Paragraph(
+            f'<b>Cláusula {"3ª" if mudou_data else "2ª"}:</b> Em razão da alteração referida na Cláusula 1ª, '
+            f'o valor total do fornecimento passa de {_brl(aditivo.valor_total_anterior)} para '
+            f'<b>{_brl(aditivo.valor_total_novo)}</b>, conforme o novo detalhamento constante do Anexo '
+            f'deste termo, que passa a substituir o Anexo 1 do contrato original para todos os efeitos.',
+            st['clausula'],
+        ))
+        if aditivo.valor_total_novo > aditivo.valor_total_anterior:
+            story.append(Paragraph(
+                f'Parágrafo único: A diferença de {_brl(aditivo.diferenca)} decorrente deste aditivo segue as '
+                f'mesmas condições de pagamento e prazos já estabelecidos no contrato original (Cláusula 7ª '
+                f'e seguintes), salvo se de outra forma acordado por escrito entre as partes.',
+                st['clausula'],
+            ))
+        secao += 1
+
+    story.append(Paragraph(f'{secao}. DAS DEMAIS CONDIÇÕES', st['secao']))
     story.append(Paragraph(
-        '<b>Cláusula 3ª:</b> Permanecem inalteradas e em pleno vigor todas as demais cláusulas do '
+        f'<b>Cláusula {secao}ª:</b> Permanecem inalteradas e em pleno vigor todas as demais cláusulas do '
         'contrato original, inclusive as relativas a prazos, rescisão, multas e foro, no que não '
         'contrariarem o disposto neste termo aditivo.',
         st['clausula'],

@@ -37,6 +37,11 @@ export const ACAO_LABEL = {
   cobranca_pausada: 'Régua de cobrança pausada',
   cobranca_retomada: 'Régua de cobrança retomada',
   cobranca_ligacao_registrada: 'Ligação de cobrança registrada',
+  evento_remarcado: 'Evento remarcado',
+  evento_adiado: 'Evento adiado',
+  evento_retomado: 'Evento retomado',
+  adiamento_prorrogado: 'Adiamento prorrogado',
+  adiamento_encerrado: 'Adiamento encerrado',
 }
 
 export const ACAO_COR = {
@@ -74,6 +79,11 @@ export const ACAO_COR = {
   cobranca_pausada: 'var(--caramelo)',
   cobranca_retomada: 'var(--verde)',
   cobranca_ligacao_registrada: 'var(--caramelo)',
+  evento_remarcado: 'var(--caramelo)',
+  evento_adiado: 'var(--warning)',
+  evento_retomado: 'var(--verde)',
+  adiamento_prorrogado: 'var(--caramelo)',
+  adiamento_encerrado: '#ef4444',
 }
 
 export function dataFmt(iso) {
@@ -142,6 +152,15 @@ export function resumo(log) {
       return `Evento ${d.evento_numero ?? '—'}`
     case 'cobranca_ligacao_registrada':
       return `Evento ${d.evento_numero ?? '—'} · ${d.atendeu ? 'atendeu' : 'não atendeu'}`
+    case 'evento_remarcado':
+    case 'evento_retomado':
+      return `${d.data_anterior ?? '—'} → ${d.data_nova ?? '—'}`
+    case 'evento_adiado':
+      return `Evento ${d.evento_numero ?? '—'} · limite ${d.limite ?? '—'}`
+    case 'adiamento_prorrogado':
+      return `Novo limite ${d.limite ?? '—'}`
+    case 'adiamento_encerrado':
+      return `${d.desfecho ?? '—'}`
     default:
       return '—'
   }
