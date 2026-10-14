@@ -1363,20 +1363,6 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
     }
   }
 
-  const ACOES = [
-    { key: 'confirmar',        label: 'Confirmar',         icon: 'ti-check',          show: evento.pode_confirmar,        variant: 'primary' },
-    { key: 'iniciar_producao', label: 'Iniciar produção',  icon: 'ti-chef-hat',       show: evento.pode_iniciar_producao, variant: 'primary' },
-    { key: 'marcar_pronto',    label: 'Marcar como pronto',icon: 'ti-package',         show: evento.pode_marcar_pronto,    variant: 'primary' },
-    { key: 'entregar',         label: 'Entregar',          icon: 'ti-truck-delivery', show: evento.pode_entregar,         variant: 'primary' },
-    { key: 'cancelar',         label: 'Cancelar',          icon: 'ti-ban',            show: evento.pode_cancelar,         variant: 'danger'  },
-    { key: 'remarcar',         label: 'Remarcar',          icon: 'ti-calendar-event', show: evento.pode_remarcar,         variant: 'secondary', onClick: () => onAcaoDatas('remarcar') },
-    { key: 'adiar',            label: 'Adiar',             icon: 'ti-player-pause',   show: evento.pode_adiar,            variant: 'secondary', onClick: () => onAcaoDatas('adiar') },
-    { key: 'retomar',          label: 'Retomar com nova data', icon: 'ti-player-play', show: evento.pode_retomar,         variant: 'primary', disabled: adVencido, title: adVencido ? 'Prorrogue o prazo para retomar' : '', onClick: () => onAcaoDatas('retomar') },
-    { key: 'prorrogar',        label: 'Prorrogar prazo',   icon: 'ti-clock-plus',     show: evento.pode_retomar,          variant: 'secondary', disabled: (adVigente?.prorrogacoes_restantes ?? 0) < 1, title: (adVigente?.prorrogacoes_restantes ?? 0) < 1 ? 'Nenhuma prorrogação restante' : '', onClick: () => onAcaoDatas('prorrogar') },
-    { key: 'contato',          label: 'Registrar contato', icon: 'ti-phone',          show: evento.pode_retomar,          variant: 'secondary', onClick: () => onAcaoDatas('contato') },
-    { key: 'encerrar',         label: 'Encerrar adiamento', icon: 'ti-ban',           show: evento.pode_retomar,          variant: 'danger', onClick: () => onAcaoDatas('encerrar') },
-  ]
-
   const adVigente = evento.adiamento_vigente
   const adVencido = !!adVigente && adVigente.dias_para_limite < 0
   const divergeData = (evento.contrato_divergencia || []).includes('data')
@@ -1390,6 +1376,20 @@ function ModalDetalheEvento({ evento, onClose, onAcao, onItemAdded, onToast, onE
     const gasto = (new Date(`${hojeISO()}T12:00:00`) - ini) / 86400000
     return Math.min(Math.max(Math.round((gasto / total) * 100), 2), 100)
   })()
+
+  const ACOES = [
+    { key: 'confirmar',        label: 'Confirmar',         icon: 'ti-check',          show: evento.pode_confirmar,        variant: 'primary' },
+    { key: 'iniciar_producao', label: 'Iniciar produção',  icon: 'ti-chef-hat',       show: evento.pode_iniciar_producao, variant: 'primary' },
+    { key: 'marcar_pronto',    label: 'Marcar como pronto',icon: 'ti-package',         show: evento.pode_marcar_pronto,    variant: 'primary' },
+    { key: 'entregar',         label: 'Entregar',          icon: 'ti-truck-delivery', show: evento.pode_entregar,         variant: 'primary' },
+    { key: 'cancelar',         label: 'Cancelar',          icon: 'ti-ban',            show: evento.pode_cancelar,         variant: 'danger'  },
+    { key: 'remarcar',         label: 'Remarcar',          icon: 'ti-calendar-event', show: evento.pode_remarcar,         variant: 'secondary', onClick: () => onAcaoDatas('remarcar') },
+    { key: 'adiar',            label: 'Adiar',             icon: 'ti-player-pause',   show: evento.pode_adiar,            variant: 'secondary', onClick: () => onAcaoDatas('adiar') },
+    { key: 'retomar',          label: 'Retomar com nova data', icon: 'ti-player-play', show: evento.pode_retomar,         variant: 'primary', disabled: adVencido, title: adVencido ? 'Prorrogue o prazo para retomar' : '', onClick: () => onAcaoDatas('retomar') },
+    { key: 'prorrogar',        label: 'Prorrogar prazo',   icon: 'ti-clock-plus',     show: evento.pode_retomar,          variant: 'secondary', disabled: (adVigente?.prorrogacoes_restantes ?? 0) < 1, title: (adVigente?.prorrogacoes_restantes ?? 0) < 1 ? 'Nenhuma prorrogação restante' : '', onClick: () => onAcaoDatas('prorrogar') },
+    { key: 'contato',          label: 'Registrar contato', icon: 'ti-phone',          show: evento.pode_retomar,          variant: 'secondary', onClick: () => onAcaoDatas('contato') },
+    { key: 'encerrar',         label: 'Encerrar adiamento', icon: 'ti-ban',           show: evento.pode_retomar,          variant: 'danger', onClick: () => onAcaoDatas('encerrar') },
+  ]
 
   const cfg = STATUS_CONFIG[evento.status] || {}
   const stepIdx = STATUS_STEPS.indexOf(evento.status)
