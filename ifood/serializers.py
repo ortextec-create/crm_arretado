@@ -121,6 +121,11 @@ class PedidoIFoodDetailSerializer(serializers.ModelSerializer):
             # Ações e datas
             'pode_confirmar', 'pode_cancelar',
             'ifood_criado_em', 'criado_em', 'atualizado_em',
+            # Atendimento via chat
+            'previsao_preparo_inicio', 'previsao_entrega', 'entregador_chegou_em', 'coletado_em',
+        ]
+        read_only_fields = [
+            'previsao_preparo_inicio', 'previsao_entrega', 'entregador_chegou_em', 'coletado_em',
         ]
 
     def get_cliente_crm_id(self, obj):

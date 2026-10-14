@@ -135,7 +135,12 @@ class PedidoIFood(models.Model):
     # Quando o iFood criou o pedido
     ifood_criado_em = models.DateTimeField(null=True, blank=True)
 
-    
+    # Atendimento via chat (ver ATENDIMENTO_IFOOD.md) — todos nullable de propósito
+    previsao_preparo_inicio = models.DateTimeField(null=True, blank=True)  # preparationStartDateTime
+    previsao_entrega        = models.DateTimeField(null=True, blank=True)  # delivery/takeout/schedule
+    entregador_chegou_em    = models.DateTimeField(null=True, blank=True)  # evento ARRIVED_AT_ORIGIN
+    coletado_em             = models.DateTimeField(null=True, blank=True)  # evento COLLECTED
+
 
     class Meta:
         verbose_name = 'Pedido iFood'

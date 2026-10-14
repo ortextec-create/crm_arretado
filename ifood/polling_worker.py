@@ -55,6 +55,12 @@ STATUS_MAP = {
     'CANCELLATION_DENIED':             'CONFIRMED',  # loja recusou → volta a CONFIRMED
 }
 
+# Eventos de logística: só gravam timestamp no pedido, sem mexer em `status`
+EVENTOS_LOGISTICA = {
+    'ARRIVED_AT_ORIGIN': 'entregador_chegou_em',
+    'COLLECTED':         'coletado_em',
+}
+
 CODE_MAP = {
     'PLC': 'PLC', 'CFM': 'CFM', 'DSP': 'DSP',
     'CAN': 'CAN', 'CAC': 'CAC', 'CON': 'CON', 'HBT': 'HBT',
@@ -264,11 +270,30 @@ def _processar_evento_pedido(client, evt, config):
             pedido.save(update_fields=['status'])
         return True
     else:
-        # Pedido já existe → atualiza status se mapeado
+        # Pedido já existe → eventos de logística gravam só o timestamp
+        campo_logistica = EVENTOS_LOGISTICA.get(full_code)
+        if campo_logistica:
+            _registrar_logistica(pedido_existente, campo_logistica, evt)
+            return False
+        # Atualiza status se mapeado
         if novo_status and pedido_existente.status != novo_status:
             pedido_existente.status = novo_status
             pedido_existente.save(update_fields=['status', 'atualizado_em'])
         return False
+
+
+def _registrar_logistica(pedido, campo, evt):
+    """Grava o timestamp do evento (1ª ocorrência vence). Chegada do entregador enfileira o gatilho do chat."""
+    if getattr(pedido, campo) is not None:
+        return
+    setattr(pedido, campo, _parse_dt(evt.get('createdAt')) or timezone.now())
+    pedido.save(update_fields=[campo, 'atualizado_em'])
+    if campo == 'entregador_chegou_em':
+        try:
+            from atendimento.servico import enfileirar
+            enfileirar(pedido, 'entregador_chegou')
+        except Exception:
+            logger.exception('Falha ao enfileirar entregador_chegou do pedido %s', pedido.pk)
 
 
 # ── Criação de pedido a partir do payload completo ────────────────────────────
@@ -348,6 +373,15 @@ def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
         if raw_sched:
             agendamento_dt = _parse_dt(raw_sched)
 
+    # ── Previsões (atendimento via chat) — ausência no payload grava None ─────
+    takeout = detalhe.get('takeout', {}) or {}
+    previsao_preparo_inicio = _parse_dt(detalhe.get('preparationStartDateTime'))
+    previsao_entrega = (
+        _parse_dt(delivery.get('deliveryDateTime'))
+        or _parse_dt(takeout.get('takeoutDateTime'))
+        or _parse_dt(schedule.get('scheduledDateTimeEnd'))
+    )
+
     # ── Modo de entrega ───────────────────────────────────────────────────────
     # deliveryMethod pode estar na raiz do payload ou dentro de delivery
     delivery_method_raw = detalhe.get('deliveryMethod', {}) or delivery.get('deliveryMethod', {}) or {}
@@ -409,6 +443,8 @@ def _criar_pedido(detalhe: dict, config) -> PedidoIFood:
         endereco_entrega  = delivery_address,
         payload_raw       = detalhe,
         ifood_criado_em   = _parse_dt(detalhe.get('createdAt')),
+        previsao_preparo_inicio = previsao_preparo_inicio,
+        previsao_entrega        = previsao_entrega,
     )
 
     # ── Cria itens ────────────────────────────────────────────────────────────

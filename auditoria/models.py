@@ -50,6 +50,11 @@ class LogAuditoria(models.Model):
     ACAO_COBRANCA_PAUSADA = 'cobranca_pausada'
     ACAO_COBRANCA_RETOMADA = 'cobranca_retomada'
     ACAO_COBRANCA_LIGACAO_REGISTRADA = 'cobranca_ligacao_registrada'
+    ACAO_CONFIG_ATENDIMENTO_ALTERADA = 'config_atendimento_alterada'
+    ACAO_MODELO_ATENDIMENTO_ALTERADO = 'modelo_atendimento_alterado'
+    ACAO_CONFIG_EXTENSAO_ALTERADA = 'config_extensao_alterada'
+    ACAO_TOKEN_EXTENSAO_CRIADO = 'token_extensao_criado'
+    ACAO_TOKEN_EXTENSAO_REVOGADO = 'token_extensao_revogado'
 
     # NOTA: choices é só documentação/UI (dropdown do frontend) — o campo é
     # CharField livre por baixo, então futuros apps (pagamentos, contratos,
@@ -103,6 +108,11 @@ class LogAuditoria(models.Model):
         (ACAO_COBRANCA_PAUSADA, 'Régua de cobrança pausada'),
         (ACAO_COBRANCA_RETOMADA, 'Régua de cobrança retomada'),
         (ACAO_COBRANCA_LIGACAO_REGISTRADA, 'Ligação de cobrança registrada'),
+        (ACAO_CONFIG_ATENDIMENTO_ALTERADA, 'Configuração de atendimento alterada'),
+        (ACAO_MODELO_ATENDIMENTO_ALTERADO, 'Mensagem de atendimento alterada'),
+        (ACAO_CONFIG_EXTENSAO_ALTERADA, 'Configuração da extensão alterada'),
+        (ACAO_TOKEN_EXTENSAO_CRIADO, 'Token da extensão criado'),
+        (ACAO_TOKEN_EXTENSAO_REVOGADO, 'Token da extensão revogado'),
     ]
 
     usuario = models.ForeignKey(

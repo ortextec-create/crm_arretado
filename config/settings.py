@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'manutencao',
     'empresas',
     'cobranca',
+    'atendimento',
 ]
 
 MIDDLEWARE = [
