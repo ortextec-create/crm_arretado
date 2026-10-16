@@ -59,6 +59,7 @@ class PedidoIFoodListSerializer(serializers.ModelSerializer):
             'cliente_nome', 'cliente_nome_crm',
             'pode_confirmar', 'pode_cancelar',
             'ifood_criado_em', 'atualizado_em',
+            'previsao_entrega', 'entregador_chegou_em',  # badge de atraso (Atendimento via chat)
         ]
 
     def get_cliente_nome_crm(self, obj):

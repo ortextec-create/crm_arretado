@@ -506,6 +506,36 @@ export const cobrancaApi = {
   },
 }
 
+// ─── ATENDIMENTO (chat iFood via extensão — ver ATENDIMENTO_IFOOD.md) ──────────
+
+export const atendimentoApi = {
+  configuracao: {
+    get:    ()     => api.get('/atendimento/configuracao/'),
+    update: (data) => api.patch('/atendimento/configuracao/', data),
+  },
+  modelos: {
+    list:    ()         => api.get('/atendimento/modelos/'),
+    update:  (id, data) => api.patch(`/atendimento/modelos/${id}/`, data),
+    preview: (data)     => api.post('/atendimento/modelos/preview/', data),
+  },
+  mensagens: {
+    list:     (params = {}) => api.get('/atendimento/mensagens/', { params }),
+    manual:   (data)        => api.post('/atendimento/mensagens/manual/', data),
+    cancelar: (id)          => api.post(`/atendimento/mensagens/${id}/cancelar/`),
+    reenviar: (id)          => api.post(`/atendimento/mensagens/${id}/reenviar/`),
+  },
+  statusExtensao: () => api.get('/atendimento/status-extensao/'),
+  extensao: {
+    getConfig:    ()     => api.get('/atendimento/configuracao-extensao/'),
+    updateConfig: (data) => api.patch('/atendimento/configuracao-extensao/', data),
+  },
+  tokens: {
+    list:    ()     => api.get('/atendimento/tokens/'),
+    create:  (data) => api.post('/atendimento/tokens/', data),
+    revogar: (id)   => api.post(`/atendimento/tokens/${id}/revogar/`),
+  },
+}
+
 // ─── SISTEMA (versão — derivada do Git, ver CLAUDE.md) ─────────────────────────
 
 export const sistemaApi = {

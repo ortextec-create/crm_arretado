@@ -1,0 +1,14 @@
+.wrap { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.titulo { font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: var(--texto-muted); font-weight: 600; margin-bottom: 8px; display: flex; gap: 6px; align-items: center; }
+.lista { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; margin-bottom: 8px; }
+.vazio { font-size: 12.5px; color: var(--texto-muted); }
+.bolha { max-width: 85%; padding: 7px 10px; border-radius: 10px; font-size: 13px; background: var(--caramelo-pale); color: var(--texto); align-self: flex-end; }
+.entrada { align-self: flex-start; background: var(--bg-alt); }
+.meta { display: flex; gap: 6px; font-size: 10.5px; color: var(--texto-muted); margin-top: 3px; flex-wrap: wrap; }
+.st_ok { color: var(--status-ok-fg); font-weight: 600; }
+.st_alerta { color: var(--status-alerta-fg); font-weight: 600; }
+.st_critico { color: var(--status-critico-fg); font-weight: 600; }
+.st_neutro { color: var(--texto-muted); font-weight: 600; }
+.form { display: flex; gap: 8px; align-items: flex-end; }
+.form textarea { flex: 1; resize: vertical; min-height: 38px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; color: var(--texto); font-family: inherit; }
+.erro { color: var(--status-critico-fg); font-size: 12px; margin-top: 4px; }

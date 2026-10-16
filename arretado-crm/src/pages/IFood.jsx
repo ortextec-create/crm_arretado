@@ -18,9 +18,12 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ifoodApi, clientesApi, empresasApi } from '../api/services'
+import { ifoodApi, clientesApi, empresasApi, atendimentoApi } from '../api/services'
 import Topbar from '../components/layout/Topbar'
 import { Btn, Avatar, Spinner, Toast, Modal, Field, Input } from '../components/ui'
+import ChatPedido from '../components/atendimento/ChatPedido'
+import StatusExtensao from '../components/atendimento/StatusExtensao'
+import { minutosAtraso } from '../components/atendimento/atendimento'
 import styles from './IFood.module.css'
 
 // ─── STATUS config ────────────────────────────────────────────────────────────
@@ -669,6 +672,7 @@ export default function IFood() {
   const [clienteSearch,        setClienteSearch]        = useState('')
   const [pollingManualLoading, setPollingManualLoading] = useState(false)
   const [criandoCliente,       setCriandoCliente]       = useState(false)
+  const [toleranciaAtraso,     setToleranciaAtraso]     = useState(10)
 
   // ── Carregamento de dados ─────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -737,6 +741,13 @@ export default function IFood() {
   }
 
   useEffect(() => { loadConfig(); loadEmpresas() }, [])
+
+  // Tolerância de atraso do Atendimento via chat (badge "Atrasado") — default 10 min se indisponível
+  useEffect(() => {
+    atendimentoApi.configuracao.get()
+      .then(r => setToleranciaAtraso(r.data.atraso_tolerancia_min ?? 10))
+      .catch(() => {})
+  }, [])
 
   // Config exibida no card/modal é sempre a da empresa selecionada — nunca configs[0]
   // (uma empresa nova pode não ter config ainda; ver MULTIEMPRESA.md Fase 1)
@@ -897,6 +908,7 @@ export default function IFood() {
                 ))}
               </select>
             )}
+            <StatusExtensao className={styles.pollingBadgeOff} />
             {statusGeral?.polling_ativo
               ? <div className={styles.pollingBadge}><span className={styles.dot} />Polling ativo</div>
               : <div className={styles.pollingBadgeOff}><span className={styles.dotOff} />Polling pausado</div>
@@ -973,6 +985,23 @@ export default function IFood() {
                         {p.empresa_nome}
                       </span>
                     )}
+                    {/* Badge de atraso (Atendimento via chat) */}
+                    {(() => {
+                      const atraso = minutosAtraso(p, toleranciaAtraso)
+                      if (!atraso) return null
+                      const semEntregador = p.status === 'READY_TO_PICKUP' && !p.entregador_chegou_em
+                      return (
+                        <span
+                          title={semEntregador ? 'Aguardando entregador' : 'Passou da previsão de entrega'}
+                          style={{
+                            fontSize: 10, padding: '1px 7px', borderRadius: 10,
+                            background: 'rgba(239,68,68,0.15)', color: '#EF4444', fontWeight: 700,
+                            border: '1px solid rgba(239,68,68,0.4)',
+                          }}>
+                          ⏱ Atrasado {atraso} min{semEntregador ? ' · aguardando entregador' : ''}
+                        </span>
+                      )
+                    })()}
                     {/* Badge de negociação pendente */}
                     {p.negociacao_pendente && (
                       <span style={{
@@ -1124,6 +1153,9 @@ export default function IFood() {
             onNegociacao={handleNegociacao}
             negociacaoLoading={negociacaoLoading}
           />
+        )}
+        {selected && (
+          <ChatPedido pedido={selected} onToast={(message, type = 'success') => setToast({ message, type })} />
         )}
       </Modal>
 

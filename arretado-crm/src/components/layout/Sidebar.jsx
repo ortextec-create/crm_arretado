@@ -35,6 +35,7 @@ const NAV = [
     section: 'Integrações',
     items: [
       { to: '/integracoes/ifood',    icon: 'brand-firebase', label: 'iFood',       dot: true },
+      { to: '/atendimento',           icon: 'messages',       label: 'Atendimento iFood', sub: true },
       { to: '/integracoes/anotaai',  icon: 'device-mobile',  label: 'Anota AI',    dot: true },
       { to: '/integracoes/pdv',      icon: 'building-store', label: 'PDV Próprio' },
       { to: '/integracoes/pdv/catalogo', icon: 'package',    label: 'Catálogo PDV', sub: true },

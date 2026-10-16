@@ -17,6 +17,7 @@ import CatalogoPDV from './pages/CatalogoPDV'
 import Vinculacoes from './pages/Vinculacoes'
 import Eventos from './pages/Eventos'
 import Orcamentos from './pages/Orcamentos'
+import Atendimento from './pages/Atendimento'
 import Cobranca from './pages/Cobranca'
 import Notificacoes from './pages/Notificacoes'
 import Configuracoes from './pages/Configuracoes'
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="usuarios" element={<Usuarios />} />
             <Route path="taxas-entrega" element={<TaxasEntrega />} />
             <Route path="integracoes/ifood" element={<IFood />} />
+            <Route path="atendimento" element={<Atendimento />} />
             <Route path="integracoes/anotaai" element={<Placeholder title="Anota AI" />} />
             <Route path="integracoes/pdv" element={<PDV />} />
             <Route path="configuracoes" element={<Configuracoes />} />

@@ -28,6 +28,7 @@ const MODULOS_OCULTAVEIS = [
   { slug: 'integracoes/pdv', label: 'PDV Próprio' },
   { slug: 'integracoes/pdv/catalogo', label: 'Catálogo PDV' },
   { slug: 'integracoes/anotaai', label: 'Anota AI' },
+  { slug: 'atendimento', label: 'Atendimento iFood' },
   { slug: 'taxas-entrega', label: 'Taxas de Entrega' },
 ]
 
