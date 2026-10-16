@@ -520,3 +520,83 @@ class IFoodIntegracaoTests(TestCase):
         data = PedidoIFoodDetailSerializer(_pedido()).data
         for c in ('previsao_preparo_inicio', 'previsao_entrega', 'entregador_chegou_em', 'coletado_em'):
             self.assertIn(c, data)
+
+
+class VerificarAtrasosTests(TestCase):
+    def setUp(self):
+        _ligar(atraso_tolerancia_min=10)
+        self.agora = timezone.now()
+
+    def _rodar(self):
+        out = StringIO()
+        call_command('verificar_atrasos_ifood', stdout=out)
+        return out.getvalue()
+
+    def _atrasado(self, order_id='a-1', minutos=30, **kw):
+        # cria em PLACED (sem gatilho) e muda o status por update, pra isolar o efeito do comando
+        status = kw.pop('status', 'PREPARATION_STARTED')
+        p = _pedido(order_id=order_id, previsao_entrega=self.agora - timedelta(minutes=minutos), **kw)
+        PedidoIFood.objects.filter(pk=p.pk).update(status=status)
+        return p
+
+    def test_dispara_antes_e_apos_despacho_com_minutos(self):
+        a = self._atrasado('a-1', 30, status='PREPARATION_STARTED')
+        b = self._atrasado('a-2', 25, status='DISPATCHED')
+        self._rodar()
+        ma = MensagemChat.objects.get(pedido=a, gatilho='atraso_antes_despacho')
+        mb = MensagemChat.objects.get(pedido=b, gatilho='atraso_apos_despacho')
+        self.assertIn('30', ma.texto)
+        self.assertIn('25', mb.texto)
+
+    def test_nao_duplica_rodando_duas_vezes(self):
+        self._atrasado()
+        self._rodar()
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.filter(gatilho='atraso_antes_despacho').count(), 1)
+
+    def test_dentro_da_tolerancia_nao_dispara(self):
+        self._atrasado(minutos=5)
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.count(), 0)
+
+    def test_sem_previsao_nao_dispara(self):
+        p = _pedido(order_id='s-1')
+        PedidoIFood.objects.filter(pk=p.pk).update(status='PREPARATION_STARTED')
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.count(), 0)
+
+    def test_takeout_nao_dispara(self):
+        self._atrasado(order_type='TAKEOUT')
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.count(), 0)
+
+    def test_chat_desligado_nao_dispara(self):
+        cfg = ConfiguracaoAtendimento.get(Empresa.get_padrao())
+        cfg.chat_ativo = False
+        cfg.save()
+        self._atrasado()
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.count(), 0)
+
+    def test_status_sem_gatilho_de_atraso_nao_dispara(self):
+        self._atrasado('c-1', status='CONCLUDED')
+        self._atrasado('c-2', status='CANCELLED')
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.filter(gatilho__startswith='atraso').count(), 0)
+
+    def test_pedido_fora_da_janela_nao_dispara(self):
+        self._atrasado(ifood_criado_em=self.agora - timedelta(hours=10))
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.count(), 0)
+
+    def test_modelo_inativo_nao_dispara(self):
+        ModeloMensagemChat.objects.filter(gatilho='atraso_antes_despacho').update(ativo=False)
+        self._atrasado()
+        self._rodar()
+        self.assertEqual(MensagemChat.objects.count(), 0)
+
+    def test_so_empresa_com_chat_ativo(self):
+        outra = _empresa()
+        p = self._atrasado('o-1', empresa=outra)
+        self._rodar()
+        self.assertFalse(MensagemChat.objects.filter(pedido=p).exists())
