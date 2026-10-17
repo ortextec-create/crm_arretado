@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 07/out/2026 — módulo de Cobrança implementado (ver `COBRANCA.md`). O histórico de
+> Última atualização: 17/out/2026 — módulo de Cobrança deployado e ativo em prod (ver `COBRANCA.md`). O histórico de
 > implementação de cada feature grande (fases, decisões, bugs encontrados, datas de deploy) vive nos specs
 > dedicados (`MULTIEMPRESA.md`, `FINANCEIRO.md`, `BRINDES_PERMUTAS.md`, `Contrato.md`, `FRETE.md`,
 > `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`, `COBRANCA.md`) e na memória do Claude Code (`MEMORY.md` e
@@ -556,7 +556,7 @@ arretado-crm/                    ← raiz React
 | Multi-Empresa + Temas | Fases 0-5 de 6 (ver `MULTIEMPRESA.md`) | 🔄 Deployado 24/ago/2026 (v1.5.0) — falta só cadastrar a MANGAIO |
 | Brindes e Permutas | Campo `natureza` por item, 5 de 5 fases (ver `BRINDES_PERMUTAS.md`) | ✅ Concluída (v1.5.1) |
 | Remarcação e Adiamento de Eventos | Remarcar, adiar sem data, retomar, encerrar com acerto, aditivo de data, alertas (ver `ADIAMENTO.md`) | ✅ Deployado 14/out/2026 (v1.7.0) — falta só revisão jurídica da cláusula de adiamento |
-| Cobrança de Eventos | Régua automática de WhatsApp + ligações da equipe, 7 de 7 fases (ver `COBRANCA.md`) | 🔄 Código completo (07/out/2026) — falta deploy (migrate + restart) e setup manual (Pix/telefone/crontab, ver COBRANCA.md § Setup Manual) |
+| Cobrança de Eventos | Régua automática de WhatsApp + ligações da equipe, 7 de 7 fases (ver `COBRANCA.md`) | ✅ Deployada e ativa em prod (`ativo_desde` 09/out/2026, crontab `30 9 * * *`, 3 envios reais até 17/out) |
 
 ---
 
@@ -571,7 +571,7 @@ arretado-crm/                    ← raiz React
 7. **Variáveis de ambiente em prod para WhatsApp (Z-API)** — `ZAPI_INSTANCE_ID`/`ZAPI_TOKEN`/`ZAPI_CLIENT_TOKEN` já configuradas
 8. **`ANTHROPIC_API_KEY` não configurada em produção** — fallback de IA da importação de nota fiscal cai sempre em `metodo_extracao='falhou'` sem ela (key da Ortex, decisão de negócio)
 9. **Cascata "texto de PDF" é heurística best-effort** — sem notas reais de fornecedores pra calibrar o regex, pode não reconhecer DANFEs complexos (cai pra IA automaticamente, nunca trava o fluxo)
-10. **Cobrança de Eventos — falta deploy** — código completo e testado (40 testes próprios + suíte inteira verde), mas ainda não migrado/rodando em prod. Antes de ligar de verdade: `migrate` + `systemctl restart arretado arretado-polling` (models usados pelo polling não mudaram aqui, mas a regra de reiniciar os dois juntos em qualquer `migrate` continua valendo), rodar `enviar_cobrancas --dry-run` pra conferir a fila, preencher Pix/favorecido/telefone em Cobrança → Régua e mensagens, cadastrar crontab (`30 9 * * *`), e só então ligar o toggle "Envio automático" (ver COBRANCA.md § Setup Manual)
+10. ~~Cobrança de Eventos — deploy~~ — resolvido: migrado, serviços reiniciados, crontab cadastrado e envio automático ligado desde 09/out/2026 (`enviar_cobrancas --dry-run` validado em 17/out/2026)
 
 ---
 
@@ -894,6 +894,7 @@ Infra já configurada em produção (não precisa recriar):
 - Nginx: `location /media/` (serve uploads) e `proxy_set_header X-Forwarded-Proto $scheme;` no bloco `/api/`
 - Nginx: `client_max_body_size 10m;` (upload de foto de nota fiscal por celular)
 - Django: `MEDIA_URL`/`MEDIA_ROOT` e `SECURE_PROXY_SSL_HEADER` em `config/settings.py`
+- Fuso do servidor: `America/Fortaleza` (`timedatectl set-timezone`, aplicado 17/out/2026) — os horários do crontab são horário de Fortaleza; antes disso a VPS rodava em UTC (crons disparavam 3h adiantados)
 - Git: `safe.directory = /var/www/crm_arretado` em `/etc/gitconfig` (`--system`) — necessário pro Gunicorn (`www-data`) rodar `git describe` com o repo dono por `root`
 
 ---
