@@ -443,8 +443,8 @@ o iFood fecha o chat depois de um tempo.
   - `_criar_pedido()` com payload sem os campos de previsão grava `None` sem erro.
 - [x] `ifood/views.py` sem nenhuma chamada a `notificar` para pedidos iFood.
 - [x] Deploy com `systemctl restart arretado arretado-polling` (migration em `ifood`).
-- [ ] **Pendente (revisão 20/out):** `aba_visivel` no heartbeat e em `status-extensao/`, limiar
-      `online` de 90 s.
+- [x] `aba_visivel` no heartbeat e em `status-extensao/`, limiar `online` de 90 s
+      (`ONLINE_SEGUNDOS`; corrigido em 20/out, commit `18010bb`).
 
 ---
 
@@ -677,8 +677,8 @@ Item de menu no grupo do iFood na `Sidebar.jsx`, com rota correspondente em `App
 - [x] Todos os fluxos acima funcionando com `empresaAtiva` trocada (Arretado ↔ outra empresa).
 - [x] Teste manual com prefixo `"TESTE "` e limpeza depois (o banco é o de produção).
 - [x] Build só com aviso prévio ao Fobs (regra do `CLAUDE.md`).
-- [ ] **Pendente (revisão 20/out):** estado "aba oculta" e alerta `rota_nao_abriu` (depende
-      de `aba_visivel` no backend, ver Fase 1).
+- [x] Estado "aba oculta" e alerta `rota_nao_abriu` na aba Extensão e no `StatusExtensao`
+      (corrigido em 20/out, commit `18010bb`).
 
 ---
 
@@ -733,8 +733,9 @@ vem de `ConfiguracaoAtendimento`.
   responde 204. O management command `responder_chat_ia` (cron a cada minuto) processa as
   entradas sem resposta.
 - **Sem tool use nesta versão.** O contexto é montado inteiro no prompt:
-  - pedido: status legível, itens, `observacao_pedido`, previsão, minutos de atraso, se o
-    entregador já chegou;
+  - pedido: status legível, itens, `observacao_pedido`, previsão, minutos de atraso, e
+    que o entregador chegou, **só quando `entregador_chegou_em` estiver preenchido** (nunca
+    afirmar que ele não chegou: o evento só vem em ~6% dos pedidos);
   - `ia_contexto_loja` e `ia_instrucoes_tom`;
   - as últimas 10 `MensagemChat` do pedido.
 - **Resposta exigida em JSON puro:**
@@ -746,6 +747,9 @@ vem de `ConfiguracaoAtendimento`.
   - alergênicos só se constarem do contexto, sempre com ressalva;
   - reclamação de produto (errado, faltando, estragado), cliente irritado ou qualquer dúvida
     fora do contexto → `transferir`;
+  - nunca afirmar que o entregador não chegou nem deduzir isso de `entregador_chegou_em` nulo
+    (o evento só vem em ~6% dos pedidos); sem a informação, dizer que a loja vai verificar ou
+    `transferir`;
   - respostas curtas, em português, no tom de `ia_instrucoes_tom`.
 - **Destino da resposta, conforme `modo_ia`:**
   - `desligado`: nada; só marca `aguardando_humano=True`.

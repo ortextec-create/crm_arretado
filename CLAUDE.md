@@ -1,10 +1,10 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 17/out/2026 — módulo de Cobrança deployado e ativo em prod (ver `COBRANCA.md`). O histórico de
+> Última atualização: 20/out/2026 — Atendimento iFood (chat via extensão de Chrome) com Fases 0, 1, 3 e 4 no código e Fase 2 escrita, aceite pendente (ver `ATENDIMENTO_IFOOD.md`); Cobrança ativa em prod (ver `COBRANCA.md`). O histórico de
 > implementação de cada feature grande (fases, decisões, bugs encontrados, datas de deploy) vive nos specs
 > dedicados (`MULTIEMPRESA.md`, `FINANCEIRO.md`, `BRINDES_PERMUTAS.md`, `Contrato.md`, `FRETE.md`,
-> `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`, `COBRANCA.md`) e na memória do Claude Code (`MEMORY.md` e
+> `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`, `COBRANCA.md`, `ATENDIMENTO_IFOOD.md`) e na memória do Claude Code (`MEMORY.md` e
 > arquivos `project_*.md`) — este arquivo documenta só o estado atual e as regras vigentes. Se precisar do
 > "porquê" de uma decisão antiga, procure lá antes de perguntar ao usuário.
 
@@ -30,8 +30,8 @@ Gerencia clientes, pedidos, múltiplos canais de venda, orçamentos/eventos, cat
 ```
 arretado/                        ← raiz Django
 ├── config/
-│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard, financeiro, manutencao, empresas, cobranca
-│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/versao/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/, /api/v1/cobranca/
+│   ├── settings.py              ← INSTALLED_APPS: clientes, ifood, pdv, pedidos, eventos, usuarios, notificacoes, fichas, estoque, relatorios, dashboard, financeiro, manutencao, empresas, cobranca, atendimento
+│   ├── urls.py                  ← rotas: /api/v1/, /api/v1/versao/, /api/v1/ifood/, /api/v1/pdv/, /api/v1/eventos/, /api/v1/notificacoes/, /api/v1/fichas/, /api/v1/estoque/, /api/v1/relatorios/, /api/v1/dashboard/, /api/v1/financeiro/, /api/v1/manutencao/, /api/v1/cobranca/, /api/v1/atendimento/
 │   ├── logging_config.py        ← `montar_logging(log_dir, nivel)` — dict de `settings.LOGGING` (ver LOGGING.md)
 │   ├── versao.py                ← `obter_versao()` — versão via `git describe --tags --always --dirty`, cacheada por processo (`lru_cache`) — ver "Versão do Sistema"
 │   ├── views.py                 ← `VersaoView` (APIView, AllowAny)
@@ -168,6 +168,29 @@ arretado/                        ← raiz Django
 │                                     PausaCobrancaViewSet (sem update/destroy, action `encerrar/`
 │                                     — criar pausa nova sempre encerra a vigente anterior na mesma
 │                                     `transaction.atomic()`)
+├── atendimento/                  ← Atendimento iFood — mensagens automáticas/manuais no chat do pedido, via
+│   │                               extensão de Chrome que opera o Gestor de Pedidos web (spec em
+│   │                               `ATENDIMENTO_IFOOD.md`; fases 0, 1, 3, 4 no código, 2 escrita com aceite
+│   │                               pendente, 5-6 pendentes). Fala com o CLIENTE do pedido iFood (substitui o
+│   │                               WhatsApp de pedido iFood, removido de `ifood/views.py`)
+│   ├── models.py                 ← ConfiguracaoAtendimento (1 por empresa, `get(empresa)`, `chat_ativo`
+│   │                                nasce False), ConfiguracaoExtensao (singleton — seletores/tempos
+│   │                                remotos da extensão), ModeloMensagemChat (1 por empresa+gatilho,
+│   │                                padrões em `modelos_padrao.py`, sem DELETE), MensagemChat (fila de
+│   │                                saída + registro de entrada, sem DELETE; `UniqueConstraint` condicional
+│   │                                → 1 automática por gatilho por pedido), TokenExtensao (só SHA-256)
+│   ├── servico.py                ← `enfileirar()` — ÚNICO ponto de criação de MensagemChat de saída
+│   ├── signals.py                ← post_save de PedidoIFood → só grava MensagemChat (nunca HTTP)
+│   ├── render.py                 ← `renderizar()` função pura, `str.replace`, snapshot na criação
+│   ├── authentication.py         ← TokenExtensaoAuthentication (header `X-Extensao-Token`), só em /extensao/
+│   ├── management/commands/      ← verificar_atrasos_ifood (cron a cada minuto) · gerar_token_extensao
+│   └── views.py                  ← endpoints /extensao/ (config, heartbeat, fila/reservar, fila/{id}/resultado)
+│                                    + CRM (configuracao, modelos, mensagens, status-extensao, tokens)
+├── extensao-ifood-chat/          ← extensão Chrome MV3 (fora do Django, carregada sem compactação).
+│                                    background.js (toda a rede + aba designada + badge), content.js
+│                                    (relógio, fluxos de abrir conversa, trava de conversa errada),
+│                                    selectors.js (fallback), popup.* — ver README da pasta
+├── arretado-ifood-chat-poc/      ← POC v0.2 da extensão, só referência histórica (calibração da Fase 0)
 ├── usuarios/                    ← gestão de usuários + RBAC + autenticação real por token +
 │   │                               vínculo multi-empresa (ver MULTIEMPRESA.md)
 │   ├── models.py                ← Usuario (auth_token, gerar_token(), `empresas` M2M →
@@ -305,7 +328,7 @@ arretado-crm/                    ← raiz React
     │                               definirEmpresaAtiva/preferenciaTema), authApi (login/logout/me
     │                               + atualizarCache), fichasApi, taxasEntregaApi, configEntregaApi,
     │                               relatoriosApi, dashboardApi, auditoriaApi, presencaApi,
-    │                               estoqueApi, financeiroApi, empresasApi, cobrancaApi, sistemaApi (versao)
+    │                               estoqueApi, financeiroApi, empresasApi, cobrancaApi, atendimentoApi, sistemaApi (versao)
     ├── utils/
     │   ├── auditoriaResumo.js   ← ACAO_LABEL/ACAO_COR/dataFmt/resumo — reusado pela aba
     │   │                           "Histórico" no modal de Orçamento/Evento
@@ -358,6 +381,10 @@ arretado-crm/                    ← raiz React
     │   │                           mensagens especiais, config geral) · aceita deep-link
     │   │                           `location.state.openEventoId` (mesmo padrão do `openPedidoId`
     │   │                           do iFood em ClienteDetail.jsx) pra abrir a gaveta direto
+    │   ├── Atendimento.jsx      ← rota /atendimento, 4 abas: Fila (cancelar/reenviar), Mensagens (modelos
+    │   │                           com preview), Configuração (`chat_ativo`), Extensão (status, tokens, config
+    │   │                           JSON só admin) · IFood.jsx ganha badge "Atrasado X min", seção Chat no
+    │   │                           detalhe e `StatusExtensao` no topo
     │   ├── Locais.jsx           ← cadastro de LocalEvento
     │   ├── TaxasEntrega.jsx     ← taxas por bairro + frete padrão (ver FRETE.md)
     │   ├── Notificacoes.jsx / Configuracoes.jsx / Vinculacoes.jsx
@@ -376,6 +403,8 @@ arretado-crm/                    ← raiz React
     │   │                              da Sidebar, sempre visível
     │   ├── ui/                  ← Btn, Modal, Spinner, Avatar etc. · PresencaAtiva.jsx (badge
     │   │                           "Fulano também está vendo isso agora", heartbeat a cada 15s)
+    │   ├── atendimento/
+    │   │   └── StatusExtensao.jsx ← indicador online/aba oculta/offline da extensão (`status-extensao/`)
     │   └── cobranca/
     │       └── CobrancaBadge.jsx ← status leve da régua pra 1 Evento (lê `fila/?evento=<id>`,
     │                               sem lógica de régua no componente), usado em Eventos.jsx e
@@ -484,6 +513,25 @@ arretado-crm/                    ← raiz React
   `cobranca.regua.STATUS_ELEGIVEIS = ('confirmado', 'em_producao', 'pronto', 'entregue')` é constante
   própria do módulo, nunca reaproveitada de outro — orçamento e cancelado ficam fora da régua, entregue
   com saldo continua recebendo cobrança
+- **Atendimento iFood** (spec completa em `ATENDIMENTO_IFOOD.md`) — app `atendimento/`, fala com o
+  **cliente do pedido iFood** pelo chat do Gestor de Pedidos web, via extensão de Chrome (o iFood não tem
+  API de chat). **Pedido iFood não envia mais WhatsApp** (o `cliente_telefone` é 0800/`localizer`): as
+  chamadas `_notificar_ifood` saíram de `ifood/views.py`; PDV e Eventos continuam com Z-API. O CRM decide,
+  a extensão executa. `ConfiguracaoAtendimento.get(empresa)` — `chat_ativo` nasce `False`, então deployar
+  nunca manda mensagem sozinho. `servico.enfileirar()` é o ponto único de criação de `MensagemChat` de
+  saída (nunca `.objects.create()` direto); o signal de `PedidoIFood` só grava no banco, nunca faz HTTP,
+  e é idempotente (`.exists()` + `UniqueConstraint` condicional: 1 automática por gatilho por pedido).
+  Texto é snapshot renderizado na criação (`render.renderizar()`, `str.replace`). **Entrega no máximo
+  uma vez:** `reservar/` usa `select_for_update(skip_locked=True)`, uma mensagem por chamada; `enviando`
+  além do lease vira `incerta`; `incerta`/`falha` NUNCA voltam a `pendente` sozinhas — reenvio é ação
+  humana (`reenviar/`) e cria mensagem NOVA (`origem='manual'`). `TokenExtensao` guarda só SHA-256
+  (token em texto puro aparece uma vez na criação), revogar é `ativo=False`, sem DELETE; a extensão
+  autentica com `X-Extensao-Token` só em `/extensao/`, e o token só vê empresas de `token.empresas`.
+  Nunca liberar CORS pro iFood: a rede da extensão passa pelo background. **Trava de conversa errada:** a
+  extensão lê o `#NNNN` do cabeçalho da conversa aberta e só escreve se bater com `display_id`
+  (`conversa_errada`/`conversa_nao_identificada` → falha sem escrever). `entregador_chegou_em`/`coletado_em`
+  só chegam em ~6% dos pedidos — nunca deduzir nada da ausência. Atraso é cron próprio
+  (`verificar_atrasos_ifood`), nunca dentro do `ifood_polling`; `TAKEOUT` não recebe aviso de atraso
 
 ### Frontend
 - **Sem `localStorage`** — estado React + context de autenticação *(exceção: `authApi` usa localStorage para sessão)*
@@ -556,6 +604,7 @@ arretado-crm/                    ← raiz React
 | Multi-Empresa + Temas | Fases 0-5 de 6 (ver `MULTIEMPRESA.md`) | 🔄 Deployado 24/ago/2026 (v1.5.0) — falta só cadastrar a MANGAIO |
 | Brindes e Permutas | Campo `natureza` por item, 5 de 5 fases (ver `BRINDES_PERMUTAS.md`) | ✅ Concluída (v1.5.1) |
 | Remarcação e Adiamento de Eventos | Remarcar, adiar sem data, retomar, encerrar com acerto, aditivo de data, alertas (ver `ADIAMENTO.md`) | ✅ Deployado 14/out/2026 (v1.7.0) — falta só revisão jurídica da cláusula de adiamento |
+| Atendimento iFood (chat) | Mensagens por status/atraso no chat do pedido via extensão de Chrome, 6 fases (ver `ATENDIMENTO_IFOOD.md`) | 🔄 Fases 0, 1, 3, 4 no código (cron `verificar_atrasos_ifood` ativo no crontab); Fase 2 (`extensao-ifood-chat/`) escrita em 20/out, aceite pendente no Gestor real; 5 (IA) e 6 pendentes. `chat_ativo` nasce desligado (estado em prod não conferido) |
 | Cobrança de Eventos | Régua automática de WhatsApp + ligações da equipe, 7 de 7 fases (ver `COBRANCA.md`) | ✅ Deployada e ativa em prod (`ativo_desde` 09/out/2026, crontab `30 9 * * *`, 3 envios reais até 17/out) |
 
 ---
@@ -773,6 +822,26 @@ GET/PATCH/DELETE      /api/v1/manutencao/telefones-alerta/{id}/
 GET/POST/PATCH        /api/v1/empresas/[{id}/]           ← sem DELETE/PUT
 GET                   /api/v1/empresas/branding-login/   ← AllowAny
 
+# Atendimento iFood (ver ATENDIMENTO_IFOOD.md)
+# Extensão — TokenExtensaoAuthentication (header X-Extensao-Token), sem login de usuário
+GET  /api/v1/atendimento/extensao/config/                 ← {intervalo_segundos, pausa_interacao_segundos, seletores, tempos_ms}
+POST /api/v1/atendimento/extensao/heartbeat/              ← {versao, aba_ok, aba_visivel, seletores_ok, url} · 204
+POST /api/v1/atendimento/extensao/fila/reservar/          ← 200 {id, display_id, ifood_order_id, texto, empresa_nome} | 204 · uma por chamada
+POST /api/v1/atendimento/extensao/fila/{id}/resultado/    ← {ok, passos, erro} · 409 se não estiver 'enviando'
+# CRM — TokenAuthentication + IsAuthenticated, aceitam ?empresa=<id>
+GET/PATCH        /api/v1/atendimento/configuracao/               ← PATCH audita config_atendimento_alterada
+GET              /api/v1/atendimento/modelos/
+PATCH            /api/v1/atendimento/modelos/{id}/               ← texto, ativo · audita · sem DELETE
+POST             /api/v1/atendimento/modelos/preview/            ← {texto, pedido_id?} → {renderizado}
+GET              /api/v1/atendimento/mensagens/                  ← filtros: pedido, status, direcao, data_inicio, data_fim
+POST             /api/v1/atendimento/mensagens/manual/           ← {pedido, texto} · 400 se pedido encerrado há +24h
+POST             /api/v1/atendimento/mensagens/{id}/cancelar/    ← só pendente/sugerida
+POST             /api/v1/atendimento/mensagens/{id}/reenviar/    ← só falha/incerta/expirada → cria NOVA manual
+GET              /api/v1/atendimento/status-extensao/            ← online = heartbeat < 90 s · aba_visivel · falhas_rota_recentes
+GET/PATCH        /api/v1/atendimento/configuracao-extensao/      ← IsAdminRole · audita
+GET/POST         /api/v1/atendimento/tokens/                     ← IsAdminRole · POST devolve o token UMA vez
+POST             /api/v1/atendimento/tokens/{id}/revogar/        ← IsAdminRole
+
 # Cobrança (ver COBRANCA.md)
 GET/PATCH        /api/v1/cobranca/configuracao/1/              ← singleton, pk ignorado · PATCH exige login,
                                                                    audita cobranca_config_alterada · ativo
@@ -831,6 +900,8 @@ python manage.py verificar_backup              # 08:00
 python manage.py alertar_adiamentos            # 08:45 — equipe: follow-up e limite de eventos adiados
 python manage.py enviar_cobrancas              # 09:30 — régua de cobrança de Eventos (ver COBRANCA.md)
                                                 #   --dry-run / --evento EV-123 / --data AAAA-MM-DD (só com --dry-run)
+# * * * * *  python manage.py verificar_atrasos_ifood  — a cada minuto, atraso de pedido iFood → chat (ver ATENDIMENTO_IFOOD.md)
+python manage.py gerar_token_extensao --empresa <id> --nome "..."   # token da extensão de Chrome (imprime uma vez)
 
 # Consultar logs (prod)
 tail -f /var/log/arretado/arretado-erros.log   # só ERROR+ — olhar primeiro
@@ -877,7 +948,7 @@ python manage.py migrate
 python manage.py collectstatic --noinput
 cd arretado-crm && npm ci && npm run build && cd ..
 systemctl restart arretado
-systemctl restart arretado-polling   # ver "Atenção" abaixo — nunca esquecer este
+systemctl restart arretado-polling   # ver "Atenção" abaixo — nunca esquecer este (vale p/ ifood, clientes, pedidos, empresas e atendimento)
 
 # Se o deploy marca uma nova versão:
 git tag -a vX.Y.Z -m "Descrição curta da release"
@@ -887,7 +958,7 @@ git push origin vX.Y.Z
 
 **Atenção:** `npm run build` grava direto em `arretado-crm/dist/`, servido pelo Nginx — não existe ambiente de teste isolado. Sempre confirmar com o usuário antes de rodar build na VPS.
 
-**Atenção — `arretado-polling` também precisa reiniciar, sempre que o deploy mexe em models.** `systemctl restart arretado` sozinho não recarrega o worker de longa duração. Incidente real: um deploy que adicionou campo obrigatório em `ifood.PedidoIFood` sem reiniciar o polling perdeu 245 pedidos reais por 5 dias (`NotNullViolation` silencioso). Regra: qualquer deploy que rode `migrate` reinicia os dois serviços juntos (`systemctl restart arretado arretado-polling`).
+**Atenção — `arretado-polling` também precisa reiniciar, sempre que o deploy mexe em models.** `systemctl restart arretado` sozinho não recarrega o worker de longa duração. Incidente real: um deploy que adicionou campo obrigatório em `ifood.PedidoIFood` sem reiniciar o polling perdeu 245 pedidos reais por 5 dias (`NotNullViolation` silencioso). Regra: qualquer deploy que rode `migrate` reinicia os dois serviços juntos (`systemctl restart arretado arretado-polling`). **`atendimento` entra nessa regra:** o signal `post_save` de `PedidoIFood` do app roda dentro do polling (`AtendimentoConfig.ready()`), então o worker precisa recarregar quando `atendimento/` muda (a migration `atendimento/0002` já cai aqui).
 
 Infra já configurada em produção (não precisa recriar):
 - Logs: `/var/log/arretado` (2770 `root:www-data`) + `/etc/logrotate.d/arretado` + `LOG_DIR`/`LOG_LEVEL` no `.env` (o `.env` não entra no backup — são 2 linhas a lembrar)
@@ -1019,7 +1090,7 @@ Infra já configurada em produção (não precisa recriar):
 - Não materializar `PedidoPDV`/`Evento` com empresa diferente da padrão — PDV e Eventos são mono-empresa por escopo
 - Não hardcodar a versão do sistema em nenhum arquivo — sempre `git describe` + tag + `CHANGELOG.md`
 - Não esquecer da tag ao fazer um deploy que o usuário considera "versão nova" — perguntar antes de criar
-- Não reiniciar só `arretado.service` num deploy que muda `models.py` de app usado pelo `arretado-polling` (`ifood`, `clientes`, `pedidos`, `empresas`) — sempre reiniciar os dois juntos
+- Não reiniciar só `arretado.service` num deploy que muda `models.py` de app usado pelo `arretado-polling` (`ifood`, `clientes`, `pedidos`, `empresas`, `atendimento`) — sempre reiniciar os dois juntos
 - Não rodar `manage.py test` esperando filesystem isolado igual ao banco — só o banco vira SQLite em memória, `MEDIA_ROOT` precisa isolamento próprio em `settings_test.py`
 - Não gravar `tipo` (lembrete/cobrança) em `EtapaRegua` — é sempre derivado de `ConfiguracaoCobranca.limite_lembrete`; em `EnvioCobranca` ele é snapshot, de propósito
 - Não usar `str.format()`/`format_map()` pra renderizar mensagem de cobrança — sempre `cobranca.mensagens.render()` (regex)
@@ -1035,3 +1106,18 @@ Infra já configurada em produção (não precisa recriar):
 - Não reaproveitar `AlertaEventoEnviado`/`alertar_eventos` pra cobrança de cliente — aquele é da equipe, `cobranca/` é o cliente, nunca confundir os dois
 - Não hardcodar nome da empresa, Pix ou telefone em texto padrão de cobrança — sempre variável (`{empresa}`/`{chave_pix}`/`{telefone_empresa}`)
 - Não reimplementar fase/próxima ação da régua no frontend (`Cobranca.jsx`/`CobrancaBadge.jsx`) — sempre ler de `fila/`/`linha-do-tempo/`, nunca lógica paralela de decisão em JS
+- Não fazer HTTP dentro do signal de `PedidoIFood` do atendimento — só grava `MensagemChat`
+- Não criar `MensagemChat` de saída fora de `atendimento/servico.py::enfileirar()`
+- Não devolver `incerta`/`falha` pra `pendente` automaticamente — reenvio é sempre mensagem nova criada por humano
+- Não reservar mensagem sem `select_for_update(skip_locked=True)`, nem mais de uma por chamada; a extensão nunca processa em paralelo
+- Não re-renderizar texto de `MensagemChat` já enfileirada — é snapshot da criação
+- Não hardcodar nome de loja em texto padrão de atendimento — sempre `{loja}`
+- Não gravar token de extensão em texto puro (só SHA-256), nem usar `TokenExtensaoAuthentication` fora de `/extensao/` (nem `TokenAuthentication` de usuário dentro)
+- Não deixar um `TokenExtensao` ver fila/pedido de empresa fora de `token.empresas`
+- Não liberar CORS no Django pro Gestor do iFood — a rede da extensão passa pelo background
+- Não pôr responsabilidade nova no `ifood_polling` — atraso (`verificar_atrasos_ifood`) e IA são crons próprios
+- Não deduzir atraso de cozinha/logística da ausência de `entregador_chegou_em` (evento só chega em ~6% dos pedidos), nem a IA afirmar que o entregador não chegou
+- Não voltar a enviar WhatsApp de pedido iFood — o telefone do consumidor não é exposto pelo iFood; o canal é o chat
+- Não criar campo não-nulo em `PedidoIFood` (migration de `ifood`/`atendimento` sem reiniciar `arretado-polling` repete o incidente dos 245 pedidos)
+- Não usar `chrome.alarms` pro loop de 5 s da extensão (mínimo 30 s no MV3) — o relógio é do content script, e a extensão exige a aba designada visível
+- Não ligar `chat_ativo` nem desligar o modo seguro da extensão sem o aceite da Fase 2 feito no Gestor real
