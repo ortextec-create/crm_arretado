@@ -29,7 +29,8 @@ from .serializers import (
 )
 from .servico import enfileirar
 
-ONLINE_SEGUNDOS = 60
+ONLINE_SEGUNDOS = 90  # folga pro heartbeat atrasado de aba oculta (throttling do Chrome)
+FALHAS_ROTA_JANELA_MIN = 60
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,6 +95,7 @@ class ExtensaoHeartbeatView(ExtensaoBaseView):
         token.versao_extensao = str(d.get('versao', ''))[:30]
         token.ultimo_diagnostico = {
             'aba_ok': bool(d.get('aba_ok')),
+            'aba_visivel': bool(d.get('aba_visivel', True)),
             'seletores_ok': d.get('seletores_ok') if isinstance(d.get('seletores_ok'), dict) else {},
             'url': str(d.get('url', ''))[:300],
         }
@@ -285,11 +287,18 @@ class StatusExtensaoView(CrmAuthMixin, APIView):
             .order_by('-ultimo_heartbeat')
         t = tokens.first()
         if t is None:
-            return Response({'online': False, 'ultimo_heartbeat': None, 'versao': '', 'seletores_ok': {}})
+            return Response({'online': False, 'aba_visivel': True, 'ultimo_heartbeat': None, 'versao': '',
+                             'seletores_ok': {}, 'falhas_rota_recentes': 0})
         online = t.ultimo_heartbeat >= timezone.now() - timedelta(seconds=ONLINE_SEGUNDOS)
         return Response({
             'online': online, 'ultimo_heartbeat': t.ultimo_heartbeat, 'versao': t.versao_extensao,
+            'aba_visivel': (t.ultimo_diagnostico or {}).get('aba_visivel', True),
             'seletores_ok': (t.ultimo_diagnostico or {}).get('seletores_ok', {}),
+            # sequência de rota_nao_abriu = sinal de que o iFood mudou a rota do Gestor
+            'falhas_rota_recentes': MensagemChat.objects.filter(
+                empresa=empresa, status='falha', erro='rota_nao_abriu',
+                criado_em__gte=timezone.now() - timedelta(minutes=FALHAS_ROTA_JANELA_MIN),
+            ).count(),
         })
 
 

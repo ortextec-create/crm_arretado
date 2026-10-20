@@ -989,16 +989,15 @@ export default function IFood() {
                     {(() => {
                       const atraso = minutosAtraso(p, toleranciaAtraso)
                       if (!atraso) return null
-                      const semEntregador = p.status === 'READY_TO_PICKUP' && !p.entregador_chegou_em
                       return (
                         <span
-                          title={semEntregador ? 'Aguardando entregador' : 'Passou da previsão de entrega'}
+                          title="Passou da previsão de entrega"
                           style={{
                             fontSize: 10, padding: '1px 7px', borderRadius: 10,
                             background: 'rgba(239,68,68,0.15)', color: '#EF4444', fontWeight: 700,
                             border: '1px solid rgba(239,68,68,0.4)',
                           }}>
-                          ⏱ Atrasado {atraso} min{semEntregador ? ' · aguardando entregador' : ''}
+                          ⏱ Atrasado {atraso} min
                         </span>
                       )
                     })()}

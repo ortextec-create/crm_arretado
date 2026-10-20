@@ -420,8 +420,25 @@ class CrmAPITests(TestCase):
         r = self.api.get('/api/v1/atendimento/status-extensao/')
         self.assertTrue(r.data['online'])
         self.assertEqual(r.data['seletores_ok'], {'a': True})
+        TokenExtensao.objects.filter(pk=tok.pk).update(ultimo_heartbeat=timezone.now() - timedelta(seconds=80))
+        self.assertTrue(self.api.get('/api/v1/atendimento/status-extensao/').data['online'])  # limiar de 90 s
         TokenExtensao.objects.filter(pk=tok.pk).update(ultimo_heartbeat=timezone.now() - timedelta(seconds=120))
         self.assertFalse(self.api.get('/api/v1/atendimento/status-extensao/').data['online'])
+
+    def test_status_extensao_aba_visivel_e_falhas_de_rota(self):
+        tok, raw = TokenExtensao.criar('Caixa', [self.emp])
+        ext = _client_extensao(raw)
+        ext.post('/api/v1/atendimento/extensao/heartbeat/', {'versao': '1', 'aba_visivel': False}, format='json')
+        r = self.api.get('/api/v1/atendimento/status-extensao/')
+        self.assertFalse(r.data['aba_visivel'])
+        self.assertEqual(r.data['falhas_rota_recentes'], 0)
+        for i in range(2):
+            m = enfileirar(_pedido(order_id=f'rota-{i}'), 'manual', origem='manual', texto='x')
+            MensagemChat.objects.filter(pk=m.pk).update(status='falha', erro='rota_nao_abriu')
+        ext.post('/api/v1/atendimento/extensao/heartbeat/', {'versao': '1', 'aba_visivel': True}, format='json')
+        r = self.api.get('/api/v1/atendimento/status-extensao/')
+        self.assertTrue(r.data['aba_visivel'])
+        self.assertEqual(r.data['falhas_rota_recentes'], 2)
 
     def test_tokens_so_admin_token_puro_uma_vez_e_revogar(self):
         atendente = _client_usuario(_usuario('atendente', 'at@teste.com'))

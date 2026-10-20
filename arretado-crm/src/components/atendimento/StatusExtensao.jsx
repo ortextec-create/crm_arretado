@@ -11,10 +11,11 @@ export default function StatusExtensao({ className }) {
     return () => clearInterval(t)
   }, [])
   if (!st) return null
+  const oculta = st.online && st.aba_visivel === false
   return (
-    <div className={className} title="Extensão de Chrome que envia as mensagens no chat do iFood">
-      <i className="ti ti-messages" style={{ fontSize: 13, color: st.online ? 'var(--status-ok-fg)' : 'var(--texto-faint)' }} />{' '}
-      Chat {st.online ? 'online' : 'offline'}
+    <div className={className} title={oculta ? 'Aba do Gestor oculta: envios atrasados' : 'Extensão de Chrome que envia as mensagens no chat do iFood'}>
+      <i className="ti ti-messages" style={{ fontSize: 13, color: oculta ? 'var(--status-alerta-fg)' : st.online ? 'var(--status-ok-fg)' : 'var(--texto-faint)' }} />{' '}
+      Chat {oculta ? 'online · aba oculta' : st.online ? 'online' : 'offline'}
     </div>
   )
 }

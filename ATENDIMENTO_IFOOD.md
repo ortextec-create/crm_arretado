@@ -28,7 +28,12 @@
 (desligado por padrão) e a atribuição logística×cozinha só valem para a minoria. `DISPATCHED`
 chega para todos os `DELIVERY`. Tipos de pedido na base: 7.035 `DELIVERY`, 43 `TAKEOUT`.
 
-### Divergências do código atual em relação a esta versão do spec (a corrigir)
+### Divergências do código atual em relação a esta versão do spec (corrigidas em 20/out)
+
+Itens 1 a 4 corrigidos no mesmo commit, junto com a remoção da dedução "aguardando entregador"
+(Fase 3 e 4). A migration `atendimento/0002_alter_mensagemchat_origem` (só `choices`) precisa do
+deploy com `systemctl restart arretado arretado-polling`. Além do pedido, `status-extensao/` passou
+a devolver `falhas_rota_recentes` (falhas `rota_nao_abriu` na última hora; o frontend alerta com 2+).
 
 1. **`aba_visivel` no heartbeat:** `ExtensaoHeartbeatView` grava só `aba_ok`/`seletores_ok`/`url`;
    falta gravar `aba_visivel` em `ultimo_diagnostico`.
@@ -319,7 +324,7 @@ Hoje ele só grava `CANCELLATION_REQUESTED`, que não tem gatilho, então **não
 |---|---|---|
 | `previsao_preparo_inicio` | `preparationStartDateTime` | Atraso antes do despacho |
 | `previsao_entrega` | `delivery.deliveryDateTime`, senão `takeout.takeoutDateTime`, senão `schedule.scheduledDateTimeEnd` | `{previsao}` e atraso |
-| `entregador_chegou_em` | `createdAt` do evento `ARRIVED_AT_ORIGIN` | Atribuição do atraso (cozinha × logística) |
+| `entregador_chegou_em` | `createdAt` do evento `ARRIVED_AT_ORIGIN` | Só registro e gatilho `entregador_chegou`. **Não se infere nada da ausência** (evento chega em ~6% dos pedidos) |
 | `coletado_em` | `createdAt` do evento `COLLECTED` | Idem |
 
 - `_criar_pedido()` preenche `previsao_*` com o mesmo `_parse_dt()` já existente. Campo
@@ -616,8 +621,11 @@ Para cada empresa com `chat_ativo=True`, sobre os `PedidoIFood` dentro da janela
 - Enfileira via `servico.enfileirar()`, que já garante uma mensagem por gatilho por pedido.
 - Pedido `TAKEOUT` não recebe aviso de atraso nesta versão (o cliente vem buscar; não há
   previsão confiável de quando).
-- Se `READY_TO_PICKUP` e `entregador_chegou_em` nulo, o atraso é da logística, não da cozinha.
-  O texto padrão serve aos dois casos, e o CRM mostra a atribuição na tela (Fase 4).
+- **Sem atribuição cozinha × logística (decisão de 20/out):** `ARRIVED_AT_ORIGIN`/`COLLECTED`
+  só chegam em ~6% dos pedidos (439 e 432 eventos contra ~6.966 `DISPATCHED`), então
+  `entregador_chegou_em` nulo não prova que o entregador não chegou. Os campos continuam sendo
+  gravados quando o evento vem, mas nada é deduzido da ausência deles, nem no backend nem na tela.
+  O texto padrão de atraso serve a qualquer causa.
 - Saída do command: contagem por gatilho, para o log do cron. Nunca lança exceção por pedido
   individual.
 
@@ -657,8 +665,8 @@ Item de menu no grupo do iFood na `Sidebar.jsx`, com rota correspondente em `App
 
 - **Card do pedido:** badge "Atrasado X min" quando `previsao_entrega + tolerância` passou e o
   pedido não está concluído/cancelado. Calcular no frontend com os campos do serializer, sem
-  endpoint novo. Tooltip "aguardando entregador" quando `READY_TO_PICKUP` sem
-  `entregador_chegou_em`.
+  endpoint novo. Sem tooltip nem texto de "aguardando entregador": a ausência de
+  `entregador_chegou_em` não é sinal confiável (evento só chega em ~6% dos pedidos).
 - **Detalhe do pedido:** seção "Chat" com as `MensagemChat` do pedido em ordem cronológica
   (balões saída/entrada, status miúdo) e campo de envio manual (`mensagens/manual/`, com
   `window.confirm`).

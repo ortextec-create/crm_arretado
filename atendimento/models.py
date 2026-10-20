@@ -109,7 +109,7 @@ class MensagemChat(models.Model):
     DIRECAO_CHOICES = [('saida', 'Saída'), ('entrada', 'Entrada')]
     ORIGEM_CHOICES = [
         ('automatico', 'Automático'), ('manual', 'Manual'), ('ia', 'IA'),
-        ('cliente', 'Cliente'), ('loja_gestor', 'Digitado no Gestor'),
+        ('cliente', 'Cliente'), ('loja_gestor', 'Digitado no Gestor'), ('sistema', 'Sistema iFood'),
     ]
     STATUS_CHOICES = [
         ('sugerida', 'Sugerida'), ('pendente', 'Pendente'), ('enviando', 'Enviando'),

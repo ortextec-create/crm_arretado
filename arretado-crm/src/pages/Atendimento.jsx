@@ -354,6 +354,14 @@ function AbaExtensao({ onToast }) {
         <div className={styles.muted}>
           {st?.ultimo_heartbeat ? `Último sinal: ${fmtHora(st.ultimo_heartbeat)} · versão ${st.versao || '—'}` : 'Nenhum sinal recebido ainda.'}
         </div>
+        {st?.online && st.aba_visivel === false && (
+          <div className={styles.aviso}><i className="ti ti-eye-off" />
+            Aba do Gestor oculta, envios atrasados. Deixe a janela do Gestor visível na tela.</div>
+        )}
+        {st?.falhas_rota_recentes >= 2 && (
+          <div className={styles.aviso}><i className="ti ti-alert-triangle" />
+            O iFood pode ter mudado a página ({st.falhas_rota_recentes} falhas de rota na última hora). Avise o suporte.</div>
+        )}
         {seletores.length > 0 && (
           <div className={styles.seletores}>
             {seletores.map(([k, ok]) => (
