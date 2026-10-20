@@ -2,7 +2,8 @@
 
 > Spec para implementação pelo Claude Code. Escrito em 07/out/2026, revisado em 16/out/2026
 > (aba designada, aba visível e throttling de timers do Chrome, painel validado após abrir) e em
-> 20/out/2026 (1ª rodada da Fase 0: seletores validados, ordem dos fluxos, trava de conversa).
+> 20/out/2026 (Fase 0 concluída: seletores validados, abertura pelo ID do pedido, trava de
+> conversa, estrutura das mensagens, duas janelas).
 > Para padrões técnicos gerais, ver `CLAUDE.md` — tudo aqui segue as regras de lá
 > (cron em vez de Celery, `.get()` em configurações, `_resolver_empresa()` local por app,
 > nada business-specific hardcoded, signals dentro de try/except).
@@ -13,28 +14,33 @@
 
 | Fase | Status | Observações |
 |---|---|---|
-| 0 | 🔄 1ª rodada feita (20/out) | Seletores validados na seção abaixo. Faltam: `diag-2` com conversa aberta (leitura, Fase 5), teste de duas janelas, eventos de logística em prod, navegação direta pela rota de detalhe (POC v0.2) |
+| 0 | ✅ Concluída (20/out) | Itens 1-6 feitos; resultados em [Seletores validados](#seletores-validados). Item 6 rodado em prod (ver abaixo) |
 | 1 | ✅ Implementada (commit `5f2c2a5`) | App `atendimento/`, modelos, signal, `servico.enfileirar()`, endpoints, campos novos em `PedidoIFood` (migration `ifood/0010`), `entregador_chegou` no polling, WhatsApp de pedido iFood removido |
-| 2 | 🔲 Pendente | `extensao-ifood-chat/` não existe no repo (o frontend já referencia o README dela) |
+| 2 | 🔲 Liberada, pendente | `extensao-ifood-chat/` não existe no repo (o frontend já referencia o README dela) |
 | 3 | ✅ Implementada (commit `5771faa`) | `verificar_atrasos_ifood` e cron `* * * * *` no crontab real |
 | 4 | ✅ Implementada (commit `f5086a2`) | `Atendimento.jsx`, rota, Sidebar, `MODULOS_OCULTAVEIS`, badge de atraso e chat em `IFood.jsx`, `StatusExtensao` |
-| 5 | 🔲 Pendente | Bloqueada pelo `diag-2` da Fase 0 |
+| 5 | 🔲 Pendente | Desbloqueada: a estrutura das mensagens foi levantada na Fase 0 (falta só o marcador de não lida por conversa) |
 | 6 | 🔲 Pendente | |
 
-### Divergências do código atual em relação a esta versão do spec (a corrigir)
+**Fase 0, item 6 (consulta em prod, 20/out):** `ARRIVED_AT_ORIGIN` (439) e `COLLECTED` (432)
+**chegam**, mas só em ~6% dos pedidos (a maioria é `DISPATCHED`, ~6.966, sem eles). Portanto
+`entregador_chegou_em` fica nulo na maior parte dos pedidos: o gatilho `entregador_chegou`
+(desligado por padrão) e a atribuição logística×cozinha só valem para a minoria. `DISPATCHED`
+chega para todos os `DELIVERY`. Tipos de pedido na base: 7.035 `DELIVERY`, 43 `TAKEOUT`.
 
-Mudanças introduzidas na revisão de 16/out e 20/out que a Fase 1/4 já implementada ainda não cobre:
+### Divergências do código atual em relação a esta versão do spec (a corrigir)
 
 1. **`aba_visivel` no heartbeat:** `ExtensaoHeartbeatView` grava só `aba_ok`/`seletores_ok`/`url`;
    falta gravar `aba_visivel` em `ultimo_diagnostico`.
 2. **`status-extensao/`:** não devolve `aba_visivel`, e o limiar de `online` está em 60 s
-   (`ONLINE_SEGUNDOS`); o spec pede **90 s** (folga para o heartbeat atrasado de aba oculta).
-3. **Frontend (aba Extensão e `StatusExtensao`):** falta o estado "aba do Gestor oculta, envios
-   atrasados" e a dica "deixe a tela de pedidos aberta na aba da extensão" quando as falhas
-   recentes forem `card_nao_encontrado`.
-4. **Seletores/erros novos** (`conversationPane`, `painel_nao_abriu`, `conversa_errada`,
-   `conversa_nao_identificada`, `card_nao_encontrado`, `interrompido_por_usuario`) são só da
-   extensão; o backend os trata como texto livre em `erro`, sem mudança. Nada a fazer no Django.
+   (`ONLINE_SEGUNDOS`); o spec pede **90 s**.
+3. **`MensagemChat.origem`:** falta o valor `sistema` em `ORIGEM_CHOICES` (migration de
+   `choices`, sem alteração de schema). Só é usado na Fase 5, mas é barato fazer já.
+4. **Frontend (aba Extensão e `StatusExtensao`):** falta o estado "aba do Gestor oculta, envios
+   atrasados" e o alerta de falhas recentes `rota_nao_abriu` ("o iFood pode ter mudado a página").
+5. Os erros da extensão (`painel_nao_abriu`, `rota_nao_abriu`, `conversa_errada`,
+   `conversa_nao_identificada`, `interrompido_por_usuario`, `modo_seguro`) e os seletores são só
+   da extensão; o backend guarda `erro` como texto livre. Nada a fazer no Django.
 
 Conferido e **sem divergência**: campos de `ConfiguracaoAtendimento`/`ConfiguracaoExtensao`,
 gatilhos e textos padrão, máquina de status, `UniqueConstraint` condicional, `enfileirar()`,
@@ -110,7 +116,8 @@ Feita pelo Fobs na loja, com a POC carregada no Chrome. Não tem código no CRM.
 2. **Diagnóstico com uma conversa aberta** → salvar `diag-2-conversa-aberta.json`. É o que
    define os seletores de **leitura** de mensagens da Fase 5.
 3. **Modo seguro** em dois pedidos em andamento: um com conversa já existente (fluxo 1, pela
-   lista) e um sem (fluxo 2, pelo card). Guardar os `passos` de cada um.
+   lista) e um sem (fluxo 2, pelo card). Guardar os `passos` de cada um. *(Feito em duas
+   rodadas; a v0.2 da POC acrescentou a abertura pelo ID do pedido.)*
 4. **Envio real** para um pedido da equipe.
 5. **Duas janelas do Gestor** abertas ao mesmo tempo (uma para a extensão, outra para a
    equipe): o iFood permite? Uma derruba a outra? Decide se a extensão pode ter uma janela
@@ -126,6 +133,8 @@ Feita pelo Fobs na loja, com a POC carregada no Chrome. Não tem código no CRM.
 
 **Saída da fase:** `selectors.js` ajustado, e a seção [Seletores validados](#seletores-validados)
 deste spec preenchida. **A Fase 2 não começa sem isso.**
+
+**Status em 20/out/2026:** itens 1 a 6 feitos. **A Fase 2 está liberada.**
 
 ---
 
@@ -245,7 +254,7 @@ Fila de saída **e** registro de entrada. Sem DELETE (histórico de atendimento)
 | `empresa` | FK `Empresa` (PROTECT) | Denormalizada de `pedido.empresa` na criação |
 | `pedido` | FK `ifood.PedidoIFood` (PROTECT), `related_name='mensagens_chat'` | |
 | `direcao` | CharField `saida`/`entrada` | |
-| `origem` | CharField `automatico`/`manual`/`ia`/`cliente`/`loja_gestor` | `loja_gestor` = alguém da equipe digitou direto no Gestor (Fase 5) |
+| `origem` | CharField `automatico`/`manual`/`ia`/`cliente`/`loja_gestor`/`sistema` | `loja_gestor` = alguém da equipe digitou direto no Gestor; `sistema` = aviso do próprio iFood visível só para a loja (Fase 5) |
 | `gatilho` | CharField (choices de `ModeloMensagemChat` + `manual`/`ia`), blank em entrada | |
 | `texto` | TextField | Já renderizado |
 | `status` | CharField (ver máquina abaixo) | |
@@ -508,15 +517,16 @@ de callback ou função async eles se perdem quando o service worker acorda).
    dos embutidos, chave a chave.
 4. `fila/reservar/`. Com 204, fim do ciclo.
 5. Abre o chat do pedido tentando, nesta ordem (resultado da calibração de 20/out):
-   1. **Pela rota de detalhe com o ID iFood:** `location.hash = '#/home/order-display/expedition/' + ifood_order_id`,
-      espera `orderDetailsChatButton`, clica, espera `messageInput`. Não depende de achar card
-      nem de número de pedido na tela. *Confirmar na POC v0.2 antes de implementar; se a
-      navegação direta não abrir os detalhes, este passo sai e o card vira o principal.*
-   2. **Pelo card** na tela de expedição, achado pelo número **exato** (texto-folha ou
-      aria-label começando com `#NNNN`; nunca `includes` sobre os dígitos do card inteiro, que
-      casa `0567` com `R$ 105,67`). Validado em 20/out.
-   3. **Pela lista do painel "Conversas":** só se os seletores da lista forem revalidados;
-      até lá fica desligado.
+   1. **Pela rota de detalhe com o ID iFood (principal, validado):**
+      `location.hash = '#/home/order-display/expedition/' + ifood_order_id`, espera
+      `orderDetailsChatButton`, clica, espera `messageInput`. Não depende de achar card nem
+      número na tela, e cria a conversa se ela ainda não existir.
+   2. **Pela lista do painel "Conversas" (reserva, validado):** abre o painel, espera o título
+      "Conversas", procura o `h2` com texto exato `#NNNN` rolando a lista virtual, clica no
+      ancestral com `position: absolute`. Só acha pedido que já tem conversa.
+   3. **Pelo card na tela de expedição:** desligado até confirmar como o número aparece no
+      card. Se for implementado, sempre por número **exato**, nunca `includes` sobre os
+      dígitos do card inteiro (casa `0567` com `R$ 105,67`).
 6. **Trava antes de escrever:** lê o número da conversa aberta (cabeçalho `[aria-label^="#"]`,
    subindo a partir de `messageInput`) e compara com `display_id`. Diferente ou ilegível →
    **não escreve**, reporta `erro: 'conversa_errada'` ou `'conversa_nao_identificada'`.
@@ -534,10 +544,10 @@ de callback ou função async eles se perdem quando o service worker acorda).
   `waitFor(chave, timeout)` sempre que houver um elemento que prove que a tela carregou. Os
   valores de `tempos_ms` viram **timeouts máximos**, não pausas obrigatórias. Sleep fixo só
   onde não há o que esperar (entre passos da rolagem da lista virtual, depois de enviar).
-- **Fluxo 2 depende da tela de expedição.** O card do pedido só existe no DOM se a tela que
-  lista os pedidos estiver aberta. Se o card não for achado, reportar
-  `erro: 'card_nao_encontrado'` (e não "pedido inexistente"), para o CRM sugerir ao operador
-  manter essa tela aberta na aba designada.
+- **Rota que não abre o pedido:** se, depois de navegar pelo ID, `orderDetailsChatButton` não
+  aparecer no tempo máximo, reportar `erro: 'rota_nao_abriu'` antes de tentar a lista. Uma
+  sequência desses erros é o sinal de que o iFood mudou a rota, e o CRM mostra isso na aba
+  Extensão.
 - **Limpar o estado antes de cada mensagem e depois de qualquer falha** (`fecharPainel()` da
   POC), para a próxima mensagem não começar com uma conversa errada aberta.
 
@@ -566,7 +576,8 @@ inválido ou seletor crítico (`messageInput`, `sendButton`, `chatToggleButton`)
 - [ ] Com token gerado pelo management command, a extensão envia em modo seguro uma mensagem
       enfileirada pelo signal, e a `MensagemChat` termina em `falha` com `erro='modo_seguro'`
       e `passos` preenchidos.
-- [ ] Envio real para pedido da equipe pela rota com ID e pelo card.
+- [ ] Envio real para pedido da equipe pela rota com ID, **partindo de outra tela** (outro
+      pedido aberto ou a tela de expedição sem detalhes), e pela lista do painel.
 - [ ] Mensagem com `display_id` que não bate com a conversa aberta termina em `falha` com
       `erro='conversa_errada'`, sem nada escrito no campo.
 - [ ] Clicar na página durante um fluxo aborta sem enviar.
@@ -637,8 +648,8 @@ Item de menu no grupo do iFood na `Sidebar.jsx`, com rota correspondente em `App
    até lá.
 4. **Extensão:** status online/offline (`status-extensao/`, a cada 15 s), aviso "aba do Gestor
    oculta, envios atrasados" quando `aba_visivel=false`, versão, seletores com ✓/✗. Quando as
-   falhas recentes forem `card_nao_encontrado`, dica "deixe a tela de pedidos aberta na aba da
-   extensão"; tokens (listar, criar mostrando o token **uma vez** num modal com botão copiar,
+   falhas recentes forem `rota_nao_abriu`, alerta "o iFood pode ter mudado a página; avisar o
+   suporte"; tokens (listar, criar mostrando o token **uma vez** num modal com botão copiar,
    revogar). Só `role=admin`: editor JSON de `configuracao-extensao/`. Link para o README de
    instalação.
 
@@ -661,24 +672,33 @@ Item de menu no grupo do iFood na `Sidebar.jsx`, com rota correspondente em `App
 - [x] Todos os fluxos acima funcionando com `empresaAtiva` trocada (Arretado ↔ outra empresa).
 - [x] Teste manual com prefixo `"TESTE "` e limpeza depois (o banco é o de produção).
 - [x] Build só com aviso prévio ao Fobs (regra do `CLAUDE.md`).
-- [ ] **Pendente (revisão 20/out):** estado "aba oculta" e dica `card_nao_encontrado` (depende
+- [ ] **Pendente (revisão 20/out):** estado "aba oculta" e alerta `rota_nao_abriu` (depende
       de `aba_visivel` no backend, ver Fase 1).
 
 ---
 
 ## Fase 5 — Mensagens do cliente + IA
 
-**Bloqueada até a Fase 0 entregar o `diag-2-conversa-aberta.json`.** Sem ele não se sabe a
-estrutura dos balões nem como o Gestor marca conversa não lida.
+A estrutura das mensagens já foi levantada na Fase 0 (ver
+[Seletores validados](#seletores-validados)). Falta só o marcador de não lida **por conversa**
+na lista, a coletar com um diagnóstico rápido no início desta fase.
 
 ### Leitura (extensão)
 
-- A cada ciclo sem mensagem para enviar, o content script verifica o indicador de não lidas
-  (seletor a definir na calibração).
-- Havendo não lida: abre a conversa, lê os últimos 10 balões (`autor`: `cliente`/`loja`, `texto`,
-  `horario_exibido`) e envia para
-  `POST /api/v1/atendimento/extensao/mensagens-recebidas/` com
-  `{display_id, mensagens: [...]}`. Depois fecha a conversa.
+- A cada ciclo sem mensagem para enviar, o content script lê o `aria-label` do
+  `chatToggleButton`. Casando `/(\d+) mensage(m|ns) não lida/` com N > 0, há conversa
+  pendente; isso não exige abrir nada.
+- Havendo pendente: abre o painel, acha as conversas não lidas (marcador por item a coletar),
+  abre cada uma e lê os últimos 10 balões do `conversationPane`:
+  - texto e horário (`HH:MM`) de cada grupo;
+  - `autor` pela geometria: direita = `loja`, esquerda = `cliente`; grupo com rótulo `iFood`
+    ou com o aviso "Apenas você pode ver essa mensagem" = `sistema`;
+  - **inverter a ordem** (o DOM vem da mais nova para a mais antiga).
+- Envia para `POST /api/v1/atendimento/extensao/mensagens-recebidas/` com
+  `{display_id, mensagens: [...]}`, sendo `display_id` lido do cabeçalho da conversa (o mesmo
+  da trava). Depois fecha a conversa.
+- Mensagens `sistema` vão no payload (ficam no histórico do CRM), mas o backend nunca as passa
+  para a IA nem as usa para detectar a equipe digitando.
 - **Efeito colateral importante:** abrir a conversa a marca como lida no Gestor, então a equipe
   perde o badge de não lida do iFood. Por isso a tela de Atendimento passa a ser o lugar onde a
   equipe vê conversas aguardando humano.
@@ -688,7 +708,8 @@ estrutura dos balões nem como o Gestor marca conversa não lida.
 - `mensagens-recebidas/` resolve o pedido por `display_id` entre as empresas do token, o mais
   recente com `ifood_criado_em` nas últimas 24 h. Grava cada balão como `MensagemChat(direcao=
   'entrada')` com `hash_entrada = sha256(pedido_id|autor|texto|horario_exibido)`, ignorando hash
-  repetido.
+  repetido. Limitação aceita: o horário só tem minuto, então duas mensagens idênticas do
+  cliente no mesmo minuto viram uma. `origem` ganha o valor `sistema` para as mensagens do iFood.
 - Balão `autor='loja'` que não corresponde a nenhuma `MensagemChat` enviada é alguém da equipe
   digitando no Gestor: grava como `saida`, `origem='loja_gestor'`, `status='enviada'`, e põe a
   conversa em modo humano.
@@ -761,33 +782,49 @@ vem de `ConfiguracaoAtendimento`.
 
 ## Seletores validados
 
-> Primeira rodada da Fase 0 em 20/out/2026: Gestor real da Arretado, Chrome 154, Windows,
-> pedidos #4595 e #0567. Envio real pelo caminho do card funcionou.
+> Fase 0 feita em 20/out/2026 em duas rodadas (POC v0.1 e v0.2): Gestor real da Arretado,
+> Chrome 154, Windows, pedidos #4595, #0567 e #3814. Envio real funcionou; abertura pelo ID
+> do pedido funcionou; a trava de conversa errada abortou corretamente.
 
 | Chave | Seletor | Status |
 |---|---|---|
-| `chatToggleButton` | `[data-test-id="CONSUMER_CHAT_REBORN_HEADER_ENTRY_POINT"]` (aria-label "Conversas com clientes") | ✅ 20/out |
-| `closeChatButton` | `span.ifdl-icon-close` | ✅ 20/out (atenção: 3 ocorrências com detalhes abertos) |
+| Rota de detalhe | `#/home/order-display/expedition/<ifood_order_id>` | ✅ 20/out (v0.2). Ressalva: a aba já estava nesse pedido; o critério de aceite da Fase 2 confirma a navegação partindo de outra tela |
+| `chatToggleButton` | `[data-test-id="CONSUMER_CHAT_REBORN_HEADER_ENTRY_POINT"]` | ✅ 20/out. O `aria-label` dele **muda**: "Conversas com clientes" sem pendências, "Você tem N mensagens não lidas" com pendências; não usar o aria-label como seletor |
+| `closeChatButton` | `span.ifdl-icon-close` | ✅ 20/out (3 ocorrências com detalhes abertos: usar a visível mais próxima do painel) |
 | `closeConversationButton` | `[data-testid="close-icon"]` | ✅ 20/out |
-| `conversationPane` | `[data-testid="customer-conversation-pane"]` | ✅ 20/out (nova chave) |
+| `orderDetailsChatButton` | `[data-test-id="CONSUMER_CHAT_REBORN_MESSAGING_ORDER_DETAILS_ENTRY_POINT"]` | ✅ 20/out. Abre a conversa existente ou cria uma |
+| `conversationPane` | `[data-testid="customer-conversation-pane"]` | ✅ 20/out |
 | `messageInput` | `textarea[aria-label="Campo de mensagem"]` | ✅ 20/out |
 | `sendButton` | `button[aria-label="Enviar mensagem"]` | ✅ 20/out |
-| `orderCard` | `[data-testid="card"]` | ✅ 20/out |
-| `orderDetailsChatButton` | `[data-test-id="CONSUMER_CHAT_REBORN_MESSAGING_ORDER_DETAILS_ENTRY_POINT"]` | ✅ 20/out |
-| Cabeçalho da conversa | `[aria-label^="#"]` subindo a partir de `messageInput` (ex.: `aria-label="#4595 Walter"`) | ✅ 20/out (estrutura vista no diagnóstico) |
-| Rota de detalhe | `#/home/order-display/expedition/<ifood_order_id>` | ⏳ vista na URL; navegação direta a testar (POC v0.2) |
-| `conversationListScroll` | — | ❌ não encontrado; lista do painel mudou (POC v0.2 coleta a estrutura) |
-| `conversationOrderNumber` | `h2` | ❌ não serve mais; candidato `[aria-label^="#"]` a validar |
-| `unreadIndicator` (Fase 5) | | ⏳ |
-| `messageBubble` / autor (Fase 5) | | ⏳ POC v0.2 coleta textos e lado (cliente × loja) |
+| Cabeçalho da conversa | `[aria-label^="#"]` subindo a partir de `messageInput` (ex.: `"#3814 Orlando Saboia"`) | ✅ 20/out. Base da trava de conversa errada |
+| Título do painel | texto `Conversas` num `h1` dentro de `.sendbird-channel-list` | ✅ 20/out |
+| `conversationListScroll` | `[style*="overflow: auto"]` | ✅ 20/out, **só com o painel aberto** |
+| `conversationOrderNumber` (lista) | `h2` com texto `#NNNN`; item clicável = ancestral com `position: absolute` (lista virtual) | ✅ 20/out |
+| `orderCard` | `[data-testid="card"]` | ✅ existe; ⏳ **formato do número no card não confirmado** (o card não mostra `#NNNN` como texto-folha) |
+| Não lidas (total) | `aria-label` do `chatToggleButton` casando `/(\d+) mensage(m|ns) não lida/` | ✅ 20/out (Fase 5) |
+| Não lida por conversa | — | ⏳ coletar quando a Fase 5 começar |
 
-Outros fatos da rodada:
+**Leitura de mensagens (Fase 5), observado no #3814:**
+- Cada mensagem é um `span` de texto com um `span` de horário (`HH:MM`) no mesmo grupo.
+- **Autor pelo lado da tela:** centro do balão à **direita** do centro do `conversationPane` =
+  loja; à **esquerda** = cliente. As classes CSS (geradas, tipo `sc-ePqJEo`) também diferem,
+  mas mudam a cada deploy do iFood; usar só a geometria.
+- **A ordem no DOM é da mais nova para a mais antiga.** Inverter antes de gravar.
+- **Mensagens do sistema do iFood aparecem à esquerda, como se fossem do cliente.** O grupo
+  traz um rótulo `iFood` e o aviso `Apenas você pode ver essa mensagem`. Exemplo real:
+  "Sua loja demora um pouco pra responder... Taxa de resposta dos chats: 76%, Tempo médio de
+  resposta: 1 min". Classificar como `autor='sistema'`: nunca vai para a IA e nunca entra
+  no dedup como cliente.
+- O chat é construído sobre Sendbird (classe `sendbird-channel-list`).
+
+**Outros fatos:**
+- **Duas janelas do Gestor ao mesmo tempo funcionam:** abrir a segunda não derruba a
+  primeira. Janela dedicada à extensão é viável (ver Operação).
 - A tela de expedição tem as colunas `lane--preparation` e `lane--ready-enRoute-finish`:
-  pedidos concluídos continuam com card na tela, então o caminho do card cobre o ciclo inteiro
-  do pedido enquanto ele aparece no Gestor.
-- O caminho do card abriu o chat tanto de pedido **com** conversa quanto **sem** conversa
-  (o botão de chat dos detalhes reaproveita a conversa existente).
-- O caminho pela lista do painel "Conversas" não achou a conversa em nenhum caso.
+  pedidos concluídos continuam visíveis enquanto ficam no Gestor.
+- O iFood mede a **taxa de resposta dos chats** da loja (76% e 1 min de tempo médio na
+  Arretado em 20/out) e cobra isso por mensagem de sistema. Responder mais rápido, inclusive
+  com a IA da Fase 5, melhora esse indicador.
 
 ---
 
@@ -802,10 +839,10 @@ Outros fatos da rodada:
   janela do Gestor num canto, parcialmente visível, já basta.
 - Desativar a suspensão automática e o bloqueio de tela do computador que roda a extensão
   nos horários de operação.
-- A aba designada deve ficar na **tela de pedidos** do Gestor (o fluxo 2 depende dos cards).
-- Se a Fase 0 confirmar que o Gestor aceita duas janelas: uma janela dedicada à extensão e
-  outra para a equipe operar. Se não aceitar, a equipe opera na mesma aba, a pausa por
-  interação humana é a proteção, e o envio fica mais lento nos horários de pico.
+- A aba designada pode ficar em qualquer tela do Gestor: a extensão navega pelo ID do pedido.
+- **Recomendado (confirmado na Fase 0: o Gestor aceita duas janelas):** uma janela do Chrome
+  dedicada à extensão, que ninguém usa, e outra para a equipe operar. A pausa por interação
+  humana continua valendo como proteção caso alguém mexa na janela da extensão.
 - Instalação nesta versão: "Carregar sem compactação" em `chrome://extensions`. Publicação na
   Chrome Web Store (não listada) fica para depois.
 
@@ -867,6 +904,11 @@ Outros fatos da rodada:
   aberta é o `display_id` da mensagem. Na dúvida, aborta.
 - Não localizar card de pedido por `includes` sobre os dígitos do texto do card; sempre pelo
   rótulo exato `#NNNN`.
+- Não usar o `aria-label` do `chatToggleButton` como seletor (ele muda com as não lidas); só
+  como fonte da contagem de não lidas.
+- Não tratar mensagem do sistema do iFood (rótulo `iFood` / "Apenas você pode ver essa
+  mensagem") como mensagem do cliente nem como equipe digitando.
+- Não confiar na ordem do DOM para a cronologia das mensagens; ela vem invertida.
 - Não clicar em nada na página no diagnóstico do heartbeat; ele só testa seletores.
 - Não permitir que a IA cancele, altere pedido ou prometa compensação; regras fixas no prompt.
 - Não usar o SDK `anthropic`; `requests` puro, como em `estoque/claude_client.py`.
