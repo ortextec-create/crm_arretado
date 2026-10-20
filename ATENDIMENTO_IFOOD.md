@@ -1,9 +1,45 @@
 # Atendimento iFood via Chat do Gestor de Pedidos
 
-> Spec para implementação pelo Claude Code. Escrito em out/2026.
+> Spec para implementação pelo Claude Code. Escrito em 07/out/2026, revisado em 16/out/2026
+> (aba designada, aba visível e throttling de timers do Chrome, painel validado após abrir) e em
+> 20/out/2026 (1ª rodada da Fase 0: seletores validados, ordem dos fluxos, trava de conversa).
 > Para padrões técnicos gerais, ver `CLAUDE.md` — tudo aqui segue as regras de lá
 > (cron em vez de Celery, `.get()` em configurações, `_resolver_empresa()` local por app,
 > nada business-specific hardcoded, signals dentro de try/except).
+
+---
+
+## Estado da implementação (validado contra o código em 20/out/2026)
+
+| Fase | Status | Observações |
+|---|---|---|
+| 0 | 🔄 1ª rodada feita (20/out) | Seletores validados na seção abaixo. Faltam: `diag-2` com conversa aberta (leitura, Fase 5), teste de duas janelas, eventos de logística em prod, navegação direta pela rota de detalhe (POC v0.2) |
+| 1 | ✅ Implementada (commit `5f2c2a5`) | App `atendimento/`, modelos, signal, `servico.enfileirar()`, endpoints, campos novos em `PedidoIFood` (migration `ifood/0010`), `entregador_chegou` no polling, WhatsApp de pedido iFood removido |
+| 2 | 🔲 Pendente | `extensao-ifood-chat/` não existe no repo (o frontend já referencia o README dela) |
+| 3 | ✅ Implementada (commit `5771faa`) | `verificar_atrasos_ifood` e cron `* * * * *` no crontab real |
+| 4 | ✅ Implementada (commit `f5086a2`) | `Atendimento.jsx`, rota, Sidebar, `MODULOS_OCULTAVEIS`, badge de atraso e chat em `IFood.jsx`, `StatusExtensao` |
+| 5 | 🔲 Pendente | Bloqueada pelo `diag-2` da Fase 0 |
+| 6 | 🔲 Pendente | |
+
+### Divergências do código atual em relação a esta versão do spec (a corrigir)
+
+Mudanças introduzidas na revisão de 16/out e 20/out que a Fase 1/4 já implementada ainda não cobre:
+
+1. **`aba_visivel` no heartbeat:** `ExtensaoHeartbeatView` grava só `aba_ok`/`seletores_ok`/`url`;
+   falta gravar `aba_visivel` em `ultimo_diagnostico`.
+2. **`status-extensao/`:** não devolve `aba_visivel`, e o limiar de `online` está em 60 s
+   (`ONLINE_SEGUNDOS`); o spec pede **90 s** (folga para o heartbeat atrasado de aba oculta).
+3. **Frontend (aba Extensão e `StatusExtensao`):** falta o estado "aba do Gestor oculta, envios
+   atrasados" e a dica "deixe a tela de pedidos aberta na aba da extensão" quando as falhas
+   recentes forem `card_nao_encontrado`.
+4. **Seletores/erros novos** (`conversationPane`, `painel_nao_abriu`, `conversa_errada`,
+   `conversa_nao_identificada`, `card_nao_encontrado`, `interrompido_por_usuario`) são só da
+   extensão; o backend os trata como texto livre em `erro`, sem mudança. Nada a fazer no Django.
+
+Conferido e **sem divergência**: campos de `ConfiguracaoAtendimento`/`ConfiguracaoExtensao`,
+gatilhos e textos padrão, máquina de status, `UniqueConstraint` condicional, `enfileirar()`,
+signal (idempotente, só grava), regra de 24 h em `mensagens/manual/`, `cancelar` com update
+condicional, `reenviar` criando mensagem nova, hash SHA-256 do token, atraso sem `TAKEOUT`.
 
 ---
 
@@ -76,8 +112,9 @@ Feita pelo Fobs na loja, com a POC carregada no Chrome. Não tem código no CRM.
 3. **Modo seguro** em dois pedidos em andamento: um com conversa já existente (fluxo 1, pela
    lista) e um sem (fluxo 2, pelo card). Guardar os `passos` de cada um.
 4. **Envio real** para um pedido da equipe.
-5. **Duas abas do Gestor** abertas ao mesmo tempo: o iFood permite? Uma derruba a outra?
-   (Decide se a extensão pode rodar numa aba dedicada enquanto a equipe opera em outra.)
+5. **Duas janelas do Gestor** abertas ao mesmo tempo (uma para a extensão, outra para a
+   equipe): o iFood permite? Uma derruba a outra? Decide se a extensão pode ter uma janela
+   dedicada enquanto a equipe opera em outra (ver [Operação](#operação)).
 6. **Eventos de logística que chegam de fato**, em produção (só leitura):
    ```python
    from django.db.models import Count
@@ -317,7 +354,7 @@ loga e devolve `None`.
 | `criado_em` | DateTimeField | |
 | `ultimo_heartbeat` | DateTimeField null | |
 | `versao_extensao` | CharField blank | Do heartbeat |
-| `ultimo_diagnostico` | JSONField default dict | Do heartbeat: `{aba_ok, seletores_ok: {chave: bool}, url}` |
+| `ultimo_diagnostico` | JSONField default dict | Do heartbeat: `{aba_ok, aba_visivel, seletores_ok: {chave: bool}, url}` |
 
 - Token gerado com `secrets.token_urlsafe(32)` e devolvido **uma única vez** na resposta da
   criação.
@@ -337,10 +374,10 @@ GET  /api/v1/atendimento/extensao/config/
      → {intervalo_segundos, pausa_interacao_segundos, seletores, tempos_ms}
 
 POST /api/v1/atendimento/extensao/heartbeat/
-     body {versao, aba_ok, seletores_ok, url} → grava em TokenExtensao · 204
+     body {versao, aba_ok, aba_visivel, seletores_ok, url} → grava em TokenExtensao · 204
 
 POST /api/v1/atendimento/extensao/fila/reservar/
-     → 200 {id, display_id, texto, empresa_nome} | 204 (fila vazia)
+     → 200 {id, display_id, ifood_order_id, texto, empresa_nome} | 204 (fila vazia)
 
 POST /api/v1/atendimento/extensao/fila/{id}/resultado/
      body {ok: bool, passos: [...], erro: ""} → enviada | falha · 204
@@ -370,8 +407,9 @@ GET        /api/v1/atendimento/mensagens/                    ← filtros: pedido
 POST       /api/v1/atendimento/mensagens/manual/             ← {pedido, texto} → pendente, origem=manual, autor
 POST       /api/v1/atendimento/mensagens/{id}/cancelar/      ← só pendente/sugerida
 POST       /api/v1/atendimento/mensagens/{id}/reenviar/      ← só falha/incerta/expirada → cria nova manual
-GET        /api/v1/atendimento/status-extensao/              ← {online, ultimo_heartbeat, versao, seletores_ok}
-                                                               online = heartbeat de algum token da empresa < 60 s
+GET        /api/v1/atendimento/status-extensao/              ← {online, aba_visivel, ultimo_heartbeat, versao, seletores_ok}
+                                                               online = heartbeat de algum token da empresa < 90 s
+                                                               (folga para o heartbeat atrasado de aba oculta)
 GET/PATCH  /api/v1/atendimento/configuracao-extensao/        ← IsAdminRole · audita PATCH
 GET/POST   /api/v1/atendimento/tokens/                       ← IsAdminRole · POST devolve o token uma vez · audita
 POST       /api/v1/atendimento/tokens/{id}/revogar/          ← IsAdminRole · audita
@@ -382,8 +420,8 @@ o iFood fecha o chat depois de um tempo.
 
 ### Critérios de aceite da Fase 1
 
-- [ ] Migrations aplicam limpo; campos novos de `PedidoIFood` são todos nullable.
-- [ ] Testes (`python manage.py test atendimento --settings=config.settings_test`):
+- [x] Migrations aplicam limpo; campos novos de `PedidoIFood` são todos nullable.
+- [x] Testes (`python manage.py test atendimento --settings=config.settings_test`):
   - signal cria exatamente uma mensagem por gatilho, mesmo com N `save()` seguidos;
   - nada é criado com `chat_ativo=False`, com modelo inativo ou com pedido fora da janela;
   - `CANCELLED` cancela as pendentes do pedido;
@@ -392,8 +430,10 @@ o iFood fecha o chat depois de um tempo.
   - lease vencido vira `incerta` e **não** volta para a fila;
   - token inválido ou revogado → 401; token de uma empresa nunca vê fila de outra;
   - `_criar_pedido()` com payload sem os campos de previsão grava `None` sem erro.
-- [ ] `ifood/views.py` sem nenhuma chamada a `notificar` para pedidos iFood.
-- [ ] Deploy com `systemctl restart arretado arretado-polling` (migration em `ifood`).
+- [x] `ifood/views.py` sem nenhuma chamada a `notificar` para pedidos iFood.
+- [x] Deploy com `systemctl restart arretado arretado-polling` (migration em `ifood`).
+- [ ] **Pendente (revisão 20/out):** `aba_visivel` no heartbeat e em `status-extensao/`, limiar
+      `online` de 90 s.
 
 ---
 
@@ -426,23 +466,80 @@ extensao-ifood-chat/
 - **O content script dirige o relógio.** `setInterval` com `intervalo_segundos` enquanto a aba
   do Gestor estiver aberta. Motivo: o service worker MV3 dorme, e `chrome.alarms` tem período
   mínimo de 30 s.
+- **Limitação que molda a operação: o Chrome desacelera timers de abas ocultas.** Com a aba
+  oculta há mais de ~5 min (outra aba em primeiro plano, janela minimizada e, no Windows,
+  janela totalmente coberta por outra), o Chrome junta os timers da página em execuções
+  de uma vez por minuto ("intensive throttling"). O ciclo de 5 s vira ~60 s. Por isso:
+  - a extensão **exige a aba do Gestor visível** (ver [Operação](#operação));
+  - o content script escuta `visibilitychange` e, ao ficar `hidden`, manda heartbeat
+    **na hora** com `aba_visivel: false`, para o CRM avisar "envios atrasados";
+  - com a aba oculta o ciclo **continua rodando** no ritmo que o Chrome permitir (atrasar é
+    melhor que parar), só sinalizado.
 - **O background faz toda a rede.** O content script manda mensagens (`chrome.runtime.sendMessage`)
   e o background chama o backend com o header `X-Extensao-Token`. Fetch direto do content script
   esbarra em CORS; **nunca liberar CORS no Django para a origem do iFood**.
 - **Configuração** em `chrome.storage.local`: `backendUrl`, `token`, `modoSeguro`, `ativo`.
 
+### Aba designada
+
+Só **uma** aba do Gestor processa a fila, e ela é escolhida explicitamente, não por foco:
+
+- O background guarda `abaDesignadaId` em `chrome.storage.session`.
+- Uma aba do Gestor aberta e nenhuma designada: designa sozinha.
+- Mais de uma: o popup lista as abas do Gestor (título + URL) para escolher, e mostra qual
+  está designada hoje.
+- Aba designada fechada (`chrome.tabs.onRemoved`) ou que saiu do domínio do Gestor
+  (`chrome.tabs.onUpdated`): limpa a designação e redesigna sozinha se sobrar exatamente uma.
+- O content script pergunta ao background, a cada ciclo, se é a aba designada (o background
+  compara com `sender.tab.id`). Se não for, não reserva nada e não manda heartbeat.
+
+Listeners do Chrome no background (`onRemoved`, `onUpdated`, `onMessage`, `onStartup`,
+`onInstalled`) registrados **no topo do arquivo, de forma síncrona** (exigência do MV3; dentro
+de callback ou função async eles se perdem quando o service worker acorda).
+
 ### Ciclo (content script)
 
-1. Se `ativo == false`, ou a aba não é a ativa da janela, ou houve interação humana há menos de
+1. Se `ativo == false`, ou esta não é a aba designada, ou houve interação humana há menos de
    `pausa_interacao_segundos`, pula o ciclo.
-2. A cada 30 s: `heartbeat/` com `seletores_ok` (resultado do diagnóstico leve: cada chave
+2. A cada 30 s (e na hora, quando a visibilidade mudar): `heartbeat/` com `aba_visivel`
+   (`document.visibilityState === 'visible'`) e `seletores_ok` (diagnóstico leve: cada chave
    testada sem clicar em nada).
 3. A cada 5 min, ou ao iniciar: `config/`. Mescla `seletores`/`tempos_ms` remotos **por cima**
    dos embutidos, chave a chave.
 4. `fila/reservar/`. Com 204, fim do ciclo.
-5. Executa o fluxo da POC (fecha painel → fluxo 1 pela lista → fallback fluxo 2 pelo card →
-   escreve → envia) e reporta em `fila/{id}/resultado/` com `passos`.
-6. Nunca processa duas mensagens em paralelo (flag `processando`). Espera 2,5 s entre mensagens.
+5. Abre o chat do pedido tentando, nesta ordem (resultado da calibração de 20/out):
+   1. **Pela rota de detalhe com o ID iFood:** `location.hash = '#/home/order-display/expedition/' + ifood_order_id`,
+      espera `orderDetailsChatButton`, clica, espera `messageInput`. Não depende de achar card
+      nem de número de pedido na tela. *Confirmar na POC v0.2 antes de implementar; se a
+      navegação direta não abrir os detalhes, este passo sai e o card vira o principal.*
+   2. **Pelo card** na tela de expedição, achado pelo número **exato** (texto-folha ou
+      aria-label começando com `#NNNN`; nunca `includes` sobre os dígitos do card inteiro, que
+      casa `0567` com `R$ 105,67`). Validado em 20/out.
+   3. **Pela lista do painel "Conversas":** só se os seletores da lista forem revalidados;
+      até lá fica desligado.
+6. **Trava antes de escrever:** lê o número da conversa aberta (cabeçalho `[aria-label^="#"]`,
+   subindo a partir de `messageInput`) e compara com `display_id`. Diferente ou ilegível →
+   **não escreve**, reporta `erro: 'conversa_errada'` ou `'conversa_nao_identificada'`.
+7. Escreve, envia e reporta em `fila/{id}/resultado/` com `passos`.
+8. Nunca processa duas mensagens em paralelo (flag `processando`). Espera 2,5 s entre mensagens.
+
+### Robustez do fluxo (mudanças em relação à POC)
+
+- **Validar cada transição de tela antes de seguir.** Depois de clicar em `chatToggleButton`,
+  esperar o título "Conversas" ficar visível (o `painelConversasAberto()` da POC, chamado com
+  espera). Se não aparecer, abortar com `erro: 'painel_nao_abriu'` em vez de procurar a
+  conversa numa tela errada. O mesmo vale para "conversa aberta" (esperar `messageInput`
+  visível) e "detalhes do pedido abertos" (esperar `orderDetailsChatButton`).
+- **Esperar por elemento, não por tempo fixo.** Trocar os `sleep()` da POC por
+  `waitFor(chave, timeout)` sempre que houver um elemento que prove que a tela carregou. Os
+  valores de `tempos_ms` viram **timeouts máximos**, não pausas obrigatórias. Sleep fixo só
+  onde não há o que esperar (entre passos da rolagem da lista virtual, depois de enviar).
+- **Fluxo 2 depende da tela de expedição.** O card do pedido só existe no DOM se a tela que
+  lista os pedidos estiver aberta. Se o card não for achado, reportar
+  `erro: 'card_nao_encontrado'` (e não "pedido inexistente"), para o CRM sugerir ao operador
+  manter essa tela aberta na aba designada.
+- **Limpar o estado antes de cada mensagem e depois de qualquer falha** (`fecharPainel()` da
+  POC), para a próxima mensagem não começar com uma conversa errada aberta.
 
 ### Pausa por interação humana
 
@@ -460,20 +557,29 @@ falar com cliente.
 
 ### Badge do ícone
 
-Verde: conectado, aba ok, seletores ok. Amarelo: pausada (interação humana ou aba inativa).
-Vermelho: sem backend, token inválido ou seletor crítico (`messageInput`, `sendButton`,
-`chatToggleButton`) quebrado.
+Verde: conectado, aba designada visível, seletores ok. Amarelo: pausada por interação
+humana, aba oculta (envios atrasados) ou nenhuma aba designada. Vermelho: sem backend, token
+inválido ou seletor crítico (`messageInput`, `sendButton`, `chatToggleButton`) quebrado.
 
 ### Critérios de aceite da Fase 2
 
 - [ ] Com token gerado pelo management command, a extensão envia em modo seguro uma mensagem
       enfileirada pelo signal, e a `MensagemChat` termina em `falha` com `erro='modo_seguro'`
       e `passos` preenchidos.
-- [ ] Envio real para pedido da equipe pelos dois fluxos (lista e card).
+- [ ] Envio real para pedido da equipe pela rota com ID e pelo card.
+- [ ] Mensagem com `display_id` que não bate com a conversa aberta termina em `falha` com
+      `erro='conversa_errada'`, sem nada escrito no campo.
 - [ ] Clicar na página durante um fluxo aborta sem enviar.
 - [ ] Fechar e reabrir a aba retoma sozinha; matar a extensão no meio de um envio deixa a
       mensagem em `incerta` após o lease, e ela não é reenviada.
 - [ ] Mudar um seletor via `configuracao-extensao/` tem efeito em até 5 min sem reinstalar.
+- [ ] Com duas abas do Gestor abertas, só a designada reserva mensagens; fechar a designada
+      redesigna a outra sozinha.
+- [ ] Pôr outra aba em primeiro plano na janela do Gestor faz o CRM mostrar "aba oculta" em
+      até 1 min; voltar a aba limpa o aviso.
+- [ ] Com `chatToggleButton` apontado via `configuracao-extensao/` para um elemento que não abre
+      o painel, a mensagem termina em `falha` com `erro='painel_nao_abriu'`, sem clicar em mais
+      nada.
 
 ---
 
@@ -506,9 +612,9 @@ Para cada empresa com `chat_ativo=True`, sobre os `PedidoIFood` dentro da janela
 
 ### Critérios de aceite da Fase 3
 
-- [ ] Testes com `timezone.now()` mockado: dispara uma vez, não dispara dentro da tolerância,
+- [x] Testes com `timezone.now()` mockado: dispara uma vez, não dispara dentro da tolerância,
       não dispara sem previsão, não dispara para `TAKEOUT`, não dispara com chat desligado.
-- [ ] Rodar o command duas vezes seguidas não duplica.
+- [x] Rodar o command duas vezes seguidas não duplica.
 
 ---
 
@@ -529,8 +635,10 @@ Item de menu no grupo do iFood na `Sidebar.jsx`, com rota correspondente em `App
 3. **Configuração:** chave geral `chat_ativo` em destaque (com aviso de que liga envio real
    para clientes), janela, expiração, tolerância de atraso. Seção IA (Fase 5) desabilitada
    até lá.
-4. **Extensão:** status online/offline (`status-extensao/`, a cada 15 s), versão, seletores
-   com ✓/✗; tokens (listar, criar mostrando o token **uma vez** num modal com botão copiar,
+4. **Extensão:** status online/offline (`status-extensao/`, a cada 15 s), aviso "aba do Gestor
+   oculta, envios atrasados" quando `aba_visivel=false`, versão, seletores com ✓/✗. Quando as
+   falhas recentes forem `card_nao_encontrado`, dica "deixe a tela de pedidos aberta na aba da
+   extensão"; tokens (listar, criar mostrando o token **uma vez** num modal com botão copiar,
    revogar). Só `role=admin`: editor JSON de `configuracao-extensao/`. Link para o README de
    instalação.
 
@@ -543,16 +651,18 @@ Item de menu no grupo do iFood na `Sidebar.jsx`, com rota correspondente em `App
 - **Detalhe do pedido:** seção "Chat" com as `MensagemChat` do pedido em ordem cronológica
   (balões saída/entrada, status miúdo) e campo de envio manual (`mensagens/manual/`, com
   `window.confirm`).
-- **Topo da página:** indicador discreto da extensão (online/offline), para a equipe perceber
-  quando o Chrome do caixa fechou.
+- **Topo da página:** indicador discreto da extensão (online / aba oculta / offline), para a
+  equipe perceber quando o Chrome do caixa fechou ou a janela do Gestor foi escondida.
 
 `services.js`: novo objeto `atendimentoApi`, seguindo o padrão dos demais.
 
 ### Critérios de aceite da Fase 4
 
-- [ ] Todos os fluxos acima funcionando com `empresaAtiva` trocada (Arretado ↔ outra empresa).
-- [ ] Teste manual com prefixo `"TESTE "` e limpeza depois (o banco é o de produção).
-- [ ] Build só com aviso prévio ao Fobs (regra do `CLAUDE.md`).
+- [x] Todos os fluxos acima funcionando com `empresaAtiva` trocada (Arretado ↔ outra empresa).
+- [x] Teste manual com prefixo `"TESTE "` e limpeza depois (o banco é o de produção).
+- [x] Build só com aviso prévio ao Fobs (regra do `CLAUDE.md`).
+- [ ] **Pendente (revisão 20/out):** estado "aba oculta" e dica `card_nao_encontrado` (depende
+      de `aba_visivel` no backend, ver Fase 1).
 
 ---
 
@@ -651,23 +761,33 @@ vem de `ConfiguracaoAtendimento`.
 
 ## Seletores validados
 
-> Preencher ao fim da Fase 0, com data. Até lá, os seletores da POC são **hipótese**
-> (vieram de documentação pública de outra integração).
+> Primeira rodada da Fase 0 em 20/out/2026: Gestor real da Arretado, Chrome 154, Windows,
+> pedidos #4595 e #0567. Envio real pelo caminho do card funcionou.
 
-| Chave | Seletor | Validado em |
+| Chave | Seletor | Status |
 |---|---|---|
-| `chatToggleButton` | | |
-| `closeChatButton` | | |
-| `closeConversationButton` | | |
-| `conversationListScroll` | | |
-| `conversationOrderNumber` | | |
-| `messageInput` | | |
-| `sendButton` | | |
-| `orderCard` | | |
-| `orderDetailsChatButton` | | |
-| `unreadIndicator` (Fase 5) | | |
-| `messageBubble` (Fase 5) | | |
-| `messageBubbleAuthor` (Fase 5) | | |
+| `chatToggleButton` | `[data-test-id="CONSUMER_CHAT_REBORN_HEADER_ENTRY_POINT"]` (aria-label "Conversas com clientes") | ✅ 20/out |
+| `closeChatButton` | `span.ifdl-icon-close` | ✅ 20/out (atenção: 3 ocorrências com detalhes abertos) |
+| `closeConversationButton` | `[data-testid="close-icon"]` | ✅ 20/out |
+| `conversationPane` | `[data-testid="customer-conversation-pane"]` | ✅ 20/out (nova chave) |
+| `messageInput` | `textarea[aria-label="Campo de mensagem"]` | ✅ 20/out |
+| `sendButton` | `button[aria-label="Enviar mensagem"]` | ✅ 20/out |
+| `orderCard` | `[data-testid="card"]` | ✅ 20/out |
+| `orderDetailsChatButton` | `[data-test-id="CONSUMER_CHAT_REBORN_MESSAGING_ORDER_DETAILS_ENTRY_POINT"]` | ✅ 20/out |
+| Cabeçalho da conversa | `[aria-label^="#"]` subindo a partir de `messageInput` (ex.: `aria-label="#4595 Walter"`) | ✅ 20/out (estrutura vista no diagnóstico) |
+| Rota de detalhe | `#/home/order-display/expedition/<ifood_order_id>` | ⏳ vista na URL; navegação direta a testar (POC v0.2) |
+| `conversationListScroll` | — | ❌ não encontrado; lista do painel mudou (POC v0.2 coleta a estrutura) |
+| `conversationOrderNumber` | `h2` | ❌ não serve mais; candidato `[aria-label^="#"]` a validar |
+| `unreadIndicator` (Fase 5) | | ⏳ |
+| `messageBubble` / autor (Fase 5) | | ⏳ POC v0.2 coleta textos e lado (cliente × loja) |
+
+Outros fatos da rodada:
+- A tela de expedição tem as colunas `lane--preparation` e `lane--ready-enRoute-finish`:
+  pedidos concluídos continuam com card na tela, então o caminho do card cobre o ciclo inteiro
+  do pedido enquanto ele aparece no Gestor.
+- O caminho do card abriu o chat tanto de pedido **com** conversa quanto **sem** conversa
+  (o botão de chat dos detalhes reaproveita a conversa existente).
+- O caminho pela lista do painel "Conversas" não achou a conversa em nenhum caso.
 
 ---
 
@@ -675,9 +795,17 @@ vem de `ConfiguracaoAtendimento`.
 
 - A extensão só funciona com **Chrome aberto no Gestor web, logado**. Gestor desktop ou Android
   não servem.
-- Recomendação: **uma aba dedicada** à extensão, que a equipe não usa para operar, se a Fase 0
-  confirmar que o Gestor aceita duas abas. Se não aceitar, a pausa por interação humana é a
-  proteção, e o envio fica mais lento nos horários de pico.
+- **A aba designada precisa ficar visível na tela:** janela própria do Chrome, aba em primeiro
+  plano nela, janela não minimizada e, no Windows, não totalmente coberta por outra janela
+  (o Chrome trata janela coberta como oculta). Escondida, a extensão continua funcionando, mas
+  o Chrome reduz o ciclo para ~1 por minuto e o CRM mostra o aviso. Num monitor só, deixar a
+  janela do Gestor num canto, parcialmente visível, já basta.
+- Desativar a suspensão automática e o bloqueio de tela do computador que roda a extensão
+  nos horários de operação.
+- A aba designada deve ficar na **tela de pedidos** do Gestor (o fluxo 2 depende dos cards).
+- Se a Fase 0 confirmar que o Gestor aceita duas janelas: uma janela dedicada à extensão e
+  outra para a equipe operar. Se não aceitar, a equipe opera na mesma aba, a pausa por
+  interação humana é a proteção, e o envio fica mais lento nos horários de pico.
 - Instalação nesta versão: "Carregar sem compactação" em `chrome://extensions`. Publicação na
   Chrome Web Store (não listada) fica para depois.
 
@@ -691,6 +819,8 @@ vem de `ConfiguracaoAtendimento`.
 - **Entrega no máximo uma vez:** em falha no meio do envio, a mensagem fica `incerta` em vez de
   arriscar duplicar. Alguma mensagem pode não chegar; nenhuma chega em dobro.
 - **Ler conversas tira o badge de não lida do Gestor** (Fase 5). Ver acima.
+- **Aba escondida atrasa os envios** (throttling de timers do Chrome). É um risco operacional,
+  não técnico: mitigado pela regra de janela visível e pelo aviso no CRM.
 
 ## Fora do escopo
 
@@ -727,6 +857,16 @@ vem de `ConfiguracaoAtendimento`.
   `arretado-polling`.
 - Não usar `chrome.alarms` para o loop de 5 s (mínimo de 30 s no MV3); o relógio é do content
   script.
+- Não tratar aba oculta como erro nem parar o ciclo por isso; sinalizar via heartbeat e seguir
+  no ritmo que o Chrome permitir.
+- Não escolher a aba que processa pela aba em foco; só a aba designada reserva mensagens.
+- Não registrar listeners do Chrome dentro de callbacks ou funções async no background.
+- Não seguir para o passo seguinte do fluxo sem confirmar que a tela anterior abriu
+  (`painel_nao_abriu` em vez de procurar conversa na tela errada).
+- Não escrever no campo de mensagem sem antes conferir que o número no cabeçalho da conversa
+  aberta é o `display_id` da mensagem. Na dúvida, aborta.
+- Não localizar card de pedido por `includes` sobre os dígitos do texto do card; sempre pelo
+  rótulo exato `#NNNN`.
 - Não clicar em nada na página no diagnóstico do heartbeat; ele só testa seletores.
 - Não permitir que a IA cancele, altere pedido ou prometa compensação; regras fixas no prompt.
 - Não usar o SDK `anthropic`; `requests` puro, como em `estoque/claude_client.py`.
