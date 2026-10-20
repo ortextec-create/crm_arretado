@@ -35,14 +35,11 @@ Itens 1 a 4 corrigidos no mesmo commit, junto com a remoção da dedução "agua
 deploy com `systemctl restart arretado arretado-polling`. Além do pedido, `status-extensao/` passou
 a devolver `falhas_rota_recentes` (falhas `rota_nao_abriu` na última hora; o frontend alerta com 2+).
 
-1. **`aba_visivel` no heartbeat:** `ExtensaoHeartbeatView` grava só `aba_ok`/`seletores_ok`/`url`;
-   falta gravar `aba_visivel` em `ultimo_diagnostico`.
-2. **`status-extensao/`:** não devolve `aba_visivel`, e o limiar de `online` está em 60 s
-   (`ONLINE_SEGUNDOS`); o spec pede **90 s**.
-3. **`MensagemChat.origem`:** falta o valor `sistema` em `ORIGEM_CHOICES` (migration de
-   `choices`, sem alteração de schema). Só é usado na Fase 5, mas é barato fazer já.
-4. **Frontend (aba Extensão e `StatusExtensao`):** falta o estado "aba do Gestor oculta, envios
-   atrasados" e o alerta de falhas recentes `rota_nao_abriu` ("o iFood pode ter mudado a página").
+1. ✅ **`aba_visivel` no heartbeat:** gravado em `ultimo_diagnostico` (default `True` se a extensão não mandar).
+2. ✅ **`status-extensao/`:** devolve `aba_visivel`; limiar de `online` em 90 s (`ONLINE_SEGUNDOS`).
+3. ✅ **`MensagemChat.origem`:** valor `sistema` adicionado (migration `0002`).
+4. ✅ **Frontend (aba Extensão e `StatusExtensao`):** estado "aba do Gestor oculta, envios atrasados" e
+   alerta de `rota_nao_abriu` (via `falhas_rota_recentes`, 2+ falhas na última hora).
 5. Os erros da extensão (`painel_nao_abriu`, `rota_nao_abriu`, `conversa_errada`,
    `conversa_nao_identificada`, `interrompido_por_usuario`, `modo_seguro`) e os seletores são só
    da extensão; o backend guarda `erro` como texto livre. Nada a fazer no Django.
