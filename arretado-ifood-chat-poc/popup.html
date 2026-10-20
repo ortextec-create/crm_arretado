@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --caramelo:#B8730A; --marrom:#2B1A0A; --cinza:#6B6B6B; --borda:#e3dcd3; }
+  * { box-sizing: border-box; }
+  body { width: 360px; margin: 0; padding: 14px; font: 13px/1.4 system-ui, sans-serif; color: var(--marrom); background:#fffdf9; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: var(--cinza); font-size: 11px; margin-bottom: 12px; }
+  .status { padding: 6px 8px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; background:#f4efe8; }
+  .status.ok { background:#e6f4ea; color:#1e6b34; }
+  .status.err { background:#fdecea; color:#a02a1c; }
+  fieldset { border: 1px solid var(--borda); border-radius: 8px; padding: 10px; margin: 0 0 10px; }
+  legend { font-weight: 600; font-size: 12px; padding: 0 4px; }
+  label { display:block; font-size: 11px; color: var(--cinza); margin: 6px 0 2px; }
+  input[type=text], textarea { width:100%; padding:6px 8px; border:1px solid var(--borda); border-radius:6px; font: inherit; }
+  textarea { resize: vertical; min-height: 54px; }
+  .check { display:flex; gap:6px; align-items:center; margin-top:8px; font-size:12px; color: var(--marrom); }
+  button { width:100%; margin-top:8px; padding:8px; border:0; border-radius:6px; background: var(--caramelo); color:#fff; font-weight:600; cursor:pointer; }
+  button.sec { background:#fff; color: var(--marrom); border:1px solid var(--borda); }
+  button:disabled { opacity:.5; cursor: default; }
+  pre { max-height: 220px; overflow:auto; background:#1f1a15; color:#f4efe8; padding:8px; border-radius:6px; font-size:11px; white-space: pre-wrap; word-break: break-word; }
+  .aviso { color:#a02a1c; font-size:11px; margin-top:4px; }
+</style>
+</head>
+<body>
+  <h1>iFood Chat — POC v0.2</h1>
+  <div class="sub">Ortex Solutions · prova de conceito</div>
+
+  <div id="status" class="status">Verificando aba…</div>
+
+  <fieldset>
+    <legend>1. Diagnóstico</legend>
+    <button id="btnDiag" class="sec">Diagnosticar página</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>2. Mensagem de teste</legend>
+    <label for="numero">Nº do pedido, igual ao Gestor, com zeros (ex.: 0567)</label>
+    <input id="numero" type="text" inputmode="numeric" placeholder="0567">
+    <label for="orderId">ID iFood do pedido (opcional — final da URL ao abrir o pedido)</label>
+    <input id="orderId" type="text" placeholder="b2dece59-b994-42ee-b1b3-b836dcd18ac9">
+    <label for="mensagem">Mensagem</label>
+    <textarea id="mensagem">Olá! Teste de integração, pode desconsiderar 🙂</textarea>
+    <div class="check">
+      <input id="modoSeguro" type="checkbox" checked>
+      <label for="modoSeguro" style="margin:0;color:inherit;font-size:12px">Modo seguro (preenche, não envia)</label>
+    </div>
+    <div id="avisoEnvio" class="aviso" hidden>Atenção: vai ENVIAR de verdade ao cliente.</div>
+    <button id="btnEnviar">Executar teste</button>
+  </fieldset>
+
+  <pre id="saida" hidden></pre>
+  <button id="btnCopiar" class="sec" hidden>Copiar resultado</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

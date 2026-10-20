@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Ortex – iFood Chat (POC)",
+  "version": "0.2.0",
+  "description": "Prova de conceito: diagnostica o Gestor de Pedidos iFood e envia mensagem de teste no chat de um pedido.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://gestordepedidos.ifood.com.br/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://gestordepedidos.ifood.com.br/*"],
+      "js": ["selectors.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Ortex – iFood Chat (POC)"
+  }
+}
