@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --caramelo:#B8730A; --marrom:#2B1A0A; --cinza:#6B6B6B; --borda:#e3dcd3; }
+  * { box-sizing: border-box; }
+  body { width: 360px; margin: 0; padding: 14px; font: 13px/1.4 system-ui, sans-serif; color: var(--marrom); background:#fffdf9; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: var(--cinza); font-size: 11px; margin-bottom: 10px; }
+  .status { padding: 6px 8px; border-radius: 6px; font-size: 12px; margin-bottom: 10px; background:#f4efe8; }
+  .status.ok { background:#e6f4ea; color:#1e6b34; }
+  .status.warn { background:#fff4d6; color:#7a5a00; }
+  .status.err { background:#fdecea; color:#a02a1c; }
+  fieldset { border: 1px solid var(--borda); border-radius: 8px; padding: 10px; margin: 0 0 10px; }
+  legend { font-weight: 600; font-size: 12px; padding: 0 4px; }
+  label { display:block; font-size: 11px; color: var(--cinza); margin: 6px 0 2px; }
+  input[type=text], input[type=password] { width:100%; padding:6px 8px; border:1px solid var(--borda); border-radius:6px; font: inherit; }
+  .check { display:flex; gap:6px; align-items:center; margin-top:8px; font-size:12px; }
+  .check label { margin:0; color:inherit; font-size:12px; }
+  button { width:100%; margin-top:8px; padding:8px; border:0; border-radius:6px; background: var(--caramelo); color:#fff; font-weight:600; cursor:pointer; }
+  button.sec { background:#fff; color: var(--marrom); border:1px solid var(--borda); }
+  button:disabled { opacity:.5; cursor: default; }
+  .aba { display:flex; gap:6px; align-items:flex-start; font-size:11px; margin:4px 0; }
+  .aba span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:290px; }
+  .aviso { color:#a02a1c; font-size:11px; margin-top:4px; }
+  pre { max-height: 200px; overflow:auto; background:#1f1a15; color:#f4efe8; padding:8px; border-radius:6px; font-size:11px; white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+  <h1>Ortex – iFood Chat</h1>
+  <div class="sub" id="versao">Ortex Solutions</div>
+
+  <div id="status" class="status">Verificando…</div>
+
+  <fieldset>
+    <legend>Conexão com o CRM</legend>
+    <label for="url">URL do CRM</label>
+    <input id="url" type="text" placeholder="https://arretado.ortex.solutions">
+    <label for="token">Token da extensão</label>
+    <input id="token" type="password" autocomplete="off" placeholder="cole o token (mostrado uma única vez no CRM)">
+    <button id="btnSalvar">Salvar e testar</button>
+    <div id="msgSalvar" class="aviso" hidden></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Operação</legend>
+    <div class="check"><input id="ativo" type="checkbox"><label for="ativo">Ligada (processa a fila)</label></div>
+    <div class="check"><input id="modoSeguro" type="checkbox"><label for="modoSeguro">Modo seguro (preenche, não envia)</label></div>
+    <div id="avisoEnvio" class="aviso" hidden>Atenção: com o modo seguro desligado, as mensagens são ENVIADAS de verdade aos clientes.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Aba do Gestor que processa a fila</legend>
+    <div id="abas"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Diagnóstico</legend>
+    <button id="btnDiag" class="sec">Diagnosticar aba designada</button>
+    <pre id="saida" hidden></pre>
+    <button id="btnCopiar" class="sec" hidden>Copiar resultado</button>
+  </fieldset>
+
+  <script src="popup.js"></script>
+</body>
+</html>

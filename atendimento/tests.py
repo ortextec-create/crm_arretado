@@ -268,6 +268,7 @@ class ExtensaoAPITests(TestCase):
         r3 = self.api.post('/api/v1/atendimento/extensao/fila/reservar/')
         self.assertEqual((r1.data['id'], r2.data['id'], r3.status_code), (a.id, b.id, 204))
         self.assertEqual(r1.data['display_id'], '1234')
+        self.assertEqual(r1.data['ifood_order_id'], a.pedido.ifood_order_id)
         a.refresh_from_db()
         self.assertEqual((a.status, a.tentativas), ('enviando', 1))
         self.assertIsNotNone(a.reservado_em)

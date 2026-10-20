@@ -131,7 +131,7 @@ class ExtensaoReservarView(ExtensaoBaseView):
             msg.save(update_fields=['status', 'reservado_em', 'tentativas'])
         return Response({
             'id': msg.id, 'display_id': msg.pedido.display_id,
-            'texto': msg.texto, 'empresa_nome': msg.empresa.nome,
+            'ifood_order_id': msg.pedido.ifood_order_id, 'texto': msg.texto, 'empresa_nome': msg.empresa.nome,
         })
 
 
