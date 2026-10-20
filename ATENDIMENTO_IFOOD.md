@@ -22,6 +22,14 @@
 | 5 | 🔲 Pendente | Desbloqueada: a estrutura das mensagens foi levantada na Fase 0 (falta só o marcador de não lida por conversa) |
 | 6 | 🔲 Pendente | |
 
+**Bug da extensão 1.0.0, corrigido na 1.0.2 (20/out):** em `background.js`, `api()` declarava
+`const dados = await r.json()` dentro do `try`, sombreando o parâmetro `dados` usado em
+`JSON.stringify(dados)` no mesmo bloco → `ReferenceError` (temporal dead zone) em todo POST
+(heartbeat, `reservar/`, `resultado/`). O GET de `config/` passava, então o "Salvar e testar" não
+pegou. Correção: variável renomeada para `corpo`. Também: o erro de chamada deixou de ser engolido
+(`console.error` + `erroApiDetalhe` no `chrome.storage.session`, exibido no popup) e o
+`TESTAR_CONEXAO` agora testa GET `config/` **e** POST `heartbeat/`.
+
 **Fase 0, item 6 (consulta em prod, 20/out):** `ARRIVED_AT_ORIGIN` (439) e `COLLECTED` (432)
 **chegam**, mas só em ~6% dos pedidos (a maioria é `DISPATCHED`, ~6.966, sem eles). Portanto
 `entregador_chegou_em` fica nulo na maior parte dos pedidos: o gatilho `entregador_chegou`

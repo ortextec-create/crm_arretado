@@ -12,7 +12,7 @@ function textoStatus(s) {
   if (!c.backendUrl || !c.temToken) return ['Configure a URL do CRM e o token.', 'warn'];
   if (!c.ativo) return ['Desligada.', 'warn'];
   if (s.erroApi === 'token_invalido') return ['Token inválido ou revogado. Gere outro no CRM.', 'err'];
-  if (s.erroApi === 'sem_backend') return ['Sem conexão com o CRM.', 'err'];
+  if (s.erroApi === 'sem_backend') return [`Sem conexão com o CRM.${s.erroApiDetalhe ? ' Detalhe: ' + s.erroApiDetalhe : ''}`, 'err'];
   if (s.designada == null) return [s.abas.length ? 'Escolha a aba do Gestor que processa a fila.' : 'Abra o Gestor de Pedidos iFood (web) e entre na conta.', 'warn'];
   const e = s.estadoContent;
   if (e?.nivel === 'vermelho') return [e.motivo, 'err'];
@@ -63,7 +63,7 @@ $('btnSalvar').addEventListener('click', async () => {
   await chrome.storage.local.set(dados);
   $('token').value = '';
   const r = await bg({ type: 'TESTAR_CONEXAO' });
-  if (!r.ok) { msg.textContent = r.erro === 'token_invalido' ? 'Token inválido ou revogado.' : `Falha ao conectar (${r.erro}).`; msg.hidden = false; }
+  if (!r.ok) { msg.textContent = r.erro === 'token_invalido' ? 'Token inválido ou revogado.' : `Falha ao conectar (${r.erro})${r.detalhe ? ': ' + r.detalhe : ''}.`; msg.hidden = false; }
   carregar();
 });
 

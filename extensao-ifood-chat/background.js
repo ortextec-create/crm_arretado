@@ -88,12 +88,19 @@ async function api(caminho, { get = false, dados = {} } = {}) {
     });
     if (r.status === 401 || r.status === 403) { await marcarErroApi('token_invalido'); return { ok: false, erro: 'token_invalido', status: r.status }; }
     await marcarErroApi(null);
+    await chrome.storage.session.remove('erroApiDetalhe');
     if (r.status === 204) return { ok: true, status: 204 };
-    const dados = await r.json().catch(() => null);
-    return { ok: r.ok, status: r.status, dados };
+    // `corpo`, não `dados`: um `const dados` aqui dentro sombreava o parâmetro `dados` e o
+    // JSON.stringify(dados) acima caía na "temporal dead zone" (ReferenceError em todo POST).
+    const corpo = await r.json().catch(() => null);
+    return { ok: r.ok, status: r.status, dados: corpo };
   } catch (e) {
+    // Registra o motivo real: sem isso o Console fica vazio e o popup só diz "Sem conexão".
+    const detalhe = `${(e && e.name) || 'Erro'}: ${(e && e.message) || e} — ${base + API + caminho}`;
+    console.error('[Ortex] falha ao chamar o CRM:', detalhe, e);
+    await chrome.storage.session.set({ erroApiDetalhe: detalhe });
     await marcarErroApi('sem_backend');
-    return { ok: false, erro: 'sem_backend' };
+    return { ok: false, erro: 'sem_backend', detalhe };
   }
 }
 
@@ -152,8 +159,8 @@ async function tratarMensagem(msg, sender) {
       const abas = await abasGestor();
       const designada = await redesignar();
       const cfg = await local(['backendUrl', 'token', 'modoSeguro', 'ativo']);
-      const s = await sessao(['erroApi', 'estadoContent']);
-      return { ok: true, versao: VERSAO, abas, designada, config: { backendUrl: cfg.backendUrl || '', temToken: !!cfg.token, modoSeguro: cfg.modoSeguro !== false, ativo: cfg.ativo !== false }, erroApi: s.erroApi || null, estadoContent: s.estadoContent || null };
+      const s = await sessao(['erroApi', 'estadoContent', 'erroApiDetalhe']);
+      return { ok: true, versao: VERSAO, abas, designada, config: { backendUrl: cfg.backendUrl || '', temToken: !!cfg.token, modoSeguro: cfg.modoSeguro !== false, ativo: cfg.ativo !== false }, erroApi: s.erroApi || null, erroApiDetalhe: s.erroApiDetalhe || null, estadoContent: s.estadoContent || null };
     }
     case 'DESIGNAR': {
       await chrome.storage.session.set({ abaDesignadaId: msg.tabId });
@@ -161,8 +168,11 @@ async function tratarMensagem(msg, sender) {
       return { ok: true };
     }
     case 'TESTAR_CONEXAO': {
-      const r = await api('config/', { get: true });
-      return { ok: r.ok, erro: r.erro || (r.ok ? null : `http_${r.status}`) };
+      // GET + POST: testar só o GET deixou passar o bug do `dados` sombreado (todo POST quebrava).
+      // O heartbeat é inofensivo; o do content script o sobrescreve em poucos segundos.
+      let r = await api('config/', { get: true });
+      if (r.ok) r = await api('heartbeat/', { dados: { versao: VERSAO, aba_ok: false, aba_visivel: false, teste: true } });
+      return { ok: r.ok, erro: r.erro || (r.ok ? null : `http_${r.status}`), detalhe: r.detalhe || null };
     }
     default: return { ok: false, erro: 'tipo_desconhecido' };
   }
