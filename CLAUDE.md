@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 20/out/2026 — Atendimento iFood (chat via extensão de Chrome) com Fases 0, 1, 3 e 4 no código e Fase 2 escrita, aceite pendente (ver `ATENDIMENTO_IFOOD.md`); Cobrança ativa em prod (ver `COBRANCA.md`). O histórico de
+> Última atualização: 20/out/2026 — Atendimento iFood (chat via extensão de Chrome) com Fases 0-4 concluídas (Fase 2 aceita em 20/out, extensão 1.0.2) (ver `ATENDIMENTO_IFOOD.md`); Cobrança ativa em prod (ver `COBRANCA.md`). O histórico de
 > implementação de cada feature grande (fases, decisões, bugs encontrados, datas de deploy) vive nos specs
 > dedicados (`MULTIEMPRESA.md`, `FINANCEIRO.md`, `BRINDES_PERMUTAS.md`, `Contrato.md`, `FRETE.md`,
 > `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`, `COBRANCA.md`, `ATENDIMENTO_IFOOD.md`) e na memória do Claude Code (`MEMORY.md` e
@@ -170,8 +170,8 @@ arretado/                        ← raiz Django
 │                                     `transaction.atomic()`)
 ├── atendimento/                  ← Atendimento iFood — mensagens automáticas/manuais no chat do pedido, via
 │   │                               extensão de Chrome que opera o Gestor de Pedidos web (spec em
-│   │                               `ATENDIMENTO_IFOOD.md`; fases 0, 1, 3, 4 no código, 2 escrita com aceite
-│   │                               pendente, 5-6 pendentes). Fala com o CLIENTE do pedido iFood (substitui o
+│   │                               `ATENDIMENTO_IFOOD.md`; fases 0-4 concluídas, 2 aceita em 20/out, 5-6 pendentes).
+│   │                               Fala com o CLIENTE do pedido iFood (substitui o
 │   │                               WhatsApp de pedido iFood, removido de `ifood/views.py`)
 │   ├── models.py                 ← ConfiguracaoAtendimento (1 por empresa, `get(empresa)`, `chat_ativo`
 │   │                                nasce False), ConfiguracaoExtensao (singleton — seletores/tempos
@@ -604,7 +604,7 @@ arretado-crm/                    ← raiz React
 | Multi-Empresa + Temas | Fases 0-5 de 6 (ver `MULTIEMPRESA.md`) | 🔄 Deployado 24/ago/2026 (v1.5.0) — falta só cadastrar a MANGAIO |
 | Brindes e Permutas | Campo `natureza` por item, 5 de 5 fases (ver `BRINDES_PERMUTAS.md`) | ✅ Concluída (v1.5.1) |
 | Remarcação e Adiamento de Eventos | Remarcar, adiar sem data, retomar, encerrar com acerto, aditivo de data, alertas (ver `ADIAMENTO.md`) | ✅ Deployado 14/out/2026 (v1.7.0) — falta só revisão jurídica da cláusula de adiamento |
-| Atendimento iFood (chat) | Mensagens por status/atraso no chat do pedido via extensão de Chrome, 6 fases (ver `ATENDIMENTO_IFOOD.md`) | 🔄 Fases 0, 1, 3, 4 no código (cron `verificar_atrasos_ifood` ativo no crontab); Fase 2 (`extensao-ifood-chat/`) escrita em 20/out, aceite pendente no Gestor real; 5 (IA) e 6 pendentes. `chat_ativo` nasce desligado (estado em prod não conferido) |
+| Atendimento iFood (chat) | Mensagens por status/atraso no chat do pedido via extensão de Chrome, 6 fases (ver `ATENDIMENTO_IFOOD.md`) | 🔄 Fases 0-4 concluídas (cron `verificar_atrasos_ifood` ativo no crontab); Fase 2 (`extensao-ifood-chat/`, v1.0.2) aceita em 20/out; 5 (IA) e 6 pendentes. `chat_ativo` nasce desligado (estado em prod não conferido) |
 | Cobrança de Eventos | Régua automática de WhatsApp + ligações da equipe, 7 de 7 fases (ver `COBRANCA.md`) | ✅ Deployada e ativa em prod (`ativo_desde` 09/out/2026, crontab `30 9 * * *`, 3 envios reais até 17/out) |
 
 ---
@@ -1120,4 +1120,4 @@ Infra já configurada em produção (não precisa recriar):
 - Não voltar a enviar WhatsApp de pedido iFood — o telefone do consumidor não é exposto pelo iFood; o canal é o chat
 - Não criar campo não-nulo em `PedidoIFood` (migration de `ifood`/`atendimento` sem reiniciar `arretado-polling` repete o incidente dos 245 pedidos)
 - Não usar `chrome.alarms` pro loop de 5 s da extensão (mínimo 30 s no MV3) — o relógio é do content script, e a extensão exige a aba designada visível
-- Não ligar `chat_ativo` nem desligar o modo seguro da extensão sem o aceite da Fase 2 feito no Gestor real
+- Não ligar `chat_ativo` nem desligar o modo seguro da extensão sem confirmar o estado atual (aceite da Fase 2 já dado em 20/out; ligar continua sendo decisão do usuário)

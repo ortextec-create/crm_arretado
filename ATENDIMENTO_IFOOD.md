@@ -16,7 +16,7 @@
 |---|---|---|
 | 0 | ✅ Concluída (20/out) | Itens 1-6 feitos; resultados em [Seletores validados](#seletores-validados). Item 6 rodado em prod (ver abaixo) |
 | 1 | ✅ Implementada (commit `5f2c2a5`) | App `atendimento/`, modelos, signal, `servico.enfileirar()`, endpoints, campos novos em `PedidoIFood` (migration `ifood/0010`), `entregador_chegou` no polling, WhatsApp de pedido iFood removido |
-| 2 | 🔄 Código escrito (20/out), aceite pendente | `extensao-ifood-chat/` criada (manifest MV3, background, content, popup, README). `reservar/` passou a devolver `ifood_order_id`. Falta rodar os critérios de aceite no Gestor real, começando pelo modo seguro |
+| 2 | ✅ Aceita (20/out, declarado pelo usuário; extensão 1.0.2) | `extensao-ifood-chat/` criada (manifest MV3, background, content, popup, README). `reservar/` passou a devolver `ifood_order_id`. Critérios de aceite dados como cumpridos no Gestor real |
 | 3 | ✅ Implementada (commit `5771faa`) | `verificar_atrasos_ifood` e cron `* * * * *` no crontab real |
 | 4 | ✅ Implementada (commit `f5086a2`) | `Atendimento.jsx`, rota, Sidebar, `MODULOS_OCULTAVEIS`, badge de atraso e chat em `IFood.jsx`, `StatusExtensao` |
 | 5 | 🔲 Pendente | Desbloqueada: a estrutura das mensagens foi levantada na Fase 0 (falta só o marcador de não lida por conversa) |
