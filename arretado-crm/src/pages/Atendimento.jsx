@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { atendimentoApi } from '../api/services'
 import { useAuth } from '../hooks/useAuth'
 import { Btn, Modal, Spinner, Toast, Field, Input, Empty } from '../components/ui'
-import { STATUS_MSG, VARIAVEIS, fmtHora } from '../components/atendimento/atendimento'
+import StatusExtensao from '../components/atendimento/StatusExtensao'
+import { STATUS_MSG, VARIAVEIS, fmtHora, mensagemDesatualizada } from '../components/atendimento/atendimento'
 import styles from './Atendimento.module.css'
 
 const msgErro = (e, padrao) => {
@@ -19,6 +20,8 @@ function AbaFila({ onToast }) {
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('')
   const [direcao, setDirecao] = useState('')
+  const [abertas, setAbertas] = useState(() => new Set())
+  const alternar = (id) => setAbertas((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const load = useCallback(() => {
     const params = { page_size: 100 }
@@ -44,7 +47,10 @@ function AbaFila({ onToast }) {
     } catch (e) { onToast(msgErro(e, 'Não foi possível cancelar.'), 'error'); load() }
   }
   const reenviar = async (m) => {
-    if (!window.confirm(`Reenviar a mensagem do pedido #${m.display_id}?\n\n${m.texto}`)) return
+    const aviso = mensagemDesatualizada(m)
+      ? `\n\nATENÇÃO: o pedido já avançou além deste gatilho (${m.gatilho_display}). A mensagem pode estar desatualizada para o cliente.`
+      : ''
+    if (!window.confirm(`Reenviar a mensagem do pedido #${m.display_id}?\n\n${m.texto}${aviso}`)) return
     try {
       await atendimentoApi.mensagens.reenviar(m.id)
       onToast('Nova mensagem enfileirada.')
@@ -79,14 +85,21 @@ function AbaFila({ onToast }) {
                 {msgs.map((m) => {
                   const st = STATUS_MSG[m.status] || { label: m.status, cls: 'st_neutro' }
                   return (
-                    <tr key={m.id}>
-                      <td><b>#{m.display_id}</b></td>
+                    <Fragment key={m.id}>
+                    <tr>
+                      <td>
+                        <button type="button" className={styles.expandir} onClick={() => alternar(m.id)}
+                          title={abertas.has(m.id) ? 'Ocultar passos' : 'Ver passos'}>
+                          <i className={`ti ti-chevron-${abertas.has(m.id) ? 'down' : 'right'}`} />
+                        </button> <b>#{m.display_id}</b></td>
                       <td>{m.gatilho_display || (m.direcao === 'entrada' ? 'Cliente' : m.origem)}
                         {m.autor_nome && <div className={styles.muted}>{m.autor_nome}</div>}</td>
                       <td className={styles.texto}>{m.texto}
                         {m.erro && <div className={styles.erroTxt}>{m.erro}</div>}</td>
                       <td><span className={`${styles.pill} ${styles[st.cls]}`}>{st.label}</span>
-                        {m.tentativas > 1 && <div className={styles.muted}>{m.tentativas} tentativas</div>}</td>
+                        {m.tentativas > 1 && <div className={styles.muted}>{m.tentativas} tentativas</div>}
+                        {m.status === 'pendente' && m.proxima_tentativa_em && new Date(m.proxima_tentativa_em) > new Date() && (
+                          <div className={styles.muted}>nova tentativa {fmtHora(m.proxima_tentativa_em)}</div>)}</td>
                       <td className={styles.muted}>{fmtHora(m.enviado_em || m.criado_em)}</td>
                       <td><div className={styles.acoes}>
                         {['pendente', 'sugerida'].includes(m.status) && (
@@ -95,6 +108,18 @@ function AbaFila({ onToast }) {
                           <Btn variant="ghost" size="sm" icon="refresh" onClick={() => reenviar(m)}>Reenviar</Btn>)}
                       </div></td>
                     </tr>
+                    {abertas.has(m.id) && (
+                      <tr className={styles.detalhe}>
+                        <td colSpan={6}>
+                          <div className={styles.muted}>
+                            Reservado: {fmtHora(m.reservado_em)} · Tentativas: {m.tentativas} · Erro: {m.erro || '—'}
+                          </div>
+                          {m.passos?.length
+                            ? <pre className={styles.passos}>{m.passos.join('\n')}</pre>
+                            : <div className={styles.muted}>Sem passos registrados.</div>}
+                        </td>
+                      </tr>)}
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -475,10 +500,13 @@ export default function Atendimento() {
           <p className={styles.subtitle}>Mensagens automáticas no chat dos pedidos iFood, enviadas pela extensão de Chrome.</p>
         </div>
         {cfg && (
-          <span className={styles.statusPill}>
-            <span className={`${styles.dot} ${!cfg.chat_ativo ? styles.dotOff : ''}`} />
-            {cfg.chat_ativo ? 'Chat automático ligado' : 'Chat automático desligado · nada é enviado'}
-          </span>
+          <div className={styles.statusGrupo}>
+            <span className={styles.statusPill}>
+              <span className={`${styles.dot} ${!cfg.chat_ativo ? styles.dotOff : ''}`} />
+              {cfg.chat_ativo ? 'Chat automático ligado' : 'Chat automático desligado · nada é enviado'}
+            </span>
+            <StatusExtensao className={styles.statusPill} />
+          </div>
         )}
       </div>
       <div className={styles.tabBar}>

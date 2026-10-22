@@ -319,6 +319,91 @@ class ExtensaoAPITests(TestCase):
         r = self.api.post(f'/api/v1/atendimento/extensao/fila/{alheia.id}/resultado/', {'ok': True}, format='json')
         self.assertEqual(r.status_code, 404)
 
+    # ── Nova tentativa automática (falha ANTES de enviar) ─────────────────────
+
+    URL_RES = '/api/v1/atendimento/extensao/fila/{}/resultado/'
+    URL_RESERVAR = '/api/v1/atendimento/extensao/fila/reservar/'
+
+    def _falhar(self, m, erro='painel_nao_abriu', passos=None):
+        r = self.api.post(self.URL_RES.format(m.id), {'ok': False, 'erro': erro, 'passos': passos or ['p']}, format='json')
+        self.assertEqual(r.status_code, 204)
+        m.refresh_from_db()
+
+    def test_falha_pre_envio_volta_para_pendente_so_depois_do_intervalo(self):
+        m = self._msg()
+        self.api.post(self.URL_RESERVAR)
+        antes = timezone.now()
+        self._falhar(m)
+        self.assertEqual(m.status, 'pendente')
+        self.assertGreaterEqual(m.proxima_tentativa_em, antes + timedelta(seconds=29))
+        self.assertEqual(self.api.post(self.URL_RESERVAR).status_code, 204)  # ainda no intervalo
+        MensagemChat.objects.filter(pk=m.pk).update(proxima_tentativa_em=timezone.now() - timedelta(seconds=1))
+        self.assertEqual(self.api.post(self.URL_RESERVAR).status_code, 200)
+        m.refresh_from_db()
+        self.assertEqual((m.status, m.tentativas), ('enviando', 2))
+
+    def test_intervalo_cresce_e_para_em_max_tentativas(self):
+        m = self._msg()
+        intervalos = []
+        for n in range(1, 4):
+            self.api.post(self.URL_RESERVAR)
+            self._falhar(m, passos=[f'a{n}'])
+            if m.status == 'pendente':
+                intervalos.append((m.proxima_tentativa_em - timezone.now()).total_seconds())
+                MensagemChat.objects.filter(pk=m.pk).update(proxima_tentativa_em=None)
+        self.assertEqual((m.status, m.tentativas), ('falha', 3))
+        self.assertIsNone(m.proxima_tentativa_em)
+        self.assertEqual(len(intervalos), 2)
+        self.assertLess(intervalos[0], 31)
+        self.assertGreater(intervalos[1], 80)
+        # passos acumulados (concatenados, não sobrescritos)
+        self.assertEqual([p for p in m.passos if not p.startswith('──')], ['a1', 'a2', 'a3'])
+
+    def test_max_tentativas_configuravel(self):
+        cfg = ConfiguracaoExtensao.get()
+        cfg.max_tentativas = 1
+        cfg.save()
+        m = self._msg()
+        self.api.post(self.URL_RESERVAR)
+        self._falhar(m)
+        self.assertEqual(m.status, 'falha')
+
+    def test_nao_volta_se_expirou(self):
+        m = self._msg(expira_em=timezone.now() + timedelta(minutes=5))
+        self.api.post(self.URL_RESERVAR)
+        MensagemChat.objects.filter(pk=m.pk).update(expira_em=timezone.now() - timedelta(seconds=1))
+        self._falhar(m)
+        self.assertEqual(m.status, 'falha')
+
+    def test_erros_fora_da_lista_nunca_voltam(self):
+        for erro in ('excecao', 'modo_seguro', 'lease_vencido', 'qualquer_coisa'):
+            m = self._msg()
+            self.api.post(self.URL_RESERVAR)
+            self._falhar(m, erro=erro)
+            self.assertEqual(m.status, 'falha', erro)
+
+    def test_incerta_por_lease_nunca_volta(self):
+        m = self._msg()
+        self.api.post(self.URL_RESERVAR)
+        MensagemChat.objects.filter(pk=m.pk).update(reservado_em=timezone.now() - timedelta(seconds=500))
+        self.assertEqual(self.api.post(self.URL_RESERVAR).status_code, 204)
+        m.refresh_from_db()
+        self.assertEqual(m.status, 'incerta')
+        r = self.api.post(self.URL_RES.format(m.id), {'ok': False, 'erro': 'painel_nao_abriu'}, format='json')
+        self.assertEqual(r.status_code, 409)
+
+    def test_sucesso_na_segunda_tentativa_limpa_proxima(self):
+        m = self._msg()
+        self.api.post(self.URL_RESERVAR)
+        self._falhar(m)
+        MensagemChat.objects.filter(pk=m.pk).update(proxima_tentativa_em=None)
+        self.api.post(self.URL_RESERVAR)
+        self.api.post(self.URL_RES.format(m.id), {'ok': True, 'passos': ['ok']}, format='json')
+        m.refresh_from_db()
+        self.assertEqual(m.status, 'enviada')
+        self.assertEqual(m.erro, '')
+        self.assertIsNone(m.proxima_tentativa_em)
+
 
 class ReservarConcorrenciaTests(TransactionTestCase):
     """Em Postgres o skip_locked garante; aqui garantimos o contrato sequencial de 2 extensões."""

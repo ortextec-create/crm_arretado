@@ -94,16 +94,9 @@
     return r.width > 0 && r.height > 0;
   }
 
-  async function waitUntil(fn, timeout) {
-    const inicio = Date.now();
-    while (Date.now() - inicio < timeout) {
-      checarInterrupcao();
-      const v = fn();
-      if (v) return v;
-      await sleep(150);
-    }
-    return null;
-  }
+  // Confere SEMPRE depois do último sleep e só desiste após um mínimo de conferências (ver espera.js):
+  // com a aba oculta/coberta o Chrome estica os timers e o relógio sozinho não é confiável.
+  const waitUntil = window.ORTEX_ESPERA.criarWaitUntil({ sleep, antesDeConferir: () => checarInterrupcao() });
 
   async function waitFor(key, timeout) {
     const r = await waitUntil(() => {
@@ -252,7 +245,10 @@
   // ── Processar uma mensagem ────────────────────────────────────────────────
 
   async function processar(m, modoSeguro) {
+    // Cada passo também vai pro Console da aba (diagnóstico sem depender do CRM)
     const passos = [];
+    const empurrar = passos.push.bind(passos);
+    passos.push = (...novos) => { for (const p of novos) LOG(`#${m.display_id}`, p); return empurrar(...novos); };
     fluxoIniciadoEm = Date.now();
     try {
       await limparEstado();
@@ -271,8 +267,12 @@
       }
       if (!m.ifood_order_id || falhaRota) {
         try { await abrirPelaLista(m.display_id, passos); } catch (e) {
-          // pedido sem conversa ainda: a rota era o único caminho, então a causa raiz é ela
-          if (e instanceof FluxoErro && e.codigo === 'conversa_nao_encontrada' && falhaRota) throw falhaRota;
+          // rota falhou E a lista também: a causa raiz é a rota (é o caminho principal, e o alerta
+          // `rota_nao_abriu` do CRM depende disso); a falha da lista fica registrada nos passos
+          if (e instanceof FluxoErro && falhaRota && e.codigo !== 'interrompido_por_usuario') {
+            passos.push(`lista: também falhou (${e.codigo})`);
+            throw falhaRota;
+          }
           throw e;
         }
       }

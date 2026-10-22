@@ -522,9 +522,13 @@ arretado-crm/                    ← raiz React
   saída (nunca `.objects.create()` direto); o signal de `PedidoIFood` só grava no banco, nunca faz HTTP,
   e é idempotente (`.exists()` + `UniqueConstraint` condicional: 1 automática por gatilho por pedido).
   Texto é snapshot renderizado na criação (`render.renderizar()`, `str.replace`). **Entrega no máximo
-  uma vez:** `reservar/` usa `select_for_update(skip_locked=True)`, uma mensagem por chamada; `enviando`
-  além do lease vira `incerta`; `incerta`/`falha` NUNCA voltam a `pendente` sozinhas — reenvio é ação
-  humana (`reenviar/`) e cria mensagem NOVA (`origem='manual'`). `TokenExtensao` guarda só SHA-256
+  uma vez:** `reservar/` usa `select_for_update(skip_locked=True)`, uma mensagem por chamada (só `pendente` com
+  `proxima_tentativa_em` nulo ou vencido); `enviando` além do lease vira `incerta`; `incerta` NUNCA volta a
+  `pendente` sozinha — reenvio é ação humana (`reenviar/`) e cria mensagem NOVA (`origem='manual'`). `falha`
+  **antes de enviar** (`ERROS_REPETIVEIS`: rota/painel/conversa não abriu ou errada, interrompido, sem botão)
+  volta a `pendente` com espera de 30 s/90 s até `ConfiguracaoExtensao.max_tentativas` (3) e se não expirou;
+  `excecao`/`modo_seguro`/erro fora da lista nunca voltam; `passos` acumulam entre tentativas. Na extensão,
+  `waitUntil` (`espera.js`) sempre confere depois do último sleep (aba coberta estica timers) `TokenExtensao` guarda só SHA-256
   (token em texto puro aparece uma vez na criação), revogar é `ativo=False`, sem DELETE; a extensão
   autentica com `X-Extensao-Token` só em `/extensao/`, e o token só vê empresas de `token.empresas`.
   Nunca liberar CORS pro iFood: a rede da extensão passa pelo background. **Trava de conversa errada:** a
@@ -1108,7 +1112,7 @@ Infra já configurada em produção (não precisa recriar):
 - Não reimplementar fase/próxima ação da régua no frontend (`Cobranca.jsx`/`CobrancaBadge.jsx`) — sempre ler de `fila/`/`linha-do-tempo/`, nunca lógica paralela de decisão em JS
 - Não fazer HTTP dentro do signal de `PedidoIFood` do atendimento — só grava `MensagemChat`
 - Não criar `MensagemChat` de saída fora de `atendimento/servico.py::enfileirar()`
-- Não devolver `incerta`/`falha` pra `pendente` automaticamente — reenvio é sempre mensagem nova criada por humano
+- Não devolver `incerta` pra `pendente` automaticamente — reenvio é sempre mensagem nova criada por humano; `falha` só volta sozinha em `ERROS_REPETIVEIS` (pré-envio), até `max_tentativas`, nunca `excecao`/`modo_seguro`
 - Não reservar mensagem sem `select_for_update(skip_locked=True)`, nem mais de uma por chamada; a extensão nunca processa em paralelo
 - Não re-renderizar texto de `MensagemChat` já enfileirada — é snapshot da criação
 - Não hardcodar nome de loja em texto padrão de atendimento — sempre `{loja}`

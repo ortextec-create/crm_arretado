@@ -35,3 +35,17 @@ export function minutosAtraso(pedido, toleranciaMin = 10, agora = Date.now()) {
   const diff = Math.floor((agora - new Date(pedido.previsao_entrega).getTime()) / 60000)
   return diff > toleranciaMin ? diff : 0
 }
+
+// Reenviar mensagem de gatilho de status quando o pedido já passou dele (ex.: "confirmado" em CONCLUDED).
+const ORDEM_STATUS = ['PLACED', 'CONFIRMED', 'PREPARATION_STARTED', 'READY_TO_PICKUP', 'DISPATCHED', 'CONCLUDED']
+const STATUS_DO_GATILHO = {
+  confirmado: 'CONFIRMED', em_preparo: 'PREPARATION_STARTED', pronto_retirada: 'READY_TO_PICKUP',
+  pronto_entrega: 'READY_TO_PICKUP', saiu_entrega: 'DISPATCHED', concluido: 'CONCLUDED',
+}
+
+export function mensagemDesatualizada(m) {
+  const alvo = STATUS_DO_GATILHO[m.gatilho]
+  if (!alvo || !m.pedido_status) return false
+  if (m.pedido_status === 'CANCELLED') return true
+  return ORDEM_STATUS.indexOf(m.pedido_status) > ORDEM_STATUS.indexOf(alvo)
+}

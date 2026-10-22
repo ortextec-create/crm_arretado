@@ -65,6 +65,8 @@ class ConfiguracaoExtensao(models.Model):
     intervalo_segundos = models.PositiveIntegerField(default=5)
     pausa_interacao_segundos = models.PositiveIntegerField(default=15)
     lease_segundos = models.PositiveIntegerField(default=120)
+    # Tentativas totais (inclui a 1ª) para falhas ANTES de enviar — ver `RESULTADO_REPETIVEL`.
+    max_tentativas = models.PositiveSmallIntegerField(default=3)
 
     class Meta:
         verbose_name = 'Configuração da Extensão'
@@ -103,6 +105,15 @@ class ModeloMensagemChat(models.Model):
         return f'{self.empresa_id}:{self.gatilho}'
 
 
+# Erros em que nada chegou ao cliente: o backend pode devolver a mensagem à fila (até `max_tentativas`).
+# `incerta`, `excecao` e `modo_seguro` ficam de fora de propósito — nunca voltam sozinhas.
+ERROS_REPETIVEIS = frozenset({
+    'rota_nao_abriu', 'painel_nao_abriu', 'conversa_nao_encontrada', 'conversa_nao_identificada',
+    'conversa_errada', 'interrompido_por_usuario', 'sem_botao_enviar',
+})
+INTERVALOS_NOVA_TENTATIVA_SEGUNDOS = (30, 90)  # o último vale para as tentativas seguintes
+
+
 class MensagemChat(models.Model):
     """Fila de saída e registro de entrada do chat. Sem DELETE (histórico)."""
 
@@ -128,6 +139,7 @@ class MensagemChat(models.Model):
     reservado_em = models.DateTimeField(null=True, blank=True)
     enviado_em = models.DateTimeField(null=True, blank=True)
     expira_em = models.DateTimeField(null=True, blank=True)
+    proxima_tentativa_em = models.DateTimeField(null=True, blank=True)
     erro = models.TextField(blank=True, default='')
     passos = models.JSONField(default=list, blank=True)
     autor = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='mensagens_chat')

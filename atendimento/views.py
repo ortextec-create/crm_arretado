@@ -2,6 +2,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -20,7 +21,8 @@ from usuarios.permissions import IsAdminRole
 
 from .authentication import TokenExtensaoAuthentication, TokenExtensaoValido
 from .models import (
-    ConfiguracaoAtendimento, ConfiguracaoExtensao, MensagemChat, ModeloMensagemChat, TokenExtensao,
+    ERROS_REPETIVEIS, INTERVALOS_NOVA_TENTATIVA_SEGUNDOS, ConfiguracaoAtendimento, ConfiguracaoExtensao,
+    MensagemChat, ModeloMensagemChat, TokenExtensao,
 )
 from .render import renderizar
 from .serializers import (
@@ -120,6 +122,7 @@ class ExtensaoReservarView(ExtensaoBaseView):
                 .select_for_update(skip_locked=True, of=('self',))
                 .select_related('pedido', 'empresa')
                 .filter(status='pendente', direcao='saida', empresa_id__in=empresas_ids)
+                .filter(Q(proxima_tentativa_em__isnull=True) | Q(proxima_tentativa_em__lte=agora))
                 .order_by('criado_em', 'id')
                 .first()
             )
@@ -135,6 +138,15 @@ class ExtensaoReservarView(ExtensaoBaseView):
         })
 
 
+def _pode_tentar_de_novo(msg, agora):
+    """Só falha ANTES de enviar, dentro do limite de tentativas e da validade da mensagem."""
+    if msg.erro not in ERROS_REPETIVEIS:
+        return False
+    if msg.tentativas >= ConfiguracaoExtensao.get().max_tentativas:
+        return False
+    return msg.expira_em is None or msg.expira_em > agora
+
+
 class ExtensaoResultadoView(ExtensaoBaseView):
     def post(self, request, pk):
         empresas_ids = list(request.auth.empresas.values_list('id', flat=True))
@@ -144,16 +156,30 @@ class ExtensaoResultadoView(ExtensaoBaseView):
             )
             if msg.status != 'enviando':
                 return Response({'detail': f'Mensagem não está em envio (status: {msg.status}).'}, status=409)
-            passos = request.data.get('passos')
-            msg.passos = passos if isinstance(passos, list) else []
+            novos = request.data.get('passos')
+            novos = novos if isinstance(novos, list) else []
+            agora = timezone.now()
+            # Passos acumulam entre tentativas (nunca sobrescrevem); separador só a partir da 2ª.
+            antigos = list(msg.passos or [])
+            if antigos:
+                novos = [f'── tentativa {msg.tentativas} ──'] + novos
+            msg.passos = antigos + novos
+            campos = ['status', 'enviado_em', 'erro', 'passos', 'proxima_tentativa_em']
             if request.data.get('ok') is True:
                 msg.status = 'enviada'
-                msg.enviado_em = timezone.now()
+                msg.enviado_em = agora
                 msg.erro = ''
+                msg.proxima_tentativa_em = None
             else:
-                msg.status = 'falha'
                 msg.erro = str(request.data.get('erro', ''))[:1000]
-            msg.save(update_fields=['status', 'enviado_em', 'erro', 'passos'])
+                if _pode_tentar_de_novo(msg, agora):
+                    i = min(msg.tentativas, len(INTERVALOS_NOVA_TENTATIVA_SEGUNDOS)) - 1
+                    msg.status = 'pendente'
+                    msg.proxima_tentativa_em = agora + timedelta(seconds=INTERVALOS_NOVA_TENTATIVA_SEGUNDOS[max(i, 0)])
+                else:
+                    msg.status = 'falha'
+                    msg.proxima_tentativa_em = None
+            msg.save(update_fields=campos)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

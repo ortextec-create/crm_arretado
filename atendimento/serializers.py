@@ -16,7 +16,7 @@ class ConfiguracaoAtendimentoSerializer(serializers.ModelSerializer):
 class ConfiguracaoExtensaoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConfiguracaoExtensao
-        fields = ['seletores', 'tempos_ms', 'intervalo_segundos', 'pausa_interacao_segundos', 'lease_segundos']
+        fields = ['seletores', 'tempos_ms', 'intervalo_segundos', 'pausa_interacao_segundos', 'lease_segundos', 'max_tentativas']
 
     def validate_seletores(self, v):
         if not isinstance(v, dict):
@@ -53,13 +53,14 @@ class MensagemChatSerializer(serializers.ModelSerializer):
     gatilho_display = serializers.CharField(source='get_gatilho_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     autor_nome = serializers.CharField(source='autor.name', read_only=True, default=None)
+    pedido_status = serializers.CharField(source='pedido.status', read_only=True)
 
     class Meta:
         model = MensagemChat
         fields = [
-            'id', 'empresa', 'pedido', 'display_id', 'direcao', 'origem', 'gatilho', 'gatilho_display',
+            'id', 'empresa', 'pedido', 'display_id', 'pedido_status', 'direcao', 'origem', 'gatilho', 'gatilho_display',
             'texto', 'status', 'status_display', 'tentativas', 'reservado_em', 'enviado_em',
-            'expira_em', 'erro', 'autor', 'autor_nome', 'criado_em',
+            'expira_em', 'proxima_tentativa_em', 'erro', 'passos', 'autor', 'autor_nome', 'criado_em',
         ]
         read_only_fields = fields
 

@@ -187,6 +187,7 @@ Configuração técnica da extensão, igual para todas as empresas. Sempre via `
 | `intervalo_segundos` | PositiveIntegerField | `5` | Intervalo de busca da fila |
 | `pausa_interacao_segundos` | PositiveIntegerField | `15` | Extensão não age se houve clique/tecla humana na aba nesse intervalo |
 | `lease_segundos` | PositiveIntegerField | `120` | Mensagem em `enviando` há mais que isso vira `incerta` |
+| `max_tentativas` | PositiveSmallIntegerField | `3` | Tentativas totais (inclui a 1ª) para falhas **antes de enviar** — ver máquina de status |
 
 Motivo de existir: **quando o iFood mudar o HTML, o conserto é um PATCH aqui, não reinstalar a
 extensão em cada loja cliente.** `PATCH` exige `IsAdminRole` e audita.
@@ -289,15 +290,26 @@ antes de criar (regra do `CLAUDE.md`), sem depender só da constraint.
 ```
 sugerida ──aprovar──▶ pendente ──reservar──▶ enviando ──resultado ok──▶ enviada
    │                    │  │                    │
-   └─cancelar─▶ cancelada  │                    ├──resultado erro──▶ falha
-                cancelar◀──┘                    └──lease vencido───▶ incerta
+   └─cancelar─▶ cancelada  │  ▲                 ├──erro pré-envio, tentativas < max,
+                cancelar◀──┘  └──(proxima_tentativa_em)◀─┘   não expirou ──▶ pendente
+                                                  ├──outro erro / esgotou / expirou ──▶ falha
+                                                  └──lease vencido───▶ incerta
               pendente com expira_em < agora ──▶ expirada
 ```
 
-- **Entrega no máximo uma vez.** `incerta` e `falha` **nunca** voltam a `pendente`
-  sozinhas. A extensão pode ter enviado e morrido antes de reportar; reenviar sozinho arrisca
-  mensagem duplicada para o cliente. Reenvio é ação humana (`reenviar/`), que cria uma
-  `MensagemChat` **nova** (`origem='manual'`).
+- **Entrega no máximo uma vez.** `incerta` **nunca** volta sozinha: a extensão pode ter enviado e
+  morrido antes de reportar, e reenviar arrisca mensagem duplicada. Reenvio é ação humana
+  (`reenviar/`), que cria uma `MensagemChat` **nova** (`origem='manual'`).
+- **`falha` antes de enviar volta até `max_tentativas`** (incidente de 22/out, ver Riscos). Só os
+  erros em que nada chegou ao cliente (`atendimento.models.ERROS_REPETIVEIS`: `rota_nao_abriu`,
+  `painel_nao_abriu`, `conversa_nao_encontrada`, `conversa_nao_identificada`, `conversa_errada`,
+  `interrompido_por_usuario`, `sem_botao_enviar`). Em `fila/{id}/resultado/`: `ok=false` + erro
+  na lista + `tentativas < max_tentativas` + não expirou (`expira_em` nulo ou futuro) → volta a
+  `pendente` com `proxima_tentativa_em = agora + 30 s` (1ª falha) / `90 s` (as seguintes);
+  `reservar/` só pega `pendente` com `proxima_tentativa_em` nulo ou `<= agora`. Senão → `falha`.
+  **Nunca** volta: `incerta`, `excecao`, `modo_seguro` ou qualquer erro fora da lista.
+- Os `passos` de cada tentativa são **concatenados** (separador `── tentativa N ──`), nunca
+  sobrescritos.
 - Entrada: status único `recebida`.
 
 ### Gatilho por status: `atendimento/signals.py`
@@ -409,6 +421,7 @@ POST /api/v1/atendimento/extensao/fila/{id}/resultado/
    `pendente` com `expira_em < agora` vira `expirada`.
 2. Seleciona a `pendente` mais antiga das empresas do token, com
    `select_for_update(skip_locked=True)`. Duas extensões nunca pegam a mesma.
+   Só entra `pendente` com `proxima_tentativa_em` nulo ou `<= agora`.
 3. Grava `status='enviando'`, `reservado_em=agora`, `tentativas += 1`.
 
 **Uma mensagem por chamada:** a extensão processa em série.
@@ -875,6 +888,16 @@ vem de `ConfiguracaoAtendimento`.
 - **Ler conversas tira o badge de não lida do Gestor** (Fase 5). Ver acima.
 - **Aba escondida atrasa os envios** (throttling de timers do Chrome). É um risco operacional,
   não técnico: mitigado pela regra de janela visível e pelo aviso no CRM.
+- **Incidente de 22/out/2026 — `painel_nao_abriu` em massa.** 238 falhas em 48 h (desde 20/out
+  16:35, mais fortes em horário comercial), com Gestor coberto por outra janela. Os passos mostram a
+  rota navegando e o botão de chat **clicado**, mas `campo de mensagem não apareceu` (5 s) e
+  `título "Conversas" não apareceu` (4 s); mensagens iguais saíam normalmente com o Gestor visível.
+  Causa provável: `waitUntil` conferia, dormia 150 ms e desistia pelo relógio sem conferir de
+  novo — com a aba coberta/oculta o Chrome estica os `setTimeout` (~1 s; ~60 s no *intensive
+  throttling*) e a espera estourava com o elemento já na tela. **Não confirmada** (só inferida dos
+  passos). Correções (extensão 1.0.4): `espera.js` confere sempre depois do último sleep e só
+  desiste após ≥ 3 conferências; erro da rota prevalece sobre o da lista; e o backend repete
+  falhas pré-envio até `max_tentativas`. Aba oculta deve ficar lenta, não falhar.
 
 ## Fora do escopo
 
@@ -894,8 +917,11 @@ vem de `ConfiguracaoAtendimento`.
 
 - Não fazer HTTP dentro do signal de `PedidoIFood`: o signal só grava `MensagemChat`.
 - Não criar `MensagemChat` de saída fora de `atendimento/servico.py::enfileirar()`.
-- Não devolver `incerta`/`falha` para `pendente` automaticamente; reenvio é sempre uma
-  mensagem nova criada por humano.
+- Não devolver `incerta` para `pendente` automaticamente; reenvio é sempre uma mensagem nova
+  criada por humano. `falha` só volta sozinha quando o erro está em `ERROS_REPETIVEIS` (nada foi
+  entregue), `tentativas < max_tentativas` e a mensagem não expirou — nunca `excecao`/`modo_seguro`.
+- Não reescrever `waitUntil` da extensão como "confere, dorme, desiste pelo relógio": sempre conferir
+  depois do último sleep e exigir um mínimo de conferências (`espera.js`).
 - Não deixar a extensão processar mensagens em paralelo nem reservar mais de uma por vez.
 - Não reservar sem `select_for_update(skip_locked=True)`.
 - Não liberar CORS no Django para `gestordepedidos.ifood.com.br`; a rede da extensão passa pelo
