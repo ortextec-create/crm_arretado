@@ -53,5 +53,5 @@ Os seletores embutidos (`selectors.js`) podem ser sobrescritos **sem reinstalar*
 | `content.js` | Relógio, fluxos de abrir conversa, trava de conversa errada, envio |
 | `background.js` | Service worker: toda a rede, aba designada, badge |
 | `selectors.js` | Seletores embutidos (fallback) |
-| `espera.js` | `waitUntil` imune a timers esticados (aba oculta/coberta); testes em `tests/` (`node --test extensao-ifood-chat/tests/`) |
+| `espera.js` | `waitUntil` imune a timers esticados (aba oculta/coberta); testes em `tests/` (`node --test extensao-ifood-chat/tests/espera.test.js`) |
 | `popup.*` | Configuração, status, escolha da aba, diagnóstico |

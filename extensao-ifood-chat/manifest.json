@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ortex – iFood Chat",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Envia no chat do Gestor de Pedidos iFood as mensagens enfileiradas pelo CRM.",
   "permissions": ["storage", "scripting", "tabs"],
   "host_permissions": ["https://gestordepedidos.ifood.com.br/*"],

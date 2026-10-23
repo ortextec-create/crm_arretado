@@ -447,6 +447,51 @@
     return o;
   }
 
+  /** Item clicável da lista de conversas: ancestral com position:absolute do h2 "#NNNN". */
+  function itemDaLista(h2) {
+    for (let el = h2.parentElement; el && el !== document.body; el = el.parentElement) {
+      if (getComputedStyle(el).position === 'absolute') return el;
+    }
+    return null;
+  }
+
+  /** Subárvore do item em linhas "  tag[testid][aria][.classes] \"texto-folha\"" (profundidade = recuo). */
+  function subarvore(raiz, max = 90) {
+    const linhas = [];
+    const visitar = (el, prof) => {
+      if (linhas.length >= max) return;
+      let l = `${'  '.repeat(prof)}${el.tagName.toLowerCase()}`;
+      for (const a of ['data-test-id', 'data-testid', 'aria-label', 'role', 'title']) {
+        const v = el.getAttribute(a);
+        if (v) l += `[${a}="${v.slice(0, 80)}"]`;
+      }
+      const cls = typeof el.className === 'string' ? el.className.trim() : '';
+      if (cls) l += ` .${cls.split(/\s+/).slice(0, 4).join('.')}`;
+      if (!el.children.length) {
+        const t = (el.textContent || '').trim().replace(/\s+/g, ' ');
+        if (t) l += ` "${t.slice(0, 80)}"`;
+      }
+      linhas.push(l);
+      for (const f of el.children) visitar(f, prof + 1);
+    };
+    visitar(raiz, 0);
+    if (linhas.length >= max) linhas.push('… (truncado)');
+    return linhas;
+  }
+
+  /** Diagnóstico da Fase 5 (só leitura): cada item da lista de conversas, para achar o marcador de não lida. */
+  function itensConversas() {
+    const itens = [];
+    for (const h2 of document.querySelectorAll('h2')) {
+      const numero = numeroDeRotulo(h2.textContent);
+      if (!numero) continue;
+      const item = itemDaLista(h2);
+      itens.push({ numero, itemEncontrado: !!item, arvore: item ? subarvore(item) : [] });
+      if (itens.length >= 15) break;
+    }
+    return itens;
+  }
+
   function diagnosticar() {
     const seletores = {};
     for (const key of Object.keys(SELETORES)) {
@@ -463,6 +508,7 @@
       seletores,
       numeroConversaAberta: numeroDaConversaAberta(),
       painelConversasAberto: !!tituloPainel(),
+      itensConversas: itensConversas(),
       testIds: Array.from(testIds).sort(),
       botoesAriaLabel: Array.from(new Set(Array.from(document.querySelectorAll('button[aria-label]')).map((b) => resumo(b)['aria-label']))),
     };

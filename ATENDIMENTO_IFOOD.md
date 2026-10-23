@@ -19,8 +19,12 @@
 | 2 | ✅ Aceita (20/out, declarado pelo usuário; extensão 1.0.2) | `extensao-ifood-chat/` criada (manifest MV3, background, content, popup, README). `reservar/` passou a devolver `ifood_order_id`. Critérios de aceite dados como cumpridos no Gestor real |
 | 3 | ✅ Implementada (commit `5771faa`) | `verificar_atrasos_ifood` e cron `* * * * *` no crontab real |
 | 4 | ✅ Implementada (commit `f5086a2`) | `Atendimento.jsx`, rota, Sidebar, `MODULOS_OCULTAVEIS`, badge de atraso e chat em `IFood.jsx`, `StatusExtensao` |
-| 5 | 🔲 Pendente | Desbloqueada: a estrutura das mensagens foi levantada na Fase 0 (falta só o marcador de não lida por conversa) |
+| 5 | 🔄 Em andamento | **5A** (leitura, sem IA): passo 1 = extensão 1.0.5 só com diagnóstico ampliado (`itensConversas` no popup, lista cada item "#NNNN" com subárvore) para achar o marcador de não lida por conversa; passo 2 (leitura, endpoint, `ConversaChat`, aba Conversas) aguarda o resultado. **5B** (IA) depois |
 | 6 | 🔲 Pendente | |
+
+**Aceite da extensão 1.0.4 (declarado pelo usuário):** envio funcionando com a janela do Gestor
+coberta por outra janela — o incidente `painel_nao_abriu` de 22/out (ver Riscos conhecidos) não se
+repete. A causa continua não confirmada, só inferida; o aceite é por resultado.
 
 **Bug da extensão 1.0.0, corrigido na 1.0.2 (20/out):** em `background.js`, `api()` declarava
 `const dados = await r.json()` dentro do `try`, sombreando o parâmetro `dados` usado em
