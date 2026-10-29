@@ -1,7 +1,7 @@
 # Arretado Doces — CRM Proprietário
 
 > Arquivo lido automaticamente pelo Claude Code em toda sessão.
-> Última atualização: 20/out/2026 — Atendimento iFood (chat via extensão de Chrome) com Fases 0-4 concluídas (Fase 2 aceita em 20/out, extensão 1.0.2) (ver `ATENDIMENTO_IFOOD.md`); Cobrança ativa em prod (ver `COBRANCA.md`). O histórico de
+> Última atualização: 28/out/2026 — Atendimento iFood (chat via extensão de Chrome) com Fases 0-4 concluídas (Fase 2 aceita em 20/out, extensão 1.0.2), rodando no container `gestor-bot` com watchdog e alerta de extensão offline (28/out) (ver `ATENDIMENTO_IFOOD.md`); Cobrança ativa em prod (ver `COBRANCA.md`). O histórico de
 > implementação de cada feature grande (fases, decisões, bugs encontrados, datas de deploy) vive nos specs
 > dedicados (`MULTIEMPRESA.md`, `FINANCEIRO.md`, `BRINDES_PERMUTAS.md`, `Contrato.md`, `FRETE.md`,
 > `backup.md`, `IFOOD_RECEITA_DASHBOARD.md`, `COBRANCA.md`, `ATENDIMENTO_IFOOD.md`) e na memória do Claude Code (`MEMORY.md` e
