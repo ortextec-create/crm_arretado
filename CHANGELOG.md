@@ -11,6 +11,7 @@ corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 - **Alerta de extensão do chat iFood offline** (`verificar_extensao`, cron */5): avisa a equipe por WhatsApp
   (`TelefoneAlertaAtendimento`) quando a extensão fica > 10 min sem heartbeat com trabalho pendente; avisa
   também quando volta. Migrations `atendimento/0004`, `notificacoes/0013`.
+- **Alerta de fila do chat parada** (no `verificar_extensao`): pendente mais antiga > 10 min ou falhas sem nenhum envio, mesmo com a extensão online. Migration `atendimento/0005`.
 - **`infra/gestor-bot/`** versionado, com watchdog do Chromium (porta de depuração em loopback) e `HEALTHCHECK`.
 
 ## [v1.7.0] - 2026-10-14

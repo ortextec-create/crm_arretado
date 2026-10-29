@@ -1131,6 +1131,7 @@ Infra já configurada em produção (não precisa recriar):
 - Não criar campo não-nulo em `PedidoIFood` (migration de `ifood`/`atendimento` sem reiniciar `arretado-polling` repete o incidente dos 245 pedidos)
 - Não usar `chrome.alarms` pro loop de 5 s da extensão (mínimo 30 s no MV3) — o relógio é do content script, e a extensão exige a aba designada visível
 - Não usar `verificar_extensao` pra falar com cliente — é alerta da **equipe** (`TelefoneAlertaAtendimento`), independente de `alertar_eventos`/cobrança; alerta só com `chat_ativo` + trabalho pendente + offline > 10 min, uma vez por queda (`alertado_offline_em`)
+- `verificar_extensao` tem dois sinais: heartbeat (offline) e fila parada (pendente mais antiga > 10 min / falhas sem envio, `modo_seguro` ignorado) — nunca alertar por contagem de pendentes, só por idade; empresa offline não recebe o aviso de fila (sem duplicar)
 - Não expor a porta de depuração do Chromium (9222) nem o noVNC (6080) fora do loopback; `.env` do `infra/gestor-bot/` (senha do VNC) nunca vai pro git
 - Não depender só do supervisord pro `gestor-bot`: ele não enxerga Chromium travado com o processo vivo (daí o watchdog); extensão parada/iFood deslogado só o alerta cobre
 - Não ligar `chat_ativo` nem desligar o modo seguro da extensão sem confirmar o estado atual (aceite da Fase 2 já dado em 20/out; ligar continua sendo decisão do usuário)

@@ -44,6 +44,17 @@ ninguém ser avisado.
   WhatsApp (`notificar(..., tipo='alerta_extensao')`) os `TelefoneAlertaAtendimento` ativos. Um aviso
   por queda (`TokenExtensao.alertado_offline_em`), repete a cada 2 h enquanto continuar fora e avisa
   quando volta. Fala com a **equipe**, nunca com o cliente. Sem telefone ativo, só `logger.warning`.
+- **Alerta de fila parada (segundo sinal, independente do heartbeat):** cobre a extensão online que
+  não entrega (iFood deslogado, aba errada, seletores quebrados). Por empresa com `chat_ativo`, avisa
+  quando a `MensagemChat` de saída `pendente` **mais antiga** (criada nas últimas 3 h, sem
+  `proxima_tentativa_em` futura) tem mais de 10 min — idade, não contagem, porque rajada de pedidos é
+  normal — ou quando há ≥ 3 `falha`/`incerta` nos últimos 30 min **sem nenhuma `enviada`** na janela.
+  `modo_seguro` não conta (proposital). Empresa cuja extensão já está offline não recebe este aviso
+  (o alerta de offline já explica). Estado em `ConfiguracaoAtendimento.alertado_fila_parada_em`: um aviso
+  por episódio, repete a cada 2 h, avisa "voltou a andar". Limites são constantes de
+  `verificar_extensao.py` (`LIMITE_FILA_MIN`, `JANELA_FILA_HORAS`, `MIN_FALHAS`, `JANELA_FALHAS_MIN`).
+  Pendente velha de queda antiga é ignorada porque a varredura de expiração só roda quando a extensão
+  chama `reservar/`. Migration `atendimento/0005`.
 - **Telefones:** `atendimento.TelefoneAlertaAtendimento` (admin), API
   `/api/v1/atendimento/telefones-alerta/` (CRUD, DELETE auditado). **Sem tela no frontend ainda** —
   cadastro por API/shell.

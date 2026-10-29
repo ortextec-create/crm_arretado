@@ -758,3 +758,80 @@ class VerificarExtensaoTests(TestCase):
         _pedido(self.empresa, status='CONFIRMED')
         self._heartbeat(60)
         self.assertEqual(self._rodar().call_count, 0)
+
+
+class FilaParadaTests(TestCase):
+    def setUp(self):
+        self.empresa = Empresa.get_padrao()
+        self.cfg = _ligar(self.empresa)
+        self.token, _ = TokenExtensao.criar('bot', [self.empresa])
+        self.token.ultimo_heartbeat = timezone.now()  # extensão online
+        self.token.save(update_fields=['ultimo_heartbeat'])
+        TelefoneAlertaAtendimento.objects.create(numero='5586999990000')
+        self.pedido = _pedido(self.empresa)
+
+    def _msg(self, minutos, **kw):
+        m = MensagemChat.objects.create(
+            empresa=self.empresa, pedido=self.pedido, texto='x', gatilho=kw.pop('gatilho', 'manual'),
+            origem='manual', **kw,
+        )
+        MensagemChat.objects.filter(pk=m.pk).update(criado_em=timezone.now() - timedelta(minutes=minutos))
+        return m
+
+    def _rodar(self):
+        with patch('atendimento.management.commands.verificar_extensao.notificar') as n:
+            call_command('verificar_extensao', stdout=StringIO(), stderr=StringIO())
+        return n
+
+    def test_pendente_recente_nao_alerta(self):
+        self._msg(3, status='pendente')
+        self.assertEqual(self._rodar().call_count, 0)
+
+    def test_pendente_antiga_alerta_uma_vez_e_avisa_normalizacao(self):
+        m = self._msg(25, status='pendente')
+        n = self._rodar()
+        self.assertEqual(n.call_count, 1)
+        self.assertIn('PARADA', n.call_args.kwargs['mensagem'])
+        self.assertEqual(self._rodar().call_count, 0)
+        MensagemChat.objects.filter(pk=m.pk).update(status='enviada')
+        n = self._rodar()
+        self.assertEqual(n.call_count, 1)
+        self.assertIn('voltou a andar', n.call_args.kwargs['mensagem'])
+
+    def test_pendente_aguardando_retentativa_nao_conta(self):
+        self._msg(25, status='pendente', proxima_tentativa_em=timezone.now() + timedelta(minutes=5))
+        self.assertEqual(self._rodar().call_count, 0)
+
+    def test_pendente_velha_de_queda_antiga_ignorada(self):
+        self._msg(60 * 5, status='pendente')
+        self.assertEqual(self._rodar().call_count, 0)
+
+    def test_falhas_sem_envio_alertam(self):
+        for i in range(3):
+            self._msg(5, status='falha', erro='painel_nao_abriu', gatilho='manual')
+        self.assertEqual(self._rodar().call_count, 1)
+
+    def test_falhas_com_envio_na_janela_nao_alertam(self):
+        for i in range(3):
+            self._msg(5, status='falha', erro='painel_nao_abriu')
+        self._msg(4, status='enviada')
+        self.assertEqual(self._rodar().call_count, 0)
+
+    def test_modo_seguro_nao_conta(self):
+        for i in range(4):
+            self._msg(5, status='falha', erro='modo_seguro')
+        self.assertEqual(self._rodar().call_count, 0)
+
+    def test_extensao_offline_nao_duplica_aviso(self):
+        self._msg(25, status='pendente')
+        self.token.ultimo_heartbeat = timezone.now() - timedelta(minutes=30)
+        self.token.save(update_fields=['ultimo_heartbeat'])
+        n = self._rodar()
+        self.assertEqual(n.call_count, 1)
+        self.assertIn('OFFLINE', n.call_args.kwargs['mensagem'])
+
+    def test_chat_desligado_nao_alerta(self):
+        self.cfg.chat_ativo = False
+        self.cfg.save()
+        self._msg(25, status='pendente')
+        self.assertEqual(self._rodar().call_count, 0)

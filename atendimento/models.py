@@ -42,6 +42,8 @@ class ConfiguracaoAtendimento(models.Model):
     ia_timeout_segundos = models.PositiveIntegerField(default=30)
     ia_instrucoes_tom = models.TextField(blank=True, default='')
     ia_contexto_loja = models.TextField(blank=True, default='')
+    # controle do alerta de fila parada (verificar_extensao): quando o último aviso saiu neste episódio
+    alertado_fila_parada_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Configuração de Atendimento'
