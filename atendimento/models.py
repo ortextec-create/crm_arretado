@@ -182,6 +182,8 @@ class TokenExtensao(models.Model):
     ultimo_heartbeat = models.DateTimeField(null=True, blank=True)
     versao_extensao = models.CharField(max_length=30, blank=True, default='')
     ultimo_diagnostico = models.JSONField(default=dict, blank=True)
+    # controle do alerta de extensão offline (verificar_extensao): quando o último aviso saiu nesta queda
+    alertado_offline_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-criado_em']
@@ -198,3 +200,20 @@ class TokenExtensao(models.Model):
 
     def __str__(self):
         return f'{self.nome} ({self.prefixo}…)'
+
+
+class TelefoneAlertaAtendimento(models.Model):
+    """Telefones internos da equipe que recebem alerta de extensão do iFood offline (não é cliente)."""
+
+    numero = models.CharField(max_length=30)
+    nome = models.CharField('Nome/label (opcional)', max_length=100, blank=True, default='')
+    ativo = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Telefone de Alerta de Atendimento'
+        verbose_name_plural = 'Telefones de Alerta de Atendimento'
+        ordering = ['nome', 'numero']
+
+    def __str__(self):
+        return f'{self.nome or self.numero}'

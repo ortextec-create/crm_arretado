@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from auditoria.mixins import AuditoriaDestroyMixin
 from auditoria.models import LogAuditoria
 from auditoria.utils import registrar
 from empresas.models import Empresa
@@ -22,12 +23,13 @@ from usuarios.permissions import IsAdminRole
 from .authentication import TokenExtensaoAuthentication, TokenExtensaoValido
 from .models import (
     ERROS_REPETIVEIS, INTERVALOS_NOVA_TENTATIVA_SEGUNDOS, ConfiguracaoAtendimento, ConfiguracaoExtensao,
-    MensagemChat, ModeloMensagemChat, TokenExtensao,
+    MensagemChat, ModeloMensagemChat, TelefoneAlertaAtendimento, TokenExtensao,
 )
 from .render import renderizar
 from .serializers import (
     ConfiguracaoAtendimentoSerializer, ConfiguracaoExtensaoSerializer, MensagemChatSerializer,
-    MensagemManualSerializer, ModeloMensagemChatSerializer, PreviewSerializer, TokenExtensaoSerializer,
+    MensagemManualSerializer, ModeloMensagemChatSerializer, PreviewSerializer,
+    TelefoneAlertaAtendimentoSerializer, TokenExtensaoSerializer,
 )
 from .servico import enfileirar
 
@@ -380,3 +382,13 @@ class TokenExtensaoViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, views
         registrar(request.user, LogAuditoria.ACAO_TOKEN_EXTENSAO_REVOGADO,
                   detalhes={'id': obj.id, 'nome': obj.nome}, request=request)
         return Response(TokenExtensaoSerializer(obj).data)
+
+
+class TelefoneAlertaAtendimentoViewSet(AuditoriaDestroyMixin, viewsets.ModelViewSet):
+    """Telefones internos que recebem o alerta de extensão offline (`verificar_extensao`)."""
+    queryset = TelefoneAlertaAtendimento.objects.all()
+    serializer_class = TelefoneAlertaAtendimentoSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAdminRole]
+    pagination_class = None
+    campos_log_exclusao = ['numero', 'nome']

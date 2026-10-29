@@ -1,0 +1,19 @@
+services:
+  gestor-bot:
+    build: .
+    container_name: gestor-bot
+    restart: unless-stopped
+    environment:
+      TZ: America/Fortaleza
+      VNC_PASSWORD: ${VNC_PASSWORD:?defina VNC_PASSWORD no .env desta pasta}
+    ports:
+      - "127.0.0.1:6080:6080"   # noVNC só no loopback — acesso por túnel SSH
+    volumes:
+      - gestor-bot-perfil:/perfil
+      - ../../extensao-ifood-chat:/extensao:ro
+    shm_size: "512m"
+    mem_limit: 1200m
+    memswap_limit: 1200m
+
+volumes:
+  gestor-bot-perfil:

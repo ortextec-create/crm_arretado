@@ -4,12 +4,13 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ConfiguracaoAtendimentoView, ConfiguracaoExtensaoView, ExtensaoConfigView, ExtensaoHeartbeatView,
     ExtensaoReservarView, ExtensaoResultadoView, MensagemChatViewSet, ModeloMensagemChatViewSet,
-    StatusExtensaoView, TokenExtensaoViewSet,
+    StatusExtensaoView, TelefoneAlertaAtendimentoViewSet, TokenExtensaoViewSet,
 )
 
 router = DefaultRouter()
 router.register('modelos', ModeloMensagemChatViewSet, basename='atendimento-modelos')
 router.register('mensagens', MensagemChatViewSet, basename='atendimento-mensagens')
+router.register('telefones-alerta', TelefoneAlertaAtendimentoViewSet, basename='atendimento-telefones-alerta')
 router.register('tokens', TokenExtensaoViewSet, basename='atendimento-tokens')
 
 urlpatterns = [

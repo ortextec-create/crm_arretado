@@ -3,7 +3,8 @@ from rest_framework import serializers
 from empresas.models import Empresa
 
 from .models import (
-    ConfiguracaoAtendimento, ConfiguracaoExtensao, MensagemChat, ModeloMensagemChat, TokenExtensao,
+    ConfiguracaoAtendimento, ConfiguracaoExtensao, MensagemChat, ModeloMensagemChat,
+    TelefoneAlertaAtendimento, TokenExtensao,
 )
 
 
@@ -91,3 +92,9 @@ class TokenExtensaoSerializer(serializers.ModelSerializer):
 
     def get_empresas(self, obj):
         return [{'id': e.id, 'nome': e.nome} for e in obj.empresas.all()]
+
+
+class TelefoneAlertaAtendimentoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TelefoneAlertaAtendimento
+        fields = ['id', 'numero', 'nome', 'ativo', 'criado_em']

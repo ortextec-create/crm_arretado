@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from atendimento.models import (
+    TelefoneAlertaAtendimento,
     ConfiguracaoAtendimento, ConfiguracaoExtensao, MensagemChat, ModeloMensagemChat, TokenExtensao,
 )
 from atendimento.render import renderizar
@@ -703,3 +704,57 @@ class VerificarAtrasosTests(TestCase):
         p = self._atrasado('o-1', empresa=outra)
         self._rodar()
         self.assertFalse(MensagemChat.objects.filter(pedido=p).exists())
+
+
+class VerificarExtensaoTests(TestCase):
+    def setUp(self):
+        self.empresa = Empresa.get_padrao()
+        self.token, _ = TokenExtensao.criar('bot', [self.empresa])
+        TelefoneAlertaAtendimento.objects.create(numero='5586999990000')
+        _ligar(self.empresa)
+
+    def _heartbeat(self, minutos):
+        self.token.ultimo_heartbeat = timezone.now() - timedelta(minutes=minutos)
+        self.token.save(update_fields=['ultimo_heartbeat'])
+
+    def _rodar(self):
+        with patch('atendimento.management.commands.verificar_extensao.notificar') as n:
+            call_command('verificar_extensao', stdout=StringIO(), stderr=StringIO())
+        return n
+
+    def test_online_nao_alerta(self):
+        _pedido(self.empresa, status='CONFIRMED')
+        self._heartbeat(1)
+        self.assertEqual(self._rodar().call_count, 0)
+
+    def test_offline_sem_trabalho_nao_alerta(self):
+        self._heartbeat(60)
+        self.assertEqual(self._rodar().call_count, 0)
+
+    def test_offline_com_pedido_alerta_uma_vez_e_avisa_volta(self):
+        _pedido(self.empresa, status='CONFIRMED')
+        self._heartbeat(30)
+        self.assertEqual(self._rodar().call_count, 1)
+        self.assertEqual(self._rodar().call_count, 0)  # dedup dentro da janela de repetição
+        self._heartbeat(0)
+        n = self._rodar()
+        self.assertEqual(n.call_count, 1)
+        self.assertIn('voltou', n.call_args.kwargs['mensagem'])
+        self.token.refresh_from_db()
+        self.assertIsNone(self.token.alertado_offline_em)
+
+    def test_repete_depois_da_janela(self):
+        _pedido(self.empresa, status='CONFIRMED')
+        self._heartbeat(300)
+        self._rodar()
+        self.token.alertado_offline_em = timezone.now() - timedelta(minutes=121)
+        self.token.save(update_fields=['alertado_offline_em'])
+        self.assertEqual(self._rodar().call_count, 1)
+
+    def test_chat_desligado_nao_alerta(self):
+        cfg = ConfiguracaoAtendimento.get(self.empresa)
+        cfg.chat_ativo = False
+        cfg.save()
+        _pedido(self.empresa, status='CONFIRMED')
+        self._heartbeat(60)
+        self.assertEqual(self._rodar().call_count, 0)
