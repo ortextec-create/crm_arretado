@@ -183,13 +183,17 @@ arretado/                        ← raiz Django
 │   ├── signals.py                ← post_save de PedidoIFood → só grava MensagemChat (nunca HTTP)
 │   ├── render.py                 ← `renderizar()` função pura, `str.replace`, snapshot na criação
 │   ├── authentication.py         ← TokenExtensaoAuthentication (header `X-Extensao-Token`), só em /extensao/
-│   ├── management/commands/      ← verificar_atrasos_ifood (cron a cada minuto) · gerar_token_extensao
+│   ├── management/commands/      ← verificar_atrasos_ifood (cron a cada minuto) · verificar_extensao (cron */5, alerta WhatsApp
+│   │                                da equipe se a extensão ficar offline com trabalho pendente) · gerar_token_extensao
 │   └── views.py                  ← endpoints /extensao/ (config, heartbeat, fila/reservar, fila/{id}/resultado)
 │                                    + CRM (configuracao, modelos, mensagens, status-extensao, tokens)
 ├── extensao-ifood-chat/          ← extensão Chrome MV3 (fora do Django, carregada sem compactação).
 │                                    background.js (toda a rede + aba designada + badge), content.js
 │                                    (relógio, fluxos de abrir conversa, trava de conversa errada),
 │                                    selectors.js (fallback), popup.* — ver README da pasta
+├── infra/gestor-bot/             ← container Docker `gestor-bot` (Chromium + Xvfb + noVNC, 127.0.0.1:6080) que roda a
+│                                    extensão na VPS, sem PC na loja. supervisord (autorestart) + `watchdog-chromium.sh`
+│                                    (mata Chromium sem resposta na porta 9222) + HEALTHCHECK — ver README da pasta
 ├── arretado-ifood-chat-poc/      ← POC v0.2 da extensão, só referência histórica (calibração da Fase 0)
 ├── usuarios/                    ← gestão de usuários + RBAC + autenticação real por token +
 │   │                               vínculo multi-empresa (ver MULTIEMPRESA.md)
@@ -513,7 +517,7 @@ arretado-crm/                    ← raiz React
   `cobranca.regua.STATUS_ELEGIVEIS = ('confirmado', 'em_producao', 'pronto', 'entregue')` é constante
   própria do módulo, nunca reaproveitada de outro — orçamento e cancelado ficam fora da régua, entregue
   com saldo continua recebendo cobrança
-- **Atendimento iFood** (spec completa em `ATENDIMENTO_IFOOD.md`) — app `atendimento/`, fala com o
+- **Atendimento iFood** (spec completa em `ATENDIMENTO_IFOOD.md`; operação autônoma do `gestor-bot` e alerta de offline na seção própria do spec) — app `atendimento/`, fala com o
   **cliente do pedido iFood** pelo chat do Gestor de Pedidos web, via extensão de Chrome (o iFood não tem
   API de chat). **Pedido iFood não envia mais WhatsApp** (o `cliente_telefone` é 0800/`localizer`): as
   chamadas `_notificar_ifood` saíram de `ifood/views.py`; PDV e Eventos continuam com Z-API. O CRM decide,
@@ -608,7 +612,7 @@ arretado-crm/                    ← raiz React
 | Multi-Empresa + Temas | Fases 0-5 de 6 (ver `MULTIEMPRESA.md`) | 🔄 Deployado 24/ago/2026 (v1.5.0) — falta só cadastrar a MANGAIO |
 | Brindes e Permutas | Campo `natureza` por item, 5 de 5 fases (ver `BRINDES_PERMUTAS.md`) | ✅ Concluída (v1.5.1) |
 | Remarcação e Adiamento de Eventos | Remarcar, adiar sem data, retomar, encerrar com acerto, aditivo de data, alertas (ver `ADIAMENTO.md`) | ✅ Deployado 14/out/2026 (v1.7.0) — falta só revisão jurídica da cláusula de adiamento |
-| Atendimento iFood (chat) | Mensagens por status/atraso no chat do pedido via extensão de Chrome, 6 fases (ver `ATENDIMENTO_IFOOD.md`) | 🔄 Fases 0-4 concluídas (cron `verificar_atrasos_ifood` ativo no crontab); Fase 2 (`extensao-ifood-chat/`, v1.0.2) aceita em 20/out; 5 (IA) e 6 pendentes. `chat_ativo` nasce desligado (estado em prod não conferido) |
+| Atendimento iFood (chat) | Mensagens por status/atraso no chat do pedido via extensão de Chrome, 6 fases (ver `ATENDIMENTO_IFOOD.md`) | 🔄 Fases 0-4 concluídas (cron `verificar_atrasos_ifood` ativo no crontab); Fase 2 (`extensao-ifood-chat/`, v1.0.2) aceita em 20/out; 5 (IA) e 6 pendentes. `chat_ativo` nasce desligado (estado em prod não conferido). Extensão roda no container `gestor-bot` (`infra/gestor-bot/`) com watchdog + alerta `verificar_extensao` (28/out) |
 | Cobrança de Eventos | Régua automática de WhatsApp + ligações da equipe, 7 de 7 fases (ver `COBRANCA.md`) | ✅ Deployada e ativa em prod (`ativo_desde` 09/out/2026, crontab `30 9 * * *`, 3 envios reais até 17/out) |
 
 ---
@@ -844,6 +848,7 @@ POST             /api/v1/atendimento/mensagens/{id}/reenviar/    ← só falha/i
 GET              /api/v1/atendimento/status-extensao/            ← online = heartbeat < 90 s · aba_visivel · falhas_rota_recentes
 GET/PATCH        /api/v1/atendimento/configuracao-extensao/      ← IsAdminRole · audita
 GET/POST         /api/v1/atendimento/tokens/                     ← IsAdminRole · POST devolve o token UMA vez
+GET/POST/PATCH/DELETE /api/v1/atendimento/telefones-alerta/[{id}/] ← IsAdminRole · telefones da equipe p/ alerta de extensão offline · DELETE auditado
 POST             /api/v1/atendimento/tokens/{id}/revogar/        ← IsAdminRole
 
 # Cobrança (ver COBRANCA.md)
@@ -905,6 +910,7 @@ python manage.py alertar_adiamentos            # 08:45 — equipe: follow-up e l
 python manage.py enviar_cobrancas              # 09:30 — régua de cobrança de Eventos (ver COBRANCA.md)
                                                 #   --dry-run / --evento EV-123 / --data AAAA-MM-DD (só com --dry-run)
 # * * * * *  python manage.py verificar_atrasos_ifood  — a cada minuto, atraso de pedido iFood → chat (ver ATENDIMENTO_IFOOD.md)
+# */5 * * * * python manage.py verificar_extensao  — alerta WhatsApp (equipe) se a extensão do chat ficar offline com trabalho pendente
 python manage.py gerar_token_extensao --empresa <id> --nome "..."   # token da extensão de Chrome (imprime uma vez)
 
 # Consultar logs (prod)
@@ -1124,4 +1130,7 @@ Infra já configurada em produção (não precisa recriar):
 - Não voltar a enviar WhatsApp de pedido iFood — o telefone do consumidor não é exposto pelo iFood; o canal é o chat
 - Não criar campo não-nulo em `PedidoIFood` (migration de `ifood`/`atendimento` sem reiniciar `arretado-polling` repete o incidente dos 245 pedidos)
 - Não usar `chrome.alarms` pro loop de 5 s da extensão (mínimo 30 s no MV3) — o relógio é do content script, e a extensão exige a aba designada visível
+- Não usar `verificar_extensao` pra falar com cliente — é alerta da **equipe** (`TelefoneAlertaAtendimento`), independente de `alertar_eventos`/cobrança; alerta só com `chat_ativo` + trabalho pendente + offline > 10 min, uma vez por queda (`alertado_offline_em`)
+- Não expor a porta de depuração do Chromium (9222) nem o noVNC (6080) fora do loopback; `.env` do `infra/gestor-bot/` (senha do VNC) nunca vai pro git
+- Não depender só do supervisord pro `gestor-bot`: ele não enxerga Chromium travado com o processo vivo (daí o watchdog); extensão parada/iFood deslogado só o alerta cobre
 - Não ligar `chat_ativo` nem desligar o modo seguro da extensão sem confirmar o estado atual (aceite da Fase 2 já dado em 20/out; ligar continua sendo decisão do usuário)

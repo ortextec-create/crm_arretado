@@ -22,6 +22,33 @@
 | 5 | 🔄 Em andamento | **5A** (leitura, sem IA): passo 1 = extensão 1.0.5 só com diagnóstico ampliado (`itensConversas` no popup, lista cada item "#NNNN" com subárvore) para achar o marcador de não lida por conversa; passo 2 (leitura, endpoint, `ConversaChat`, aba Conversas) aguarda o resultado. **5B** (IA) depois |
 | 6 | 🔲 Pendente | |
 
+### Operação autônoma: `gestor-bot` + alerta de extensão offline (28/out/2026)
+
+A extensão roda num Chromium dentro do container Docker `gestor-bot` na VPS (`infra/gestor-bot/`:
+Xvfb + x11vnc + noVNC em `127.0.0.1:6080`, perfil no volume `gestor-bot-perfil`, extensão em bind
+mount read-only). Incidente que motivou: em 28/out o sistema ficou parado por várias horas sem
+ninguém ser avisado.
+
+- **Chromium morre:** o supervisord (`autorestart=true`) sobe de novo; `start-chromium.sh` apaga os
+  `Singleton*` do perfil. Pode ser preciso redesignar a aba da extensão pelo noVNC.
+- **Chromium trava com o processo vivo:** `watchdog-chromium.sh` (programa `watchdog` do supervisord)
+  consulta `127.0.0.1:9222/json/version` (`--remote-debugging-port`, só dentro do container, não
+  publicada) a cada 30 s; 3 falhas seguidas → `pkill -9` no Chromium e o supervisord reinicia.
+  `HEALTHCHECK` do Dockerfile usa o mesmo teste (`docker ps` → healthy/unhealthy).
+- **Não cobre:** extensão parada ou iFood deslogado com o Chromium respondendo; renderer congelado
+  com o processo principal vivo. Nesses casos só o alerta avisa, e a correção é manual (noVNC).
+- **Alerta (CRM):** `manage.py verificar_extensao`, cron `*/5 * * * *`. Para cada `TokenExtensao`
+  ativo com heartbeat: se `ultimo_heartbeat` tem mais de 10 min **e** alguma empresa do token tem
+  `chat_ativo` **e** há `MensagemChat` de saída `pendente`/`enviando` ou `PedidoIFood` em andamento
+  (`CONFIRMED`/`PREPARATION_STARTED`/`READY_TO_PICKUP`/`DISPATCHED`) criado nas últimas 6 h, avisa por
+  WhatsApp (`notificar(..., tipo='alerta_extensao')`) os `TelefoneAlertaAtendimento` ativos. Um aviso
+  por queda (`TokenExtensao.alertado_offline_em`), repete a cada 2 h enquanto continuar fora e avisa
+  quando volta. Fala com a **equipe**, nunca com o cliente. Sem telefone ativo, só `logger.warning`.
+- **Telefones:** `atendimento.TelefoneAlertaAtendimento` (admin), API
+  `/api/v1/atendimento/telefones-alerta/` (CRUD, DELETE auditado). **Sem tela no frontend ainda** —
+  cadastro por API/shell.
+- Migrations: `atendimento/0004`, `notificacoes/0013` (choice `alerta_extensao`). Commit `923fb7c`.
+
 **Aceite da extensão 1.0.4 (declarado pelo usuário):** envio funcionando com a janela do Gestor
 coberta por outra janela — o incidente `painel_nao_abriu` de 22/out (ver Riscos conhecidos) não se
 repete. A causa continua não confirmada, só inferida; o aceite é por resultado.

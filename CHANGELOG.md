@@ -7,6 +7,12 @@ corresponde a uma tag `vX.Y.Z` criada no checklist de deploy.
 
 ## [Não lançado]
 
+### Adicionado
+- **Alerta de extensão do chat iFood offline** (`verificar_extensao`, cron */5): avisa a equipe por WhatsApp
+  (`TelefoneAlertaAtendimento`) quando a extensão fica > 10 min sem heartbeat com trabalho pendente; avisa
+  também quando volta. Migrations `atendimento/0004`, `notificacoes/0013`.
+- **`infra/gestor-bot/`** versionado, com watchdog do Chromium (porta de depuração em loopback) e `HEALTHCHECK`.
+
 ## [v1.7.0] - 2026-10-14
 
 ### Adicionado
