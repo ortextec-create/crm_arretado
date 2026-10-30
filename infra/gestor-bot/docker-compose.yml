@@ -12,8 +12,8 @@ services:
       - gestor-bot-perfil:/perfil
       - ../../extensao-ifood-chat:/extensao:ro
     shm_size: "512m"
-    mem_limit: 1200m
-    memswap_limit: 1200m
+    mem_limit: 1800m
+    memswap_limit: 1800m
 
 volumes:
   gestor-bot-perfil:

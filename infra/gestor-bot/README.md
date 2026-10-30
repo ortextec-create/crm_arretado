@@ -13,7 +13,7 @@ cp .env.example .env && nano .env      # defina VNC_PASSWORD (o .env é ignorado
 docker compose up -d --build
 ```
 
-Limite de memória: 1,2 GB (`mem_limit` no compose). O supervisor reinicia o Chromium se cair;
+Limite de memória: 1,8 GB (era 1,2 GB; Chromium sofreu OOM-kill em 30/out/2026 e a página mostrou "Something went wrong while displaying this webpage") (`mem_limit` no compose). O supervisor reinicia o Chromium se cair;
 `restart: unless-stopped` reinicia o container.
 
 ## Autorrecuperação e alerta
