@@ -11,8 +11,14 @@ mensagem `pendente` esperando há mais de LIMITE_FILA_MIN minutos (a mais antiga
 pedidos é normal) ou ≥ MIN_FALHAS falhas de envio sem nenhum envio na janela. `modo_seguro` não conta (é
 proposital). Empresa cuja extensão já está offline não recebe este aviso (já explicado pelo outro). Ver
 ATENDIMENTO_IFOOD.md.
+
+Autocorreção: se a fila está parada e a extensão (online) reporta `aba_ok=False` (página do Gestor travada ou
+em loop), reinicia só o Chromium do container (`supervisorctl restart chromium`), no máximo uma vez por
+REPETIR_MIN por empresa (`ultimo_reinicio_chromium_em`) — se continuar parada depois disso, só alerta (provável
+iFood deslogado, que reiniciar não resolve).
 """
 import logging
+import subprocess
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
@@ -31,6 +37,7 @@ REPETIR_MIN = 120
 JANELA_PEDIDO_HORAS = 6
 LIMITE_FILA_MIN = 10        # pendente mais antiga além disso = fila parada
 JANELA_FILA_HORAS = 3       # ignora pendente velha de queda antiga (ninguém varre pendente com extensão offline)
+CONTAINER_BOT = 'gestor-bot'
 MIN_FALHAS = 3
 JANELA_FALHAS_MIN = 30
 ERROS_IGNORADOS = ('modo_seguro',)
@@ -84,6 +91,9 @@ class Command(BaseCommand):
             if not cfg.chat_ativo or empresa.id in empresas_offline:
                 continue
             problema = self._diagnosticar_fila(empresa, agora)
+            reiniciou = False
+            if problema is not None:
+                reiniciou = self._tentar_reiniciar_chromium(empresa, cfg, agora, problema)
             if problema is None:
                 if cfg.alertado_fila_parada_em:
                     self._avisar(telefones, f'✅ Fila do chat iFood voltou a andar ({empresa.nome}) — '
@@ -93,16 +103,41 @@ class Command(BaseCommand):
                 continue
             if cfg.alertado_fila_parada_em and cfg.alertado_fila_parada_em > agora - timedelta(minutes=REPETIR_MIN):
                 continue
-            msg = (
-                f'🚨 Fila do chat iFood PARADA ({empresa.nome}): {problema}. '
-                'A extensão está respondendo, mas as mensagens não estão saindo. '
-                'Verifique o login no Gestor de Pedidos e a aba da extensão (noVNC do gestor-bot).'
-            )
+            acao = ('O Chromium do gestor-bot foi reiniciado automaticamente; se não normalizar, verifique o login '
+                    'no Gestor de Pedidos (noVNC do gestor-bot).' if reiniciou else
+                    'A extensão está respondendo, mas as mensagens não estão saindo. '
+                    'Verifique o login no Gestor de Pedidos e a aba da extensão (noVNC do gestor-bot).')
+            msg = f'🚨 Fila do chat iFood PARADA ({empresa.nome}): {problema}. {acao}'
             self.stderr.write(self.style.ERROR(msg))
             logger.error('Fila do chat iFood parada: empresa=%s, %s', empresa.nome, problema)
             self._avisar(telefones, msg)
             cfg.alertado_fila_parada_em = agora
             cfg.save(update_fields=['alertado_fila_parada_em'])
+
+    def _tentar_reiniciar_chromium(self, empresa, cfg, agora, problema):
+        """Reinicia o Chromium do gestor-bot quando a aba da extensão está quebrada. True se reiniciou."""
+        if cfg.ultimo_reinicio_chromium_em and cfg.ultimo_reinicio_chromium_em > agora - timedelta(minutes=REPETIR_MIN):
+            return False
+        limite = agora - timedelta(minutes=LIMITE_OFFLINE_MIN)
+        aba_quebrada = any(
+            t.ultimo_heartbeat >= limite and t.ultimo_diagnostico.get('aba_ok') is False
+            for t in TokenExtensao.objects.filter(ativo=True, empresas=empresa, ultimo_heartbeat__isnull=False)
+        )
+        if not aba_quebrada:
+            return False
+        try:
+            r = subprocess.run(['docker', 'exec', CONTAINER_BOT, 'supervisorctl', 'restart', 'chromium'],
+                               capture_output=True, text=True, timeout=90)
+        except Exception:
+            logger.exception('Falha ao reiniciar o Chromium do %s', CONTAINER_BOT)
+            return False
+        if r.returncode != 0:
+            logger.error('Reinício do Chromium falhou: %s', (r.stderr or r.stdout).strip()[:200])
+            return False
+        logger.warning('Chromium do %s reiniciado automaticamente (empresa=%s, %s)', CONTAINER_BOT, empresa.nome, problema)
+        cfg.ultimo_reinicio_chromium_em = agora
+        cfg.save(update_fields=['ultimo_reinicio_chromium_em'])
+        return True
 
     @staticmethod
     def _diagnosticar_fila(empresa, agora):

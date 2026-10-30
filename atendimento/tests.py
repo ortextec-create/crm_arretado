@@ -835,3 +835,45 @@ class FilaParadaTests(TestCase):
         self.cfg.save()
         self._msg(25, status='pendente')
         self.assertEqual(self._rodar().call_count, 0)
+
+
+class ReinicioChromiumTests(FilaParadaTests):
+    CMD = 'atendimento.management.commands.verificar_extensao'
+
+    def _rodar_reiniciando(self, rc=0):
+        with patch(self.CMD + '.subprocess.run') as run:
+            run.return_value.returncode = rc
+            run.return_value.stdout = run.return_value.stderr = ''
+            n = self._rodar()
+        return run, n
+
+    def _aba(self, ok):
+        self.token.ultimo_diagnostico = {'aba_ok': ok}
+        self.token.save(update_fields=['ultimo_diagnostico'])
+
+    def test_fila_parada_com_aba_quebrada_reinicia_uma_vez(self):
+        self._msg(25, status='pendente')
+        self._aba(False)
+        run, n = self._rodar_reiniciando()
+        self.assertEqual(run.call_count, 1)
+        self.assertIn('reiniciado automaticamente', n.call_args.kwargs['mensagem'])
+        self.cfg.refresh_from_db()
+        self.assertIsNotNone(self.cfg.ultimo_reinicio_chromium_em)
+        self.cfg.alertado_fila_parada_em = None
+        self.cfg.save(update_fields=['alertado_fila_parada_em'])
+        run, _ = self._rodar_reiniciando()
+        self.assertEqual(run.call_count, 0)  # cooldown
+
+    def test_aba_ok_nao_reinicia(self):
+        self._msg(25, status='pendente')
+        self._aba(True)
+        run, _ = self._rodar_reiniciando()
+        self.assertEqual(run.call_count, 0)
+
+    def test_falha_no_docker_so_alerta(self):
+        self._msg(25, status='pendente')
+        self._aba(False)
+        run, n = self._rodar_reiniciando(rc=1)
+        self.assertEqual(n.call_count, 1)
+        self.cfg.refresh_from_db()
+        self.assertIsNone(self.cfg.ultimo_reinicio_chromium_em)

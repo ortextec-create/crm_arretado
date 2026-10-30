@@ -44,6 +44,8 @@ class ConfiguracaoAtendimento(models.Model):
     ia_contexto_loja = models.TextField(blank=True, default='')
     # controle do alerta de fila parada (verificar_extensao): quando o último aviso saiu neste episódio
     alertado_fila_parada_em = models.DateTimeField(null=True, blank=True)
+    # último reinício automático do Chromium do gestor-bot (fila parada com aba da extensão quebrada)
+    ultimo_reinicio_chromium_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Configuração de Atendimento'

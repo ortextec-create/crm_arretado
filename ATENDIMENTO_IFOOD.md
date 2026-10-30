@@ -53,6 +53,12 @@ ninguém ser avisado.
   (o alerta de offline já explica). Estado em `ConfiguracaoAtendimento.alertado_fila_parada_em`: um aviso
   por episódio, repete a cada 2 h, avisa "voltou a andar". Limites são constantes de
   `verificar_extensao.py` (`LIMITE_FILA_MIN`, `JANELA_FILA_HORAS`, `MIN_FALHAS`, `JANELA_FALHAS_MIN`).
+  **Autocorreção (30/out/2026):** se a fila está parada **e** a extensão está online mas reporta
+  `aba_ok=False` (página do Gestor travada/em loop de navegação), o próprio `verificar_extensao` roda
+  `docker exec gestor-bot supervisorctl restart chromium` e o aviso diz que houve reinício. No máximo um
+  por 2 h por empresa (`ConfiguracaoAtendimento.ultimo_reinicio_chromium_em`, migration `0006`); depois
+  disso só alerta (provável iFood deslogado — reiniciar não resolve). Mensagem em `enviando` no reinício
+  vira `incerta` (regra normal). Exige o cron rodar como root (acesso ao Docker).
   Pendente velha de queda antiga é ignorada porque a varredura de expiração só roda quando a extensão
   chama `reservar/`. Migration `atendimento/0005`.
 - **Telefones:** `atendimento.TelefoneAlertaAtendimento` (admin), API
